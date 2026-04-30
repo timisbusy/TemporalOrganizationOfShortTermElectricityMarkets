@@ -1,0 +1,51 @@
+# Generator parameters
+dispatchableGenerators:
+ Base:
+  bidPrice: 60 # EUR/MWh
+  capacity: 100 # MW
+  rampRate: 2 # % of nominal power per minute
+  initialQuantity: 100
+  emissionFactor: 980 # kgCO2e/MWh
+
+ Shoulder:
+  bidPrice: 90 # EUR/MWh
+  capacity: 100 # MW
+  rampRate: 6 # % of nominal power per minute
+  initialQuantity: 0
+  emissionFactor: 420 # kgCO2e/MWh
+
+ Peak:
+  bidPrice: 120 # EUR/MWh
+  capacity: 200 # MW
+  rampRate: 12 # % of nominal power per minute
+  initialQuantity: 0
+  emissionFactor: 420 # kgCO2e/MWh
+
+variableGenerators:
+  Wind:
+    bidPrice: 0         # EUR/MWh
+    capacity: 0        # MW
+    profile: [0.0, 0.0]
+  Solar:
+    bidPrice: 0         # EUR/MWh
+    capacity: 0        # MW
+    profile: [0.0, 0.0]
+
+# Storage parameters
+batteryStorage:
+  energyCapacity: 0 # MWh
+  powerCapacity: 0 # MW
+  efficiency: 0.9
+  initialSOC: 0.5 # as fraction of energyCapacity
+  endSOC: 0.5 # as fraction of energyCapacity
+
+
+# Demand parameters
+demand:
+  segments:
+    Base_D:
+      bidPrice: 300   # EUR/MWh (high willingness to pay)
+      profile: [100,100,100,200,200,200,300,300,300] 
+    Flex:
+      bidPrice: 100   # EUR/MWh (elastic, only if price low)
+      profile: [50, 50, 50, 50, 50, 50, 50, 50, 50]

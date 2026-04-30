@@ -1,0 +1,12 @@
+# This configuration reflects the proposed rolling horizon design
+# Define a set of markets that will be cleared over the course of the experiment
+# all parameters are expressed in MTU - in this case 15m
+
+timePeriodsPerDay: 96 # define the assumed MTU for this market configuration - this allows for validation that this market is appropriate for the experiment
+
+marketSequence:
+  RollingHorizon: # name of market
+    clearingInterval: 4 # number of MTU between market clearing/optimization rounds
+    optimizationWindow: 144 # number of MTU to consider in each clearing
+    lookAheadDistance: 4 # number of MTU after which to start optimization window
+    clockTimeBegin: 0 # number of MTU after midnight to hold first clearing

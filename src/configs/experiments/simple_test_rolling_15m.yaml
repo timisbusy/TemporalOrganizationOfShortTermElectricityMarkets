@@ -1,0 +1,10 @@
+# general parameters
+
+strategy: simple_test_rolling_config # strategy for clearing market
+timePeriodsPerDay: 96 # number of time periods in a day
+clearForDays: 7 # number of days to clear market for
+noiseLevel: 0.0 # tweak noise magnitude in variable generators
+
+marketConfig: test_market_config_rolling_15m.yaml
+
+agentConfig: test_agents.yaml

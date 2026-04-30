@@ -1,0 +1,16 @@
+# general parameters for experiment
+
+name: one_intraday # TODO: make this a descriptive name
+
+# Set temporal parameters for experiment - granularity and duration
+timePeriodsPerDay: 24 # number of time periods in a day - this sets the MTU
+clearForDays: 7 # number of days to clear market for
+
+# set the uncertainty in renewable generation
+noiseLevel: 0.0
+
+# choose a market configuration from the markets directory
+marketConfig: test_market_config.yaml
+
+# choose an agent configuration from the agents directory - the case study
+agentConfig: test_agents.yaml
