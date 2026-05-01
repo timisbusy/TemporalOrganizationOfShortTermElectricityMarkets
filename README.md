@@ -92,7 +92,7 @@ Storage is modeled as a single large battery that is centrally operated, meaning
 Several demand segments types are supported. A demand can provide single value `quantity_constant`, a `profile` of bid quantities, or a reference to a `profile_file` and `profile_type`, which should always be `quantity` for a demand agent. All are expressed in `MW` and paired with a constant `bidPrice`, expressed in EUR/MWh.
 
 > Note
-> For now, `profile_file`s are assumed to be in the format of downloaded files from NED.nl. More documentation of this feature will be provided.
+> For now, `profile_file`s are assumed to be in the format of downloaded files from [NED.nl](https://ned.nl/nl). More documentation of this feature will be provided.
 
 ```
 # Generator parameters
