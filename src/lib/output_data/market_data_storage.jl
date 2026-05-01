@@ -178,7 +178,7 @@ end
 function GetEconomicIndicatorsForRange(marketresults,time_range)
 	
 	indicators = DataFrame(SEW=[],ProducerSurplus=[],ConsumerSurplus=[],StorageRevenue=[])# , WeightedAveragePrice=[])
-	agent_indicators = DataFrame(Agent=[],Quantity=[],LoadUtility=[],Payments=[],Revenue=[],FuelCost=[],WelfareGained=[])
+	agent_indicators = DataFrame(Agent=[],Quantity=[],LoadUtility=[],Payments=[],Revenue=[],FuelCost=[],Surplus=[])
 
 	if length(marketresults) < 1
 		return (indicators, agent_indicators)
@@ -212,9 +212,17 @@ function GetEconomicIndicatorsForRange(marketresults,time_range)
 			payments = (a_type == HelperModelResults.AGENT_DEMAND) ? combine((transactions[transactions.Agent .== agent, :]), payrev_symbol => sum)[1,1] : 0.0
 			revenue = (a_type == HelperModelResults.AGENT_GENERATOR) ? combine((transactions[transactions.Agent .== agent, :]), payrev_symbol => sum)[1,1] : 0.0
 			fuel_cost = (a_type == HelperModelResults.AGENT_GENERATOR) ? combine(finalMarketResults, Symbol("fuelcost_$agent") => sum)[1,1] : 0.0
-			welfare_gained = (load_utility - payments) + (revenue - fuel_cost)
+			surplus = (load_utility - payments) + (revenue - fuel_cost)
 
-			push!(agent_indicators, [agent,quantity,load_utility,payments,revenue,fuel_cost,welfare_gained])
+			quantity = isapprox(quantity, 0.0, atol=1e-4) ? 0.0 : quantity
+			load_utility = isapprox(load_utility, 0.0, atol=1e-4) ? 0.0 : load_utility
+			payments = isapprox(payments, 0.0, atol=1e-4) ? 0.0 : payments
+			revenue = isapprox(revenue, 0.0, atol=1e-4) ? 0.0 : revenue
+			fuel_cost = isapprox(fuel_cost, 0.0, atol=1e-4) ? 0.0 : fuel_cost
+			surplus = isapprox(surplus, 0.0, atol=1e-4) ? 0.0 : surplus
+			
+
+			push!(agent_indicators, [agent,quantity,load_utility,payments,revenue,fuel_cost,surplus])
 
 		end
 	end
@@ -230,11 +238,16 @@ function GetEconomicIndicatorsForRange(marketresults,time_range)
 	storage_revenue = combine((transactions[transactions.Agent .== "Storage", :]), payrev_symbol => sum)[1,1]
 	# like this we report out the sum quantity of energy charged and discharged - the difference is also interesting
 	storage_quantity = 	combine(finalMarketResults, :StorageDischarge => sum)[1,1] + combine(finalMarketResults, :StorageCharge => sum)[1,1]
+	
+
+	storage_revenue = isapprox(storage_revenue, 0.0, atol=1e-4) ? 0.0 : storage_revenue
+	storage_quantity = isapprox(storage_quantity, 0.0, atol=1e-4) ? 0.0 : storage_quantity
+	
 	# note that revenue here is also reported as SEW, assuming no costs
 	push!(agent_indicators, ["Storage", storage_quantity, 0.0, 0.0, storage_revenue, 0.0, storage_revenue])
 	
-	consumer_surplus = combine((agent_indicators[ [a in agentMap[HelperModelResults.AGENT_DEMAND] for a in agent_indicators[!, :Agent]], :]), :WelfareGained => sum)[1,1] 
-	producer_surplus = combine((agent_indicators[ [a in agentMap[HelperModelResults.AGENT_GENERATOR] for a in agent_indicators[!, :Agent]], :]), :WelfareGained => sum)[1,1] 
+	consumer_surplus = combine((agent_indicators[ [a in agentMap[HelperModelResults.AGENT_DEMAND] for a in agent_indicators[!, :Agent]], :]), :Surplus => sum)[1,1] 
+	producer_surplus = combine((agent_indicators[ [a in agentMap[HelperModelResults.AGENT_GENERATOR] for a in agent_indicators[!, :Agent]], :]), :Surplus => sum)[1,1] 
 	sew = consumer_surplus + producer_surplus
 	push!(indicators,[sew,producer_surplus,consumer_surplus,storage_revenue]) #,weighted_average_price])
 
