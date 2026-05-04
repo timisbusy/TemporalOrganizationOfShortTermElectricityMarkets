@@ -1,6 +1,6 @@
 # general parameters for experiment
 
-name: one_intraday # TODO: make this a descriptive name
+name: one_intraday # a descriptive name
 
 # Set temporal parameters for experiment - granularity and duration
 timePeriodsPerDay: 24 # number of time periods in a day - this sets the MTU
@@ -12,5 +12,5 @@ noiseLevel: 0.0
 # choose a market configuration from the markets directory
 marketConfig: test_market_config.yaml
 
-# choose an agent configuration from the agents directory - the case study
+# choose an agent configuration from the agents directory
 agentConfig: test_agents.yaml

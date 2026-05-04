@@ -1,16 +1,22 @@
 # general parameters
 
-name: nl_test_fixed # a descriptive name
+name: compare_fixed_and_rolling_nl_import # a descriptive name
+compare: market
 
 # Set temporal parameters for experiment - granularity and duration
 timePeriodsPerDay: 96 # number of time periods in a day
 clearForDays: 7 # number of days to clear market for
 
+# set a start date for data to be used from incoming agent profile data
+startDate: 2026-04-03
+
 # set the uncertainty in renewable generation
 noiseLevel: 0.0
 
 # choose a market configuration from the markets directory
-marketConfig: test_market_config_status_quo_15m.yaml
+marketConfigs: 
+  Rolling: rolling_15m.yaml
+  Fixed: status_quo_15m.yaml
 
 # choose an agent configuration from the agents directory
-agentConfig: nl_agents.yaml
+agentConfig: nl_agents_csv_profiles.yaml

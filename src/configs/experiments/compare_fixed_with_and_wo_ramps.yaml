@@ -1,6 +1,6 @@
 # general parameters for experiment
 
-name: simple_rolling # TODO: make this a descriptive name
+name: compare_fixed_with_and_wo_ramps # a descriptive name
 compare: market
 
 # Set temporal parameters for experiment - granularity and duration
@@ -15,5 +15,5 @@ marketConfigs:
   FixedNoRamps: one_intraday_no_ramps.yaml
   Fixed: one_intraday.yaml
 
-# choose an agent configuration from the agents directory - the case study
+# choose an agent configuration from the agents directory
 agentConfig: test_agents_high_ramps.yaml
