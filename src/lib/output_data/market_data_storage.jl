@@ -178,7 +178,7 @@ end
 function GetEconomicIndicatorsForRange(marketresults,time_range)
 	
 	indicators = DataFrame(SEW=[],ProducerSurplus=[],ConsumerSurplus=[],StorageRevenue=[])# , WeightedAveragePrice=[])
-	agent_indicators = DataFrame(Agent=[],Quantity=[],LoadUtility=[],Payments=[],Revenue=[],FuelCost=[],Surplus=[])
+	agent_indicators = DataFrame(Agent=[],Quantity=[],LoadUtility=[],Payments=[],Revenue=[],FuelCost=[],Surplus=[],SOCChange=[])
 
 	if length(marketresults) < 1
 		return (indicators, agent_indicators)
@@ -192,6 +192,7 @@ function GetEconomicIndicatorsForRange(marketresults,time_range)
 	quantity_symbol = Symbol("Quantity (MWh)")
 	price_symbol = Symbol("Price (€/MWh)")
 	payrev_symbol = Symbol("Payments/Revenues (€)")
+	mtu_symbol = Symbol("Market Time Unit")
 
 	transactions[!, payrev_symbol] = transactions[!, quantity_symbol] .* transactions[!, price_symbol]
 
@@ -222,7 +223,7 @@ function GetEconomicIndicatorsForRange(marketresults,time_range)
 			surplus = isapprox(surplus, 0.0, atol=1e-4) ? 0.0 : surplus
 			
 
-			push!(agent_indicators, [agent,quantity,load_utility,payments,revenue,fuel_cost,surplus])
+			push!(agent_indicators, [agent,quantity,load_utility,payments,revenue,fuel_cost,surplus, 0.0])
 
 		end
 	end
@@ -240,11 +241,50 @@ function GetEconomicIndicatorsForRange(marketresults,time_range)
 	storage_quantity = 	combine(finalMarketResults, :StorageDischarge => sum)[1,1] + combine(finalMarketResults, :StorageCharge => sum)[1,1]
 	
 
+
+
+	storage_soc_begin = finalMarketResults[finalMarketResults.mtu .== time_range.start, :SOC][1,1]
+
+	storage_soc_end = finalMarketResults[finalMarketResults.mtu .== time_range.stop, :SOC][1,1]
+
+	storage_soc_change = storage_soc_end - storage_soc_begin
+
+
+	#=
+
+
+	# which MTUs had storage charge and discharge quantities in their final dispatch 
+	# TODO: think about how to approach MTUs where no charge or discharge appeared in final dispatch
+	charge_mtus = finalMarketResults[finalMarketResults.StorageCharge .> 0.0, :].mtu
+	discharge_mtus = finalMarketResults[finalMarketResults.StorageDischarge .> 0.0, :].mtu
+
+	println("charge MTUs: $charge_mtus")
+	println("discharge MTUs: $discharge_mtus")
+
+	
+	storage_discharge_transaction_quantity = combine(transactions[(transactions.Agent .== "Storage" .&& transactions[!, mtu_symbol] in discharge_mtus), :], quantity_symbol => sum)[1,1]
+
+	storage_charge_transaction_quantity = combine(transactions[(transactions.Agent .== "Storage" .&& transactions[!, mtu_symbol] in charge_mtus), :], quantity_symbol => sum)[1,1]
+
+
+	storage_avg_discharge_price = combine(transactions[(transactions.Agent .== "Storage" .&& transactions[!, payrev_symbol] .> 0.0), :], payrev_symbol => sum)[1,1] / combine(transactions[(transactions.Agent .== "Storage" .&& transactions[!, payrev_symbol] .> 0.0), :], quantity_symbol => sum)[1,1]
+
+	storage_avg_charge_price = combine(transactions[(transactions.Agent .== "Storage" .&& transactions[!, payrev_symbol] .< 0.0), :], payrev_symbol => sum)[1,1] / combine(transactions[(transactions.Agent .== "Storage" .&& transactions[!, payrev_symbol] .< 0.0), :], quantity_symbol => sum)[1,1]
+
+
+	println("discharge transaction quantity: ", storage_discharge_transaction_quantity)
+	println("charge transaction quantity: ", storage_charge_transaction_quantity)
+
+	println("avg discharge price: ", storage_avg_discharge_price)
+	println("avg charge price: ", storage_avg_charge_price)
+
+    =#
+
 	storage_revenue = isapprox(storage_revenue, 0.0, atol=1e-4) ? 0.0 : storage_revenue
 	storage_quantity = isapprox(storage_quantity, 0.0, atol=1e-4) ? 0.0 : storage_quantity
 	
 	# note that revenue here is also reported as SEW, assuming no costs
-	push!(agent_indicators, ["Storage", storage_quantity, 0.0, 0.0, storage_revenue, 0.0, storage_revenue])
+	push!(agent_indicators, ["Storage", storage_quantity, 0.0, 0.0, storage_revenue, 0.0, storage_revenue, storage_soc_change])
 	
 	consumer_surplus = combine((agent_indicators[ [a in agentMap[HelperModelResults.AGENT_DEMAND] for a in agent_indicators[!, :Agent]], :]), :Surplus => sum)[1,1] 
 	producer_surplus = combine((agent_indicators[ [a in agentMap[HelperModelResults.AGENT_GENERATOR] for a in agent_indicators[!, :Agent]], :]), :Surplus => sum)[1,1] 
