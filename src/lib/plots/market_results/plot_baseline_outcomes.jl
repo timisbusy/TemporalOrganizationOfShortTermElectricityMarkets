@@ -32,6 +32,7 @@ function plotCompare(market_results, config, test_range, test_id)
     combined_indicators = DataFrame()
     combined_agent_indicators = DataFrame()
     for (marketName, marketResult) in market_results
+        println("calculating indicators for: $marketName")
         (indicators, agent_indicators, transactions, final_market_results) = MarketDataStorage.GetEconomicIndicatorsForRange(marketResult, test_range)
         indicators[!,Symbol("Market Name")] .= marketName
         combined_indicators = vcat(combined_indicators, indicators)

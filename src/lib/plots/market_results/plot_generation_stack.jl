@@ -71,7 +71,7 @@ end
 function plotCompare(market_results, config, test_range, test_id)
     
     # Define consistent colors
-    gen_colors = [:steelblue, :lightgreen, :red, :lightyellow, :coral, :orange]
+    gen_colors = [:purple4, :royalblue1, :seagreen1, :green2, :orangered, :deeppink]
 
     # Manual stacking order
     stack_order = ["Base", "Shoulder", "Peak", "Wind", "Solar"]
@@ -123,13 +123,13 @@ function plotCompare(market_results, config, test_range, test_id)
             if i == 1
                 Plots.plot!(p3, test_range, stack_matrix[i, :],
                      label="$(marketName): $(labels[i])" , 
-                    color=gen_colors[i], markershape=marker, alpha=0.8, linewidth=1)
+                    fillrange=0, color=gen_colors[i], markershape=marker, alpha=0.6, linewidth=1)
             else
                 cumsum_prev = vec(sum(stack_matrix[1:i-1, :], dims=1))
                 cumsum_curr = vec(sum(stack_matrix[1:i, :], dims=1))
                 Plots.plot!(p3, test_range, cumsum_curr,
                      label="$(marketName): $(labels[i])",
-                    color=gen_colors[i], markershape=marker, alpha=0.8, linewidth=1)
+                    fillrange=cumsum_prev, color=gen_colors[i], markershape=marker, alpha=0.6, linewidth=1)
             end
         end
 
@@ -140,7 +140,59 @@ function plotCompare(market_results, config, test_range, test_id)
         =#
 
     end
-    display(p3)
+
+
+
+    plot_arr = Dict{Int,Any}()
+    markerIter = 1
+    for (marketName, stack_matrix) in stackMatrices
+        marker = marker_shapes[markerIter]
+        markerIter += 1
+
+        plot_arr[markerIter] = Plots.plot(xlabel="MTU", ylabel="Dispatched Production (MWh)",
+            title="Generation & Demand Stack for $marketName",
+            legend=:topright,
+            ylims=(0, maxY),size=(1200,1200))
+        # Stack manually using areaplot with seriestype
+        for i in 1:size(stack_matrix, 1)
+            if i == 1
+                Plots.plot!(plot_arr[markerIter], test_range, stack_matrix[i, :],
+                     label="$(marketName): $(labels[i])" , 
+                    fillrange=0, color=gen_colors[i], markershape=marker, alpha=0.6, linewidth=1)
+            else
+                cumsum_prev = vec(sum(stack_matrix[1:i-1, :], dims=1))
+                cumsum_curr = vec(sum(stack_matrix[1:i, :], dims=1))
+                Plots.plot!(plot_arr[markerIter], test_range, cumsum_curr,
+                     label="$(marketName): $(labels[i])",
+                    fillrange=cumsum_prev, color=gen_colors[i], markershape=marker, alpha=0.6, linewidth=1)
+            end
+        end
+
+        #=
+        # Add demand line on top
+        Plots.plot!(p3, test_range, total_demand .+ charging_vec,
+            label="Demand + Charging", color=:black, lw=3, ls=:dash)
+        =#
+
+        display(plot_arr[markerIter])
+
+    end
+
+
+
+
+ #=
+    p4 = Plots.plot(xlabel="MTU", ylabel="Dispatched Production (MWh)",
+            title="Generation & Demand Stacked Bars",
+            legend=:topright,
+            ylims=(0, maxY),size=(1200,1200))
+    for (marketName, stack_matrix) in stackMatrices
+        println(stack_matrix)
+        Plots.plot!(p4, stack_matrix, t=:bar, bar_position=:stack, bar_width=0.7, label="$(marketName)")
+    end
+    display(p4)
+=#
+    # display(p3)
     savefig(p3, "../DATA/$(test_id)/generation_stack_$(test_id).png")
     return p3 
 end
