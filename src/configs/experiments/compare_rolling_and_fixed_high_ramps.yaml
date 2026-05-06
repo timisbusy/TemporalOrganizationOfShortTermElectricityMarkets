@@ -1,0 +1,19 @@
+# general parameters for experiment
+
+name: compare_rolling_and_fixed # a descriptive name
+compare: market
+
+# Set temporal parameters for experiment - granularity and duration
+timePeriodsPerDay: 24 # number of time periods in a day - this sets the MTU
+clearForDays: 7 # number of days to clear market for
+
+# set the uncertainty in renewable generation
+noiseLevel: 0.0
+
+# choose a market configuration from the markets directory
+marketConfigs: 
+  Rolling: rolling.yaml
+  Fixed: one_intraday.yaml
+
+# choose an agent configuration from the agents directory
+agentConfig: test_agents_high_ramps.yaml

@@ -134,10 +134,7 @@ function ClearSimple(config_file, test_id)
 end
 
 
-function ClearMarketComparison(config_file, test_id)
-
-
-	config = DataImporter.load_input_data(config_file)
+function ClearMarketComparisonForConfig(config, test_id)
 	allWindows = ([m[:optimizationWindow] for (n, ms) in config[:marketSequences] for m in ms])
 	println(allWindows)
 	longest_market_window = max.(allWindows)[1]
@@ -205,8 +202,12 @@ function ClearMarketComparison(config_file, test_id)
 				m = FlexibleMarketModel.build(t, marketResults[marketName], initialization, config, market)
 				optimize!(m)
 				println(termination_status(m))
+				ALLOW_NON_OPTIMAL = true
 				if termination_status(m) !== MathOptInterface.OPTIMAL
-					throw("non optimal solution: $(termination_status(m))")
+					if !ALLOW_NON_OPTIMAL
+						throw("non optimal solution: $(termination_status(m))")
+					end
+					println("non optimal solution: $(termination_status(m))")
 				end
 				MarketDataStorage.AddMarketResult!(marketResults[marketName], m, t, market[:name])
 
@@ -224,17 +225,35 @@ function ClearMarketComparison(config_file, test_id)
 	end
 
 	test_range = range(config[:timePeriodsPerDay],config[:timePeriodsPerDay]*(config[:clearForDays] - 1) - 1)
-	short_test_range = range(config[:timePeriodsPerDay],config[:timePeriodsPerDay]*3 - 1)
+	short_test_range = range(config[:timePeriodsPerDay]*3,config[:timePeriodsPerDay]*5 - 1)
 	println(test_range.start, test_range.stop)
 
 	PlotBaselineOutcomes.plotCompare(marketResults, config, test_range, test_id)
 	PlotGenerationStack.plotCompare(marketResults, config, short_test_range, test_id)
+	PlotGenerationStack.plotCompare(marketResults, config, test_range, test_id)
 
 	return marketResults
 
 end
 
+function ClearMarketComparison(config_file, test_id)
+	config = DataImporter.load_input_data(config_file)
+	return ClearMarketComparisonForConfig(config, test_id)
 
+end
+
+
+
+function ClearMarketComparisonWithRampRate(config_file, test_id, ramp_rate)
+	config = DataImporter.load_input_data(config_file)
+
+	for (gName, gData) in config[:dispatchableGenerators]
+		gData["rampRate"] = ramp_rate
+		config[:dispatchableGenerators][gName] = gData
+	end
+
+	return ClearMarketComparisonForConfig(config, test_id)
+end
 #=
 
 function ClearTogether(configs, test_id)

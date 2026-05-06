@@ -5,8 +5,6 @@ using Printf
 
 include("../market_clearers/clear_market.jl")
 
-include("../plots/comparison/plot_comparison_baseline_outcomes.jl")
-
 
 function RunTest()
 	VerySimpleExperiment()
@@ -23,6 +21,18 @@ function VerySimpleExperiment()
 	println(test_name)
 	result = ClearMarket.ClearSimple("MPLAMarketClearingLib/src/configs/simple_test_config.yaml",test_name)
 	println(result)
+end
+
+function RunSweepRampRatesTest(config_file, start_sweep, end_sweep, step_size)
+	sweep_range = range(start_sweep, end_sweep, step=step_size)
+	println(sweep_range)
+	for ramp_rate in sweep_range
+		test_name = @sprintf "%dcompare_ramps_%.2d" datetime2unix(now()) ramp_rate
+		results_dir = "../DATA/$(test_name)"
+		mkdir(results_dir)
+		println(test_name)
+		result = ClearMarket.ClearMarketComparisonWithRampRate(config_file,test_name, ramp_rate)
+	end
 end
 
 
