@@ -2,7 +2,7 @@ module HelperModelResults
 
 export AgentTypeEnum, AGENT_DEMAND, AGENT_GENERATOR, AGENT_STORAGE
 
-using JuMP, DataFrames
+using JuMP, DataFrames, MathOptInterface
 
 @enum AgentTypeEnum AGENT_DEMAND AGENT_GENERATOR AGENT_STORAGE
 
@@ -18,12 +18,23 @@ DEBUG_DECISIONS = true
 function DecisionVariables(optimization_window::UnitRange{Int}, agent_map::Dict{AgentTypeEnum, Vector{String}}, m::Model)
 	df = DataFrame(mtu=optimization_window, price=Prices(m), SOC=SOCValues_N(m, optimization_window), StorageCharge=StorageChargeQuantities(m, optimization_window), StorageDischarge=StorageDischargeQuantities(m, optimization_window)) 
 
+	if termination_status(m) !== MathOptInterface.OPTIMAL
+		
+		println("non optimal solution: $(termination_status(m))")
+		df = DataFrame(mtu=optimization_window, price=zeros(length(optimization_window)), SOC=zeros(length(optimization_window)), StorageCharge=zeros(length(optimization_window)), StorageDischarge=zeros(length(optimization_window)))
+
+	end
+
 	# add all other decision variables - the gens and demands
 
 	for (a_type, agents) in agent_map
 		agent_type_data = a_type == AGENT_DEMAND ? m.ext[:variables][:Qd] : a_type == AGENT_GENERATOR ? m.ext[:variables][:Qg] : throw("unknown agent type: $a_type")
 		for agent in agents
-			df[!,agent] = [value(agent_type_data[agent,t]) for t in optimization_window]
+			if termination_status(m) !== MathOptInterface.OPTIMAL
+				df[!,agent] = zeros(length(optimization_window))
+			else
+				df[!,agent] = [value(agent_type_data[agent,t]) for t in optimization_window]
+			end
 		end
 	end
 
@@ -34,8 +45,13 @@ function DecisionVariables(optimization_window::UnitRange{Int}, agent_map::Dict{
 			agent_type_price_data = a_type == AGENT_DEMAND ? m.ext[:timeseries][:Pr_dem] : a_type == AGENT_GENERATOR ? m.ext[:timeseries][:Pr_gen] : throw("unknown agent type: $a_type")
 			agent_type_quantity_data = a_type == AGENT_DEMAND ? m.ext[:timeseries][:Q_dem] : a_type == AGENT_GENERATOR ? m.ext[:timeseries][:Q_gen] : throw("unknown agent type: $a_type")
 			for agent in agents
-				df[!,"Q_$agent"] =  [value(agent_type_quantity_data[agent,t]) for t in optimization_window]
-				df[!,"P_$agent"] =  [value(agent_type_price_data[agent,t]) for t in optimization_window]
+				if termination_status(m) !== MathOptInterface.OPTIMAL
+					df[!,"Q_$agent"] = zeros(length(optimization_window))
+					df[!,"P_$agent"] = zeros(length(optimization_window))
+				else
+					df[!,"Q_$agent"] =  [value(agent_type_quantity_data[agent,t]) for t in optimization_window]
+					df[!,"P_$agent"] =  [value(agent_type_price_data[agent,t]) for t in optimization_window]
+				end
 			end
 		end
 	end
