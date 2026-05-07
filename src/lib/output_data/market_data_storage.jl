@@ -244,9 +244,15 @@ function GetEconomicIndicatorsForRange(marketresults,time_range)
 
 
 
-	storage_soc_begin = finalMarketResults[finalMarketResults.mtu .== time_range.start, :SOC][1,1]
+	(storage_soc_begin, has_soc_begin) = StorageSOCForTimePeriod(marketresults, time_range.start - 1)
 
-	storage_soc_end = finalMarketResults[finalMarketResults.mtu .== time_range.stop, :SOC][1,1]
+	(storage_soc_end, has_soc_end) = StorageSOCForTimePeriod(marketresults, time_range.stop)
+
+	if !has_soc_begin || !has_soc_end
+		println("WARNING: SOC begin or end not found. change reported may be invalid.")
+	end
+
+	println("SOC BEGIN = $storage_soc_begin SOC END = $storage_soc_end")
 
 	storage_soc_change = storage_soc_end - storage_soc_begin
 
