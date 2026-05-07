@@ -33,7 +33,7 @@ function plotCompare(market_results, config, test_range, test_id)
     combined_agent_indicators = DataFrame()
     for (marketName, marketResult) in market_results
         println("calculating indicators for: $marketName")
-        (indicators, agent_indicators, transactions, final_market_results) = MarketDataStorage.GetEconomicIndicatorsForRange(marketResult, test_range)
+        (indicators, agent_indicators, transactions, final_market_results, mtu_economic_outcomes) = MarketDataStorage.GetEconomicIndicatorsForRange(marketResult, test_range)
         indicators[!,Symbol("Market Name")] .= marketName
         combined_indicators = vcat(combined_indicators, indicators)
         agent_indicators[!,Symbol("Market Name")] .= marketName
@@ -43,7 +43,11 @@ function plotCompare(market_results, config, test_range, test_id)
         XLSX.writetable("../DATA/$(test_id)/transactions_$(marketName).xlsx", "data" => transactions, "interpretation" => Interpretations.TransactionsInterpretation)
 
         XLSX.writetable("../DATA/$(test_id)/final_market_results_$(marketName).xlsx", "data" => final_market_results, "interpretation" => Interpretations.DecisionVariablesInterpretation)
+        
+        XLSX.writetable("../DATA/$(test_id)/mtu_economic_results_$(marketName).xlsx", "data" => mtu_economic_outcomes) #, "interpretation" => Interpretations.DecisionVariablesInterpretation)
 
+        println("MTU level results for $marketName")
+        println(mtu_economic_outcomes)
     end
     println(combined_indicators)
     println(combined_agent_indicators)
