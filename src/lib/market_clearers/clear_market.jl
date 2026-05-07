@@ -224,7 +224,7 @@ function ClearMarketComparisonForConfig(config, test_id)
 
 	end
 
-	test_range = range(config[:timePeriodsPerDay],config[:timePeriodsPerDay]*(config[:clearForDays] - 1) - 1)
+	test_range = range(config[:timePeriodsPerDay]*2,config[:timePeriodsPerDay]*(config[:clearForDays] - 1) - 1)
 	short_test_range = range(config[:timePeriodsPerDay]*3,config[:timePeriodsPerDay]*5 - 1)
 	println(test_range.start, test_range.stop)
 
