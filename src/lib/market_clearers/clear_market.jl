@@ -7,9 +7,8 @@ using .Helpers.HelperModelResults
 
 include("../data_importer.jl")
 
-# include("../models/rolling_model.jl")
-# include("../models/rolling_model_with_ramp_rates.jl")
 include("../models/flexible_model.jl")
+include("../models/explicit_adjustment_model.jl")
 #=
 include("../plots/plot_hourly_market_equilibrium.jl") # TODO: rename
 include("../plots/plot_market_prices_with_storage.jl")
@@ -46,6 +45,8 @@ include("./market_sequence.jl")
 include("../output_data/market_data_storage.jl")
 include("../output_data/interpretations.jl")
 
+
+USE_EXPLICIT_ADJUSTMENT_MODEL = true
 
 function ClearSimple(config_file, test_id)
 
@@ -106,7 +107,8 @@ function ClearSimple(config_file, test_id)
 		marketsAtTime = MarketSequence.GetMarketsForMTU(marketSequence, t)
 		for market in marketsAtTime
 			println("$(market[:name]) market at time: $t looking ahead $(market[:lookAheadDistance]) with optimization window length $(market[:optimizationWindow])")
-			m = FlexibleMarketModel.build(t, marketresult, initialization, config, market)
+			modelModule = USE_EXPLICIT_ADJUSTMENT_MODEL ? ExplicitAdjustmentMarketModel : FlexibleMarketModel
+			m = modelModule.build(t, marketresult, initialization, config, market)
 			optimize!(m)
 			println(termination_status(m))
 			MarketDataStorage.AddMarketResult!(marketresult, m, t, market[:name])
@@ -199,7 +201,8 @@ function ClearMarketComparisonForConfig(config, test_id)
 			marketsAtTime = MarketSequence.GetMarketsForMTU(marketSequence, t)
 			for market in marketsAtTime
 				println("$(market[:name]) market at time: $t looking ahead $(market[:lookAheadDistance]) with optimization window length $(market[:optimizationWindow])")
-				m = FlexibleMarketModel.build(t, marketResults[marketName], initialization, config, market)
+				modelModule = USE_EXPLICIT_ADJUSTMENT_MODEL ? ExplicitAdjustmentMarketModel : FlexibleMarketModel
+				m = modelModule.build(t, marketResults[marketName], initialization, config, market)
 				optimize!(m)
 				println(termination_status(m))
 				ALLOW_NON_OPTIMAL = true
