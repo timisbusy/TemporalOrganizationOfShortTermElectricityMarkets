@@ -271,20 +271,26 @@ function build_market_clearing!(m::Model, time_period::Int, marketresults, initi
 
     if market[:enforceRampRates]
 
-        m.ext[:constraints][:ramp_limits] = @constraint(
+        m.ext[:constraints][:ramp_limits_up_first] = @constraint(
             m, [g in DG, t in range(OW[1],OW[1])], # for the first hour
-            m.ext[:parameters][:previous_time_period_dispatch][g] - m.ext[:parameters][:ramp_rate][g] <= Qg[g,t] <= m.ext[:parameters][:previous_time_period_dispatch][g] + m.ext[:parameters][:ramp_rate][g]
+            Qg[g,t] <= m.ext[:parameters][:previous_time_period_dispatch][g] + m.ext[:parameters][:ramp_rate][g]
         )
 
-        m.ext[:constraints][:ramp_limits] = @constraint(
+        m.ext[:constraints][:ramp_limits_down_first] = @constraint(
+            m, [g in DG, t in range(OW[1],OW[1])], # for the first hour
+            Qg[g,t] >= m.ext[:parameters][:previous_time_period_dispatch][g] - m.ext[:parameters][:ramp_rate][g]
+        )
+
+        m.ext[:constraints][:ramp_limits_up] = @constraint(
             m, [g in DG, t in OW[2:end] ], # start with the second hour
             Qg[g,t] <= Qg[g,t-1] + m.ext[:parameters][:ramp_rate][g]
         )
 
-         m.ext[:constraints][:ramp_limits] = @constraint(
+        m.ext[:constraints][:ramp_limits_down] = @constraint(
             m, [g in DG, t in OW[2:end] ], # start with the second hour
-            Qg[g,t] >= Qg[g,t-1] - m.ext[:parameters][:ramp_rate][g]
+             Qg[g,t] >= Qg[g,t-1] - m.ext[:parameters][:ramp_rate][g]
         )
+
 
     end
 
