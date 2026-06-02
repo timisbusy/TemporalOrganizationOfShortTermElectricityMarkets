@@ -1,0 +1,127 @@
+# This configuration reflects lauras fixed 36 design
+# Define a set of markets that will be cleared over the course of the experiment
+# all parameters are expressed in MTU - in this case 1h
+
+timePeriodsPerDay: 24 # define the assumed MTU for this market configuration - this allows for validation that this market is appropriate for the experiment
+
+marketSequence:
+  Fixed1of24: # name of market
+    clearingInterval: 24 # number of MTU between market clearing/optimization rounds
+    optimizationWindow: 36 # number of MTU to consider in each clearing
+    lookAheadDistance: 0 # number of MTU after which to start optimization window
+    clockTimeBegin: 12 # number of MTU after midnight to hold first clearing
+  Fixed2of24: # name of market
+    clearingInterval: 24 # number of MTU between market clearing/optimization rounds
+    optimizationWindow: 35 # number of MTU to consider in each clearing
+    lookAheadDistance: 0 # number of MTU after which to start optimization window
+    clockTimeBegin: 13 # number of MTU after midnight to hold first clearing
+  Fixed3of24: # name of market
+    clearingInterval: 24 # number of MTU between market clearing/optimization rounds
+    optimizationWindow: 34 # number of MTU to consider in each clearing
+    lookAheadDistance: 0 # number of MTU after which to start optimization window
+    clockTimeBegin: 14 # number of MTU after midnight to hold first clearing
+  Fixed4of24: # name of market
+    clearingInterval: 24 # number of MTU between market clearing/optimization rounds
+    optimizationWindow: 33 # number of MTU to consider in each clearing
+    lookAheadDistance: 0 # number of MTU after which to start optimization window
+    clockTimeBegin: 15 # number of MTU after midnight to hold first clearing
+  Fixed5of24: # name of market
+    clearingInterval: 24 # number of MTU between market clearing/optimization rounds
+    optimizationWindow: 32 # number of MTU to consider in each clearing
+    lookAheadDistance: 0 # number of MTU after which to start optimization window
+    clockTimeBegin: 16 # number of MTU after midnight to hold first clearing
+  Fixed6of24: # name of market
+    clearingInterval: 24 # number of MTU between market clearing/optimization rounds
+    optimizationWindow: 31 # number of MTU to consider in each clearing
+    lookAheadDistance: 0 # number of MTU after which to start optimization window
+    clockTimeBegin: 17 # number of MTU after midnight to hold first clearing
+  Fixed7of24: # name of market
+    clearingInterval: 24 # number of MTU between market clearing/optimization rounds
+    optimizationWindow: 30 # number of MTU to consider in each clearing
+    lookAheadDistance: 0 # number of MTU after which to start optimization window
+    clockTimeBegin: 18 # number of MTU after midnight to hold first clearing
+  Fixed8of24: # name of market
+    clearingInterval: 24 # number of MTU between market clearing/optimization rounds
+    optimizationWindow: 29 # number of MTU to consider in each clearing
+    lookAheadDistance: 0 # number of MTU after which to start optimization window
+    clockTimeBegin: 19 # number of MTU after midnight to hold first clearing
+  Fixed9of24: # name of market
+    clearingInterval: 24 # number of MTU between market clearing/optimization rounds
+    optimizationWindow: 28 # number of MTU to consider in each clearing
+    lookAheadDistance: 0 # number of MTU after which to start optimization window
+    clockTimeBegin: 20 # number of MTU after midnight to hold first clearing
+  Fixed10of24: # name of market
+    clearingInterval: 24 # number of MTU between market clearing/optimization rounds
+    optimizationWindow: 27 # number of MTU to consider in each clearing
+    lookAheadDistance: 0 # number of MTU after which to start optimization window
+    clockTimeBegin: 21 # number of MTU after midnight to hold first clearing
+  Fixed11of24: # name of market
+    clearingInterval: 24 # number of MTU between market clearing/optimization rounds
+    optimizationWindow: 26 # number of MTU to consider in each clearing
+    lookAheadDistance: 2 # number of MTU after which to start optimization window
+    clockTimeBegin: 22 # number of MTU after midnight to hold first clearing
+  Fixed12of24: # name of market
+    clearingInterval: 24 # number of MTU between market clearing/optimization rounds
+    optimizationWindow: 25 # number of MTU to consider in each clearing
+    lookAheadDistance: 0 # number of MTU after which to start optimization window
+    clockTimeBegin: 23 # number of MTU after midnight to hold first clearing
+  Fixed13of24: # name of market
+    clearingInterval: 24 # number of MTU between market clearing/optimization rounds
+    optimizationWindow: 24 # number of MTU to consider in each clearing
+    lookAheadDistance: 0 # number of MTU after which to start optimization window
+    clockTimeBegin: 0 # number of MTU after midnight to hold first clearing
+  Fixed14of24: # name of market
+    clearingInterval: 24 # number of MTU between market clearing/optimization rounds
+    optimizationWindow: 23 # number of MTU to consider in each clearing
+    lookAheadDistance: 0 # number of MTU after which to start optimization window
+    clockTimeBegin: 1 # number of MTU after midnight to hold first clearing
+  Fixed15of24: # name of market
+    clearingInterval: 24 # number of MTU between market clearing/optimization rounds
+    optimizationWindow: 22 # number of MTU to consider in each clearing
+    lookAheadDistance: 0 # number of MTU after which to start optimization window
+    clockTimeBegin: 2 # number of MTU after midnight to hold first clearing
+  Fixed16of24: # name of market
+    clearingInterval: 24 # number of MTU between market clearing/optimization rounds
+    optimizationWindow: 21 # number of MTU to consider in each clearing
+    lookAheadDistance: 0 # number of MTU after which to start optimization window
+    clockTimeBegin: 3 # number of MTU after midnight to hold first clearing
+  Fixed17of24: # name of market
+    clearingInterval: 24 # number of MTU between market clearing/optimization rounds
+    optimizationWindow: 20 # number of MTU to consider in each clearing
+    lookAheadDistance: 0 # number of MTU after which to start optimization window
+    clockTimeBegin: 4 # number of MTU after midnight to hold first clearing
+  Fixed18of24: # name of market
+    clearingInterval: 24 # number of MTU between market clearing/optimization rounds
+    optimizationWindow: 19 # number of MTU to consider in each clearing
+    lookAheadDistance: 0 # number of MTU after which to start optimization window
+    clockTimeBegin: 5 # number of MTU after midnight to hold first clearing
+  Fixed19of24: # name of market
+    clearingInterval: 24 # number of MTU between market clearing/optimization rounds
+    optimizationWindow: 18 # number of MTU to consider in each clearing
+    lookAheadDistance: 0 # number of MTU after which to start optimization window
+    clockTimeBegin: 6 # number of MTU after midnight to hold first clearing
+  Fixed20of24: # name of market
+    clearingInterval: 24 # number of MTU between market clearing/optimization rounds
+    optimizationWindow: 17 # number of MTU to consider in each clearing
+    lookAheadDistance: 0 # number of MTU after which to start optimization window
+    clockTimeBegin: 7 # number of MTU after midnight to hold first clearing
+  Fixed21of24: # name of market
+    clearingInterval: 24 # number of MTU between market clearing/optimization rounds
+    optimizationWindow: 16 # number of MTU to consider in each clearing
+    lookAheadDistance: 0 # number of MTU after which to start optimization window
+    clockTimeBegin: 8 # number of MTU after midnight to hold first clearing
+  Fixed22of24: # name of market
+    clearingInterval: 24 # number of MTU between market clearing/optimization rounds
+    optimizationWindow: 15 # number of MTU to consider in each clearing
+    lookAheadDistance: 0 # number of MTU after which to start optimization window
+    clockTimeBegin: 9 # number of MTU after midnight to hold first clearing
+  Fixed23of24: # name of market
+    clearingInterval: 24 # number of MTU between market clearing/optimization rounds
+    optimizationWindow: 14 # number of MTU to consider in each clearing
+    lookAheadDistance: 0 # number of MTU after which to start optimization window
+    clockTimeBegin: 10 # number of MTU after midnight to hold first clearing
+  Fixed24of24: # name of market
+    clearingInterval: 24 # number of MTU between market clearing/optimization rounds
+    optimizationWindow: 13 # number of MTU to consider in each clearing
+    lookAheadDistance: 0 # number of MTU after which to start optimization window
+    clockTimeBegin: 11 # number of MTU after midnight to hold first clearing
