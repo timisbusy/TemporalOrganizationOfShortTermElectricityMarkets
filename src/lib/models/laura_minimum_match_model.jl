@@ -76,7 +76,6 @@ function process_time_series_data!(m::Model, time_period::Int, marketresults, in
         g = String(gname)
         P = float(gdata_any["bidPrice"])   # constant bid price P [EUR/MWh]
         Q = float(gdata_any["capacity"] * m.ext[:sets][:power_to_energy_scale])   # constant capacity Q [MWh/mtu]
-
         for t in OW
             Pr_gen[(g,t)] = P
             Q_gen[(g,t)]  = Q
@@ -103,7 +102,7 @@ function process_time_series_data!(m::Model, time_period::Int, marketresults, in
     end
 
 
-    if true
+    if true && var["Wind"]["capacity"] > 0.0
         HelperInputData.add_wind_forecast_noise!(
             Q_gen,
             "Wind",
@@ -271,7 +270,6 @@ function build_market_clearing!(m::Model, time_period::Int, marketresults, initi
             sum(Qg[g,t] for g in IG) - sum(Qd[d,t] for d in ID) == 0
         )
     end
-    
     # generator limits: generation cannot exceed available capacity Q_gen[g,t]
     m.ext[:constraints][:gen_limits] = @constraint(
         m, [g in IG, t in OW],

@@ -16,7 +16,7 @@ end
 
 function VerySimpleExperiment()
 	test_name = @sprintf "supersimple%d" datetime2unix(now())
-	results_dir = "../DATA/$(test_name)"
+	results_dir = "results/$(test_name)"
 	mkdir(results_dir)
 	println(test_name)
 	result = ClearMarket.ClearSimple("MPLAMarketClearingLib/src/configs/simple_test_config.yaml",test_name)
@@ -28,20 +28,20 @@ function RunSweepRampRatesTest(test_output_name, config_file, start_sweep, end_s
 	println(sweep_range)
 	for ramp_rate in sweep_range
 		test_name = @sprintf "%d_%s_%.2f" datetime2unix(now()) test_output_name ramp_rate
-		results_dir = "../DATA/$(test_name)"
+		results_dir = "results/$(test_name)"
 		mkdir(results_dir)
 		println(test_name)
 		result = ClearMarket.ClearMarketComparisonWithRampRate(config_file,test_name, ramp_rate)
 	end
 end
 
-function ValidateWithLaurasModel(output_name, config_file)
+function RunBasic(output_name, config_file)
 	test_name = @sprintf "%d_%s" datetime2unix(now()) output_name
-	results_dir = "../DATA/$(test_name)"
+	results_dir = "results/$(test_name)"
 	mkdir(results_dir)
 	println(test_name)
 	result = ClearMarket.ClearSimple(config_file,test_name)
-	
+	println("Results can be found here: $results_dir")
 end
 
 

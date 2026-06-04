@@ -64,7 +64,7 @@ function plot(marketresult, config, test_range, test_id)
         label="Demand + Charging", color=:black, lw=3, ls=:dash)
     
     display(p3)
-    savefig(p3, "../DATA/$(test_id)/generation_stack_$(test_id).png")
+    savefig(p3, "results/$(test_id)/generation_stack_$(test_id).png")
     return p3 
 end
 
@@ -193,7 +193,7 @@ function plotCompare(market_results, config, test_range, test_id)
     display(p4)
 =#
     # display(p3)
-    savefig(p3, "../DATA/$(test_id)/generation_stack_$(test_id).png")
+    savefig(p3, "results/$(test_id)/generation_stack_$(test_id).png")
     return p3 
 end
 
