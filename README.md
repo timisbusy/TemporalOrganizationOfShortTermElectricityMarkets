@@ -1,11 +1,41 @@
 
 # Temporal Organization of Short-Term Electricity Markets
 
+# Installation
+
+To run experiments on this platform, you will need to:
+1. [Install Julia](https://julialang.org/downloads/) and [install julia packages](https://pkgdocs.julialang.org/v1/getting-started/).
+  ```
+  # After navigating to the TemporalOrganizationOfShortTermElectricityMarkets directory, you can use the following commands in your terminal
+  > julia
+  > ]
+  > activate .
+  > instantiate
+  ```
+2. [Install jupyterlab](https://jupyterlab.readthedocs.io/en/stable/getting_started/installation.html).
+3. Run jupyterlab from the TemporalOrganizationOfShortTermElectricityMarkets directory. Open the `UseExcelInput.ipynb` file or create your own.
+
+A simple test experiment can be run as follows:
+
+```
+include("src/lib/experiments/test_experiment.jl")
+
+# parameter 1: experiment name
+# parameter 2: location of experiment xlsx file
+TestExperiment.RunBasic("xlsx_test", "src/configs/xlsx/experiments/OneIntraday.xlsx")
+
+println("done")
+```
+
+The output will tell you where in the `results` folder to look for the results of this experiment.
+
 # Inputs
 
 ## Experiment Configuration
 
 The experiment configuration `.yaml` file includes the information needed to define the experiment to be run, including the high-level temporal parameters like `timePeriodsPerDay`, which implicitly sets the market time unit (MTU), and `clearForDays` which defines the duration of experiment simulation. The configuration also includes a reference to the market configuration to apply and the agent configuration to use for the experiment.
+
+You will also find `.xlsx` files in `src/configs/xlsx` that allow for configuration throug excel files. These mirror `yaml` inputs. As they have been recently added, they are not feature complete. For example, comparing across market designs is not yet supported.
 
 A simple experiment runs a simulation for `clearForDays` days and data are analyzed for the time between the beginning of the second day of the simulation until the second to last day of the simulation. This allows the market sequence to start up on day one and gives each day in the test period adequate coverage.
 
