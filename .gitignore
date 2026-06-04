@@ -2,4 +2,3 @@
 /src/preprocess
 /src/lib/plots/archive
 *.sublime-workspace
-/results/*
