@@ -1,6 +1,6 @@
 # general parameters
 
-name: validate_laura_rolling_no_storage_low_ramps_36 # descriptive name for experiment
+name: validate_laura_rolling_low_storage_low_ramps_36 # descriptive name for experiment
 
 # Set temporal parameters for experiment - granularity and duration
 timePeriodsPerDay: 24 # number of time periods in a day

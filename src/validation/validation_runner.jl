@@ -11,25 +11,17 @@ function PerformValidation()
 	DetectAllDifferences()
 end
 
-# "1780166789_validate_laura_rolling_high_storage_72"
-# "1780163295_validate_laura_rolling_high_storage_48"
-# "1780151782_validate_laura_rolling_high_storage_36"
-# "1780065970_validate_laura_rolling_36"
-# "1779972902_validate_laura_rolling_48"
-# "1779975384_validate_laura_rolling_72"
-# "1779969501_validate_laura_fixed_36"
-
 # "C:\Users\Atkin005\OneDrive - Universiteit Utrecht\Documents\julia\DATA\1779983733_validate_laura_rolling_36"
 TimPathForCase = Dict{String,String}(
 	"Rolling36" => "../DATA/1780400995_validate_laura_rolling_36/decisionvariables_validate_laura_rolling_36_",
-	"Rolling72" => "../DATA/1780403335_validate_laura_rolling_72/decisionvariables_validate_laura_rolling_72_",
+	"Rolling72" => "../DATA/1780504673_validate_laura_rolling_72/decisionvariables_validate_laura_rolling_72_",
 	"Rolling48" => "../DATA/1780401797_validate_laura_rolling_48/decisionvariables_validate_laura_rolling_48_",
 	"Fixed36" => "../DATA/1780404769_validate_laura_fixed_36/decisionvariables_validate_laura_fixed_36_",
 	"HighStorageRolling36" => "../DATA/1780400275_validate_laura_rolling_high_storage_36/decisionvariables_validate_laura_rolling_high_storage_36_",
 	"HighStorageRolling48" => "../DATA/1780398907_validate_laura_rolling_high_storage_48/decisionvariables_validate_laura_rolling_high_storage_48_",
-	"HighStorageRolling72" => "../DATA/1780397437_validate_laura_rolling_high_storage_72/decisionvariables_validate_laura_rolling_high_storage_72_",
-	"NoStorageLowRamps" => "../DATA/1780405408_validate_laura_rolling_no_storage_low_ramps_36/decisionvariables_validate_laura_rolling_no_storage_low_ramps_36_",
-	"LowStorageLowRamps" => "../DATA/1780406391_validate_laura_rolling_low_storage_low_ramps_36/decisionvariables_validate_laura_rolling_low_storage_low_ramps_36_",
+	"HighStorageRolling72" => "../DATA/1780501951_validate_laura_rolling_high_storage_72/decisionvariables_validate_laura_rolling_high_storage_72_",
+	"NoStorageLowRamps" => "../DATA/1780482176_validate_laura_rolling_no_storage_low_ramps_36/decisionvariables_validate_laura_rolling_no_storage_low_ramps_36_",
+	"LowStorageLowRamps" => "../DATA/1780481630_validate_laura_rolling_low_storage_low_ramps_36/decisionvariables_validate_laura_rolling_low_storage_low_ramps_36_",
 )
 
 LauraPathForCase = Dict{String,String}(
@@ -47,6 +39,7 @@ LauraPathForCase = Dict{String,String}(
 
 ALL_CASES = ["Fixed36", "Rolling36", "Rolling48", "Rolling72", "HighStorageRolling36", "HighStorageRolling48", "HighStorageRolling72", "LowStorageLowRamps", "NoStorageLowRamps"]
 SELECT_CASE = ["HighStorageRolling36"]
+_72_HR_CASES = ["Rolling72", "HighStorageRolling72"]
 
 function DetectAllDifferences()
 	df = DataFrame(Case=[], SEW_NRMSE=Float64[], SEW_Samples=Float64[], PriceNRMSE=Float64[], PriceSamples=Float64[])
