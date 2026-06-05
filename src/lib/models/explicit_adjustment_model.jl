@@ -102,16 +102,20 @@ function process_time_series_data!(m::Model, time_period::Int, marketresults, in
         end
     end
 
-
-    if true && var["Wind"]["capacity"] > 0.0
-        HelperInputData.add_wind_forecast_noise!(
-            Q_gen,
-            "Wind",
-            Float64(var["Wind"]["capacity"]),
-            OW,
-            time_period;
-            precomputed_errors=data[:wind_forecast_errors],
-        )
+    # adding forecast noise to all variable generators
+    if true 
+        for (gname, gdata_any) in var
+            if gdata_any["capacity"] > 0.0
+                HelperInputData.add_wind_forecast_noise!(
+                    Q_gen,
+                    gname,
+                    Float64(var[gname]["capacity"]),
+                    OW,
+                    time_period;
+                    precomputed_errors=data[:wind_forecast_errors],
+                )
+            end
+        end
     end
 
 

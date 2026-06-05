@@ -200,7 +200,10 @@ function GetEconomicIndicatorsForRange(marketresults,time_range)
 	# handle gens and demands
 	agentMap = marketresults[1].AgentMap
 
-	for (a_type, agents) in agentMap 
+	display_order = [HelperModelResults.AGENT_DEMAND, HelperModelResults.AGENT_GENERATOR]
+
+	for a_type in display_order
+		agents = agentMap[a_type] 
 		for agent in agents
 			# add some calculated columns
 			if (a_type == HelperModelResults.AGENT_DEMAND)

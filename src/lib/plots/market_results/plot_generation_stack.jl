@@ -16,7 +16,7 @@ function plot(marketresult, config, test_range, test_id)
     gen_colors = [:steelblue, :lightgreen, :red, :lightyellow, :coral, :orange]
 
     # Manual stacking order
-    stack_order = ["Base", "Shoulder", "Peak", "Wind", "Solar"]
+    stack_order = marketresult[1].AgentMap[Helpers.HelperModelResults.AGENT_GENERATOR]# ["Base", "Shoulder", "Peak", "Wind", "Solar"]
 
     # Build matrix for areaplot (each row is a generator, each column is an mtu)
     stack_matrix = zeros(length(stack_order), length(test_range))
@@ -74,7 +74,7 @@ function plotCompare(market_results, config, test_range, test_id)
     gen_colors = [:purple4, :royalblue1, :seagreen1, :green2, :orangered, :deeppink]
 
     # Manual stacking order
-    stack_order = ["Base", "Shoulder", "Peak", "Wind", "Solar"]
+    stack_order = marketresult[1].AgentMap[Helpers.HelperModelResults.AGENT_GENERATOR]
 
     marker_shapes = [:circle,:star5]
 
