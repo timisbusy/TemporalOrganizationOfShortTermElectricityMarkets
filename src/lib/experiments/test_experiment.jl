@@ -23,11 +23,11 @@ function VerySimpleExperiment()
 	println(result)
 end
 
-function RunSweepRampRatesTest(config_file, start_sweep, end_sweep, step_size)
+function RunSweepRampRatesTest(test_output_name, config_file, start_sweep, end_sweep, step_size)
 	sweep_range = range(start_sweep, end_sweep, step=step_size)
 	println(sweep_range)
 	for ramp_rate in sweep_range
-		test_name = @sprintf "%dcompare_ramps_%.2f" datetime2unix(now()) ramp_rate
+		test_name = @sprintf "%d_%s_%.2f" datetime2unix(now()) test_output_name ramp_rate
 		results_dir = "../DATA/$(test_name)"
 		mkdir(results_dir)
 		println(test_name)

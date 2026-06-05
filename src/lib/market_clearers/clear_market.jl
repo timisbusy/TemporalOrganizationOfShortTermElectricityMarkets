@@ -190,7 +190,7 @@ function ClearMarketComparisonForConfig(config, test_id)
 	    	throw("demand profile for $dName is incomplete. it should either include a profile key or both profile_file and profile_type keys or a quantity_constant key")
 	    end
     end
-    mePlotDone = false
+    mePlotDone = true # switching this off for now
 
     # for each market in marketSequences note the nesting here so a single time period could hold more than one market (but really probably won't in most cases) - case where it would - could be when holding a market 2 days ahead, for example
 

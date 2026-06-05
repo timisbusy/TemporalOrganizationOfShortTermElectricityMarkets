@@ -13,8 +13,6 @@ function OptimizationWindow(m::Model)
 	return m.ext[:sets][:OW]
 end
 
-DEBUG_DECISIONS = true
-
 function DecisionVariables(optimization_window::UnitRange{Int}, agent_map::Dict{AgentTypeEnum, Vector{String}}, m::Model)
 	df = DataFrame(mtu=optimization_window, price=Prices(m), SOC=SOCValues_N(m, optimization_window), StorageCharge=StorageChargeQuantities(m, optimization_window), StorageDischarge=StorageDischargeQuantities(m, optimization_window)) 
 
@@ -27,33 +25,33 @@ function DecisionVariables(optimization_window::UnitRange{Int}, agent_map::Dict{
 
 	# add all other decision variables - the gens and demands
 
-	for (a_type, agents) in agent_map
-		agent_type_data = a_type == AGENT_DEMAND ? m.ext[:variables][:Qd] : a_type == AGENT_GENERATOR ? m.ext[:variables][:Qg] : throw("unknown agent type: $a_type")
-		for agent in agents
-			if termination_status(m) !== MathOptInterface.OPTIMAL
-				df[!,agent] = zeros(length(optimization_window))
-			else
-				df[!,agent] = [value(agent_type_data[agent,t]) for t in optimization_window]
+	ramp_limit_up_duals = RampLimitUpDuals(m)
+	ramp_limit_down_duals = RampLimitDownDuals(m)
+	
+
+	explicitAgentMapOrder = ["Base_D", "Flex", "Base", "Shoulder", "Peak", "Wind", "Solar"] # Note: this will ignore any new agents that are not in the list - TODO: fix this
+	for agent in explicitAgentMapOrder
+		if termination_status(m) !== MathOptInterface.OPTIMAL
+			df[!,agent] = zeros(length(optimization_window))
+		else
+			a_type = in(agent, agent_map[AGENT_DEMAND]) ? AGENT_DEMAND : AGENT_GENERATOR
+			agent_type_data = a_type == AGENT_DEMAND ? m.ext[:variables][:Qd] : a_type == AGENT_GENERATOR ? m.ext[:variables][:Qg] : throw("unknown agent type: $a_type")
+			df[!,agent] = [value(agent_type_data[agent,t]) for t in optimization_window]
+			if haskey(ramp_limit_up_duals, agent)
+				df[!,"$(agent)_ramp_up_dual"] = ramp_limit_up_duals[agent]
+				df[!,"$(agent)_ramp_down_dual"] = ramp_limit_down_duals[agent]
 			end
 		end
 	end
 
-	# add bids for debugging
+	# add bid quantities and prices for validation - new loop so these appear later in the output - including these values also in cases of non-optimal optimization outcome
 
-	if DEBUG_DECISIONS
-		for (a_type, agents) in agent_map
-			agent_type_price_data = a_type == AGENT_DEMAND ? m.ext[:timeseries][:Pr_dem] : a_type == AGENT_GENERATOR ? m.ext[:timeseries][:Pr_gen] : throw("unknown agent type: $a_type")
-			agent_type_quantity_data = a_type == AGENT_DEMAND ? m.ext[:timeseries][:Q_dem] : a_type == AGENT_GENERATOR ? m.ext[:timeseries][:Q_gen] : throw("unknown agent type: $a_type")
-			for agent in agents
-				if termination_status(m) !== MathOptInterface.OPTIMAL
-					df[!,"Q_$agent"] = zeros(length(optimization_window))
-					df[!,"P_$agent"] = zeros(length(optimization_window))
-				else
-					df[!,"Q_$agent"] =  [value(agent_type_quantity_data[agent,t]) for t in optimization_window]
-					df[!,"P_$agent"] =  [value(agent_type_price_data[agent,t]) for t in optimization_window]
-				end
-			end
-		end
+	for agent in explicitAgentMapOrder
+		a_type = in(agent, agent_map[AGENT_DEMAND]) ? AGENT_DEMAND : AGENT_GENERATOR
+		agent_type_price_data = a_type == AGENT_DEMAND ? m.ext[:timeseries][:Pr_dem] : a_type == AGENT_GENERATOR ? m.ext[:timeseries][:Pr_gen] : throw("unknown agent type: $a_type")
+		agent_type_quantity_data = a_type == AGENT_DEMAND ? m.ext[:timeseries][:Q_dem] : a_type == AGENT_GENERATOR ? m.ext[:timeseries][:Q_gen] : throw("unknown agent type: $a_type")
+		df[!,"Q_$agent"] =  [value(agent_type_quantity_data[agent,t]) for t in optimization_window]
+		df[!,"P_$agent"] =  [value(agent_type_price_data[agent,t]) for t in optimization_window]
 	end
 
 	return df
@@ -89,9 +87,39 @@ end
 
 function Prices(m::Model)
 	# compute market-clearing prices for each time period as duals of the energy balance constraints
+	return Lambdas(m)
+end
+
+function Lambdas(m::Model)
 	OW = OptimizationWindow(m)
-	λ  = dual.(m.ext[:constraints][:energy_balance])   # hourly prices [EUR/MWh]
+	λ  = dual.(m.ext[:constraints][:energy_balance])   # per MTU prices [EUR/MWh]
+	println("DUALS of ramp limits up $(RampLimitUpDuals(m))")
+	println("DUALS of ramp limits down $(RampLimitDownDuals(m))")
 	return [λ[t] for t in OW]
+end
+
+function RampLimitUpDuals(m::Model)
+	OW = OptimizationWindow(m)
+	generators = ["Base", "Shoulder", "Peak"]# Generators(m)
+	rampDual  = dual.(m.ext[:constraints][:ramp_limits_up])   # per generator/MTU ramp up dual  [EUR/MWh]
+	rampDualFirst  = dual.(m.ext[:constraints][:ramp_limits_up_first])   # per generator ramp up dual for first MTU [EUR/MWh]
+	rampLimitUpDuals = Dict{String,Vector{Float64}}()
+	for g in generators
+		rampLimitUpDuals[g] = [(t == OW.start ? rampDualFirst[g,t] : rampDual[g,t]) for t in OW]
+	end
+	return rampLimitUpDuals
+end
+
+function RampLimitDownDuals(m::Model)
+	OW = OptimizationWindow(m)
+	generators = ["Base", "Shoulder", "Peak"]# Generators(m)
+	rampDual  = dual.(m.ext[:constraints][:ramp_limits_down])   # per generator/MTU ramp down dual  [EUR/MWh]
+	rampDualFirst  = dual.(m.ext[:constraints][:ramp_limits_down_first])   # per generator ramp down dual for first MTU [EUR/MWh]
+	rampLimitDownDuals = Dict{String,Vector{Float64}}()
+	for g in generators
+		rampLimitDownDuals[g] = [(t == OW.start ? rampDualFirst[g,t] : rampDual[g,t]) for t in OW]
+	end
+	return rampLimitDownDuals
 end
 
 

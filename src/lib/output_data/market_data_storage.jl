@@ -179,14 +179,15 @@ function GetEconomicIndicatorsForRange(marketresults,time_range)
 	
 	indicators = DataFrame(SEW=[],ProducerSurplus=[],ConsumerSurplus=[],StorageRevenue=[])# , WeightedAveragePrice=[])
 	agent_indicators = DataFrame(Agent=[],Quantity=[],LoadUtility=[],Payments=[],Revenue=[],FuelCost=[],Surplus=[],SOCChange=[])
-
-	if length(marketresults) < 1
-		return (indicators, agent_indicators)
-	end
+	mtu_economic_indicators = DataFrame(MTU=[],SEW=[],ProducerSurplus=[],ConsumerSurplus=[],StorageRevenue=[])
 
 	# get data from market clearing
 	finalMarketResults = GetMarketResultsForRange(marketresults,time_range)
 	transactions = GetTransactionsForRange(marketresults,time_range)
+
+	if length(marketresults) < 1
+		return (indicators, agent_indicators, transactions, finalMarketResults, mtu_economic_indicators)
+	end
 
 	# add calculated columns to transactions
 	quantity_symbol = Symbol("Quantity (MWh)")
@@ -243,9 +244,15 @@ function GetEconomicIndicatorsForRange(marketresults,time_range)
 
 
 
-	storage_soc_begin = finalMarketResults[finalMarketResults.mtu .== time_range.start, :SOC][1,1]
+	(storage_soc_begin, has_soc_begin) = StorageSOCForTimePeriod(marketresults, time_range.start - 1)
 
-	storage_soc_end = finalMarketResults[finalMarketResults.mtu .== time_range.stop, :SOC][1,1]
+	(storage_soc_end, has_soc_end) = StorageSOCForTimePeriod(marketresults, time_range.stop)
+
+	if !has_soc_begin || !has_soc_end
+		println("WARNING: SOC begin or end not found. change reported may be invalid.")
+	end
+
+	println("SOC BEGIN = $storage_soc_begin SOC END = $storage_soc_end")
 
 	storage_soc_change = storage_soc_end - storage_soc_begin
 
@@ -291,8 +298,49 @@ function GetEconomicIndicatorsForRange(marketresults,time_range)
 	sew = consumer_surplus + producer_surplus
 	push!(indicators,[sew,producer_surplus,consumer_surplus,storage_revenue]) #,weighted_average_price])
 
+	for mtu in time_range
+		mtu_storage_revenue = combine((transactions[transactions.Agent .== "Storage" .&& transactions[!, mtu_symbol] == mtu, :]), payrev_symbol => sum)[1,1]
+		mtu_storage_revenue = isapprox(mtu_storage_revenue, 0.0, atol=1e-4) ? 0.0 : mtu_storage_revenue
+		mtu_consumer_surplus = 0.0
+		mtu_producer_surplus = 0.0
+		for (a_type, agents) in agentMap 
+			for agent in agents
+				mtu_finalMarketResults = finalMarketResults[finalMarketResults.mtu .== mtu, :]
+				mtu_transactions = transactions[transactions[!, mtu_symbol] .== mtu, :]
+				mtu_quantity = combine(mtu_finalMarketResults, Symbol(agent) => sum)[1,1]
+				mtu_load_utility = (a_type == HelperModelResults.AGENT_DEMAND) ? combine(mtu_finalMarketResults, Symbol("utility_$agent") => sum)[1,1] : 0.0
+				mtu_payments = (a_type == HelperModelResults.AGENT_DEMAND) ? combine((mtu_transactions[mtu_transactions.Agent .== agent, :]), payrev_symbol => sum)[1,1] : 0.0
+				mtu_revenue = (a_type == HelperModelResults.AGENT_GENERATOR) ? combine((mtu_transactions[mtu_transactions.Agent .== agent, :]), payrev_symbol => sum)[1,1] : 0.0
+				mtu_fuel_cost = (a_type == HelperModelResults.AGENT_GENERATOR) ? combine(mtu_finalMarketResults, Symbol("fuelcost_$agent") => sum)[1,1] : 0.0
+				mtu_surplus = (mtu_load_utility - mtu_payments) + (mtu_revenue - mtu_fuel_cost)
 
-	return (indicators, agent_indicators, transactions, finalMarketResults)
+				mtu_quantity = isapprox(mtu_quantity, 0.0, atol=1e-4) ? 0.0 : mtu_quantity
+				mtu_load_utility = isapprox(mtu_load_utility, 0.0, atol=1e-4) ? 0.0 : mtu_load_utility
+				mtu_payments = isapprox(mtu_payments, 0.0, atol=1e-4) ? 0.0 : mtu_payments
+				mtu_revenue = isapprox(mtu_revenue, 0.0, atol=1e-4) ? 0.0 : mtu_revenue
+				mtu_fuel_cost = isapprox(mtu_fuel_cost, 0.0, atol=1e-4) ? 0.0 : mtu_fuel_cost
+				mtu_surplus = isapprox(mtu_surplus, 0.0, atol=1e-4) ? 0.0 : mtu_surplus
+
+
+				# note: more per agent economic info here that is not being reported out yet
+
+				if a_type == HelperModelResults.AGENT_DEMAND
+					mtu_consumer_surplus += mtu_surplus
+				else
+					mtu_producer_surplus += mtu_surplus
+				end
+			end
+		end
+		# mtu_consumer_surplus = combine((finalMarketResults[ [a in agentMap[HelperModelResults.AGENT_DEMAND] for a in agent_indicators[!, :Agent]] .&& finalMarketResults.mtu .== mtu, :]), :Surplus => sum)[1,1] 
+		# mtu_producer_surplus = combine((finalMarketResults[ [a in agentMap[HelperModelResults.AGENT_GENERATOR] for a in agent_indicators[!, :Agent]] .&& finalMarketResults.mtu .== mtu, :]), :Surplus => sum)[1,1] 
+		
+
+		mtu_sew = mtu_consumer_surplus + mtu_producer_surplus
+		push!(mtu_economic_indicators,[mtu, mtu_sew,mtu_producer_surplus,mtu_consumer_surplus,mtu_storage_revenue]) #,weighted_average_price])
+
+	end
+
+	return (indicators, agent_indicators, transactions, finalMarketResults, mtu_economic_indicators)
 end
 
 end;
