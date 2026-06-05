@@ -33,7 +33,7 @@ end
 function load_input_data(path::String)
     # Read the YAML file into a nested Julia Dict/Array structure
     cfg = YAML.load_file(path)
-
+    println(cfg)
     # Internal data dictionary that we pass to the other functions
     data = Dict{Symbol,Any}()
 

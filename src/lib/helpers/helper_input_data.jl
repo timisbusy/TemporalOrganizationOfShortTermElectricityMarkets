@@ -1,6 +1,6 @@
 module HelperInputData
 
-using CSV, DataFrames, Dates
+using CSV, DataFrames, Dates, XLSX
 
 # adds noise to the input Q_gen_window for generator g from first_time_period to last_time_period. constrained by total_capacity and with magnitude noise_std
 
@@ -61,6 +61,133 @@ function add_noise_pre!(input_profile, noise_std, first_time_period, last_time_p
     return input_profile
 end
 
+# this is from Laura, modified to meet my usage
+
+
+function validate_wind_forecast_error_coverage(forecast_errors::AbstractDict{Tuple{Int, Int}, Float64},
+                                               simulation_hours::Int,
+                                               max_window_length::Int)
+    simulation_hours >= 1 || error("simulation_hours must be >= 1")
+    max_window_length >= 1 || error("max_window_length must be >= 1")
+
+    missing_examples = Tuple{Int, Int}[]
+    missing_count = 0
+
+    for window_start_hour in 1:simulation_hours
+        for lead_time in 1:max_window_length
+            abs_hour = window_start_hour + lead_time - 1
+            if !haskey(forecast_errors, (window_start_hour, abs_hour))
+                missing_count += 1
+                if length(missing_examples) < 5
+                    push!(missing_examples, (window_start_hour, abs_hour))
+                end
+            end
+        end
+    end
+
+    if missing_count > 0
+        example_str = join(["($(window_start_hour), $(abs_hour))" for (window_start_hour, abs_hour) in missing_examples], ", ")
+        error("Wind forecast error scenario is missing $missing_count required (window_start_hour, abs_hour) pairs; first missing examples: $example_str")
+    end
+
+    return nothing
+end
+
+function wind_forecast_error_rows_from_csv(scenario_path::AbstractString)
+    isfile(scenario_path) || error("Scenario file not found: $scenario_path")
+
+    df = CSV.read(scenario_path, DataFrame)
+    required_cols = [:window_start_hour, :abs_hour, :lead_time, :forecast_error]
+    for col in required_cols
+        hasproperty(df, col) || error("Scenario CSV missing required column: $(String(col))")
+    end
+
+    if !hasproperty(df, :raw_draw)
+        df.raw_draw = zeros(Float64, nrow(df))
+    end
+    if !hasproperty(df, :z_value)
+        df.z_value = zeros(Float64, nrow(df))
+    end
+    if !hasproperty(df, :std_dev)
+        df.std_dev = zeros(Float64, nrow(df))
+    end
+
+    forecast_errors = Dict{Tuple{Int, Int}, Float64}()
+    for row in eachrow(df)
+        window_start_hour = Int(row.window_start_hour)
+        abs_hour = Int(row.abs_hour)
+        lead_time = Int(row.lead_time)
+        lead_time == abs_hour - window_start_hour + 1 || error("Inconsistent lead_time in scenario CSV for ($window_start_hour, $abs_hour)")
+        haskey(forecast_errors, (window_start_hour, abs_hour)) && error("Duplicate scenario CSV row for ($window_start_hour, $abs_hour)")
+        forecast_errors[(window_start_hour, abs_hour)] = Float64(row.forecast_error)
+    end
+
+    return forecast_errors, maximum(df.window_start_hour), maximum(df.abs_hour)
+end
+
+function load_or_create_wind_forecast_error_scenario!(cfg::Dict, max_noise_std::Float64, simulation_hours::Int, max_window_length::Int)
+    scenario_path = cfg[:wind_noise_scenario_path]
+    noise_seed = 20260325
+    scenario_total_hours = max(simulation_hours, 792)
+    scenario_max_window_length = max(max_window_length, 72)
+    required_abs_hour = scenario_total_hours + scenario_max_window_length
+
+    if isfile(scenario_path)
+        endswith(lowercase(scenario_path), ".csv") || error("Predefined wind forecast error scenario must be a CSV file: $scenario_path")
+        forecast_errors, stored_max_window_start, stored_max_abs_hour = wind_forecast_error_rows_from_csv(scenario_path)
+        if stored_max_window_start < scenario_total_hours || stored_max_abs_hour < required_abs_hour
+            error("Wind forecast error scenario file is too small for this run. Increase wind_noise_total_hours or wind_noise_max_look_ahead and regenerate: $scenario_path")
+        end
+        validate_wind_forecast_error_coverage(forecast_errors, scenario_total_hours, scenario_max_window_length)
+        return forecast_errors
+    end
+
+    throw("only allowing loaded file for wind noise creation for now")
+    #=
+    forecast_errors, rows = generate_wind_forecast_error_scenario(scenario_total_hours, scenario_max_window_length, max_noise_std; seed=noise_seed)
+    endswith(lowercase(scenario_path), ".csv") || error("Predefined wind forecast error scenario must be a CSV file: $scenario_path")
+    write_wind_forecast_error_rows_csv(scenario_path, rows)
+    validate_wind_forecast_error_coverage(forecast_errors, scenario_total_hours, scenario_max_window_length)
+    return forecast_errors
+    =#
+end
+
+function add_wind_forecast_noise!(Q_gen::Dict, gen::String, max_capacity::Float64, optimization_window::UnitRange{Int}, current_mtu::Int; precomputed_errors::Union{Nothing, Dict{Tuple{Int, Int}, Float64}}=nothing)
+
+
+    precomputed_errors === nothing && error("precomputed_errors is required when wind forecast noise is enabled")
+
+
+    for mtu in optimization_window
+        # note modifications here to align input data with LLD's implementation
+        offset = 11
+        if current_mtu < offset + 1 || mtu < offset + 1
+            continue
+        end
+
+        haskey(precomputed_errors, (current_mtu - offset, mtu - offset)) || error("Missing precomputed wind forecast error for ($(current_mtu), $(mtu))")
+        new_error = precomputed_errors[(current_mtu - offset, mtu - offset)]
+
+        current_value = Q_gen[(gen, mtu)]
+        current_af = current_value / max_capacity
+        new_af = clamp(current_af * (1 + new_error), 0.0, 1.0)
+        Q_gen[(gen, mtu)] = max_capacity * new_af
+    end
+
+end
+
+
+function ImportDataFromFile(filepath)
+    println("importing: $(filepath)")
+    if endswith(filepath, "csv")
+        return ImportDataFromCSV(filepath)
+    elseif endswith(filepath, "xlsx")
+        return ImportDataFromXLSX(filepath)
+    else
+        throw("unrecognized input file: $filepath")
+    end 
+end
+
 
 function ImportDataFromCSV(filepath)
     println("importing: $(filepath)")
@@ -69,15 +196,25 @@ function ImportDataFromCSV(filepath)
     return data
 end
 
+function ImportDataFromXLSX(filepath)
+
+    xf = XLSX.readxlsx(filepath)
+    
+    println(XLSX.sheetnames(xf))
+    # data = DataFrame(XLSX.File(filepath,dateformat="y-mm-dd H:M:S"))
+    # println(data)
+    throw("not ready to import xlsx data yet: $filepath")
+end
+
 # we assume we are using NED.nl data, with known fields and hourly data 
 # field allows us to extract the data we need (sometimes "percentage", sometimes "volume (kWh)")
 # periodsPerDay allows for extrapolation/expansion of data to meet expectations of caller
 
-function GetProfileFromCSV(filepath, field, dateRange, periodsPerDay)
+function GetProfileFromFile(filepath, field, dateRange, periodsPerDay)
     if periodsPerDay % 24 != 0
         throw("invalid number of periods per day: $periodsPerDay - should be a multiple of 24")
     end
-    data = ImportDataFromCSV(filepath)
+    data = ImportDataFromFile(filepath)
     hourly_profile_data = data[(dateRange.start .<= data[!,"validfrom (UTC)"] .< dateRange.stop), :][:,field]
     
     periods_per_hour = (periodsPerDay/24)

@@ -35,6 +35,14 @@ function RunSweepRampRatesTest(test_output_name, config_file, start_sweep, end_s
 	end
 end
 
+function ValidateWithLaurasModel(output_name, config_file)
+	test_name = @sprintf "%d_%s" datetime2unix(now()) output_name
+	results_dir = "../DATA/$(test_name)"
+	mkdir(results_dir)
+	println(test_name)
+	result = ClearMarket.ClearSimple(config_file,test_name)
+	
+end
 
 
 #=

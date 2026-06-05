@@ -9,6 +9,8 @@ include("../data_importer.jl")
 
 include("../models/flexible_model.jl")
 include("../models/explicit_adjustment_model.jl")
+include("../models/laura_convergence_model.jl")
+include("../models/laura_minimum_match_model.jl")
 #=
 include("../plots/plot_hourly_market_equilibrium.jl") # TODO: rename
 include("../plots/plot_market_prices_with_storage.jl")
@@ -46,7 +48,10 @@ include("../output_data/market_data_storage.jl")
 include("../output_data/interpretations.jl")
 
 
-USE_EXPLICIT_ADJUSTMENT_MODEL = true
+USE_EXPLICIT_ADJUSTMENT_MODEL = false
+USE_LAURA_CONVERGENCE_MODEL = false
+USE_LAURA_MINIMUM_MATCH_MODEL = true
+
 
 function ClearSimple(config_file, test_id)
 
@@ -62,6 +67,11 @@ function ClearSimple(config_file, test_id)
 	    	:Q_gen => Dict{String,Float64}( (g, float(gConfig["initialQuantity"])) for (g, gConfig) in config[:dispatchableGenerators])
 	    )
 
+	config[:wind_noise_scenario_path] = "../DATA/inputs/laura/wind_forecast_error_shared_final_20260502.csv"
+
+    config[:wind_forecast_errors] = HelperInputData.load_or_create_wind_forecast_error_scenario!(config, config[:noiseLevel], length(time_period_range), longest_market_window) # this comes from market_clearing_rolling.jl in LLD's code
+
+	# TODO: the following are duplicated across clearing approaches (simple, compare) - needs to be modularized
 
 	variableGeneratorProfiles = Dict{String,Vector{Float64}}()
 
@@ -73,13 +83,28 @@ function ClearSimple(config_file, test_id)
 	    		push!(variableGeneratorProfiles[gName], input_profile[(t%length(input_profile))+ 1])
 	    	end
 	    elseif haskey(gData,"profile_file") && haskey(gData,"profile_type") 
-	    	columnName = (gData["profile_type"] == "availability") ? "percentage" : throw("unrecognized profile_type for $gName: $(gData["profile_type"])")
-	    	# todo: test this mechanism
-	    	input_profile = HelperInputData.GetProfileFromCSV(gData["profile_file"], columnName, config[:startDate]:config[:endDate], config[:timePeriodsPerDay])
+	    	columnName = (gData["profile_type"] == "availability") ? "percentage" : (gData["profile_type"] == "quantity") ? "volume (kWh)" : throw("unrecognized profile_type for $gName: $(gData["profile_type"])")
+	    	input_profile = HelperInputData.GetProfileFromFile(gData["profile_file"], columnName, config[:startDate]:config[:endDate], config[:timePeriodsPerDay])
 	    	for t in time_period_range
-	    		push!(variableGeneratorProfiles[gName], input_profile[(t%length(input_profile))+ 1])
+	    		# println("$(input_profile[(t%length(input_profile))+ 1] * gData["conversionFactor"]):$(gData["capacity"]):$(input_profile[(t%length(input_profile))+ 1] * gData["conversionFactor"] / gData["capacity"])")
+	    		profile_value = (gData["profile_type"] == "availability") ? input_profile[(t%length(input_profile))+ 1] : (gData["profile_type"] == "quantity") ? (input_profile[(t%length(input_profile))+ 1] * gData["conversionFactor"] / gData["capacity"]) : 0.0
+	    		push!(variableGeneratorProfiles[gName], profile_value)
 	    	end
-	    	gData["profile"] = input_profile
+	    	# println(gName, variableGeneratorProfiles[gName])
+	    	gData["profile"] = variableGeneratorProfiles[gName]
+	    elseif haskey(gData,"profile_files") && haskey(gData,"profile_type") 
+	    	columnName =  (gData["profile_type"] == "quantity") ? "volume (kWh)" : throw("unrecognized profile_type for multiple profile_files for $gName: $(gData["profile_type"])")
+	    	input_profiles = []
+	    	for filename in gData["profile_files"]
+				input_profile = HelperInputData.GetProfileFromFile(filename, columnName, config[:startDate]:config[:endDate], config[:timePeriodsPerDay])
+	    		push!(input_profiles, input_profile)
+	    	end
+	    	for t in time_period_range
+	    		profile_value = (gData["profile_type"] == "quantity") ? (sum(input_profile[(t%length(input_profile))+ 1] for input_profile in input_profiles)  * gData["conversionFactor"] / gData["capacity"]) : 0.0
+	    		push!(variableGeneratorProfiles[gName], profile_value)
+	    	end
+	    	# println(gName, variableGeneratorProfiles[gName])
+	    	gData["profile"] = variableGeneratorProfiles[gName]
 	    else
 	    	throw("generator profile for $gName is incomplete. it should either include a profile key or both profile_file and profile_type")
 	    end
@@ -90,8 +115,8 @@ function ClearSimple(config_file, test_id)
 	    	continue
 	    elseif haskey(dData,"profile_file") && haskey(dData,"profile_type") 
 	    	columnName = (dData["profile_type"] == "quantity") ? "volume (kWh)" : throw("unrecognized profile_type for $dName: $(dData["profile_type"])")
-	    	input_profile = HelperInputData.GetProfileFromCSV(dData["profile_file"], columnName, config[:startDate]:config[:endDate], config[:timePeriodsPerDay])
-	    	dData["profile"] = input_profile .* .001 # convert from kWh to MWh
+	    	input_profile = HelperInputData.GetProfileFromFile(dData["profile_file"], columnName, config[:startDate]:config[:endDate], config[:timePeriodsPerDay])
+	    	dData["profile"] = input_profile .* dData["conversionFactor"]  # convert from kWh to MWh
 	    elseif haskey(dData,"quantity_constant")
 	    	dData["profile"] = [dData["quantity_constant"] for t in time_period_range]
 	    else
@@ -104,10 +129,14 @@ function ClearSimple(config_file, test_id)
     # for each market in marketSequences note the nesting here so a single time period could hold more than one market (but really probably won't in most cases) - case where it would - could be when holding a market 2 days ahead, for example
 
 	for t in time_period_range
+		if t < 12
+			println("skipping at $t < 12")
+			continue
+		end
 		marketsAtTime = MarketSequence.GetMarketsForMTU(marketSequence, t)
 		for market in marketsAtTime
 			println("$(market[:name]) market at time: $t looking ahead $(market[:lookAheadDistance]) with optimization window length $(market[:optimizationWindow])")
-			modelModule = USE_EXPLICIT_ADJUSTMENT_MODEL ? ExplicitAdjustmentMarketModel : FlexibleMarketModel
+			modelModule = USE_LAURA_MINIMUM_MATCH_MODEL ? LauraMinimumMatchModel : USE_LAURA_CONVERGENCE_MODEL ? LauraConvergenceMarketModel : USE_EXPLICIT_ADJUSTMENT_MODEL ? ExplicitAdjustmentMarketModel : FlexibleMarketModel
 			m = modelModule.build(t, marketresult, initialization, config, market)
 			optimize!(m)
 			println(termination_status(m))
@@ -120,6 +149,7 @@ function ClearSimple(config_file, test_id)
     		if mePlotDone == false
     			mePlotDone = true
     			PlotMarketEquilibriumForWindow.plot(marketresult, t+market[:lookAheadDistance]:t+market[:lookAheadDistance]+market[:optimizationWindow] - 1)
+    			println(m)
     		end
 		end
 
@@ -167,7 +197,7 @@ function ClearMarketComparisonForConfig(config, test_id)
 	    	end
 	    elseif haskey(gData,"profile_file") && haskey(gData,"profile_type") 
 	    	columnName = (gData["profile_type"] == "availability") ? "percentage" : throw("unrecognized profile_type for $gName: $(gData["profile_type"])")
-	    	input_profile = HelperInputData.GetProfileFromCSV(gData["profile_file"], columnName, config[:startDate]:config[:endDate], config[:timePeriodsPerDay])
+	    	input_profile = HelperInputData.GetProfileFromFile(gData["profile_file"], columnName, config[:startDate]:config[:endDate], config[:timePeriodsPerDay])
 	    	for t in time_period_range
 	    		push!(variableGeneratorProfiles[gName], input_profile[(t%length(input_profile))+ 1])
 	    	end
@@ -182,7 +212,7 @@ function ClearMarketComparisonForConfig(config, test_id)
 	    	continue
 	    elseif haskey(dData,"profile_file") && haskey(dData,"profile_type") 
 	    	columnName = (dData["profile_type"] == "quantity") ? "volume (kWh)" : throw("unrecognized profile_type for $dName: $(dData["profile_type"])")
-	    	input_profile = HelperInputData.GetProfileFromCSV(dData["profile_file"], columnName, config[:startDate]:config[:endDate], config[:timePeriodsPerDay])
+	    	input_profile = HelperInputData.GetProfileFromFile(dData["profile_file"], columnName, config[:startDate]:config[:endDate], config[:timePeriodsPerDay])
 	    	dData["profile"] = input_profile .* .001 # convert from kWh to MWh
 	    elseif haskey(dData,"quantity_constant")
 	    	dData["profile"] = [dData["quantity_constant"] for t in time_period_range]

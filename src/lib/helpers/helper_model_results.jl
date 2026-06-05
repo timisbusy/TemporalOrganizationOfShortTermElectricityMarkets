@@ -25,8 +25,8 @@ function DecisionVariables(optimization_window::UnitRange{Int}, agent_map::Dict{
 
 	# add all other decision variables - the gens and demands
 
-	ramp_limit_up_duals = RampLimitUpDuals(m)
-	ramp_limit_down_duals = RampLimitDownDuals(m)
+	# ramp_limit_up_duals = RampLimitUpDuals(m)
+	# ramp_limit_down_duals = RampLimitDownDuals(m)
 	
 
 	explicitAgentMapOrder = ["Base_D", "Flex", "Base", "Shoulder", "Peak", "Wind", "Solar"] # Note: this will ignore any new agents that are not in the list - TODO: fix this
@@ -37,10 +37,11 @@ function DecisionVariables(optimization_window::UnitRange{Int}, agent_map::Dict{
 			a_type = in(agent, agent_map[AGENT_DEMAND]) ? AGENT_DEMAND : AGENT_GENERATOR
 			agent_type_data = a_type == AGENT_DEMAND ? m.ext[:variables][:Qd] : a_type == AGENT_GENERATOR ? m.ext[:variables][:Qg] : throw("unknown agent type: $a_type")
 			df[!,agent] = [value(agent_type_data[agent,t]) for t in optimization_window]
-			if haskey(ramp_limit_up_duals, agent)
+			#= if haskey(ramp_limit_up_duals, agent)
 				df[!,"$(agent)_ramp_up_dual"] = ramp_limit_up_duals[agent]
 				df[!,"$(agent)_ramp_down_dual"] = ramp_limit_down_duals[agent]
 			end
+			=#
 		end
 	end
 
@@ -93,13 +94,14 @@ end
 function Lambdas(m::Model)
 	OW = OptimizationWindow(m)
 	λ  = dual.(m.ext[:constraints][:energy_balance])   # per MTU prices [EUR/MWh]
-	println("DUALS of ramp limits up $(RampLimitUpDuals(m))")
-	println("DUALS of ramp limits down $(RampLimitDownDuals(m))")
+	# println("DUALS of ramp limits up $(RampLimitUpDuals(m))")
+	# println("DUALS of ramp limits down $(RampLimitDownDuals(m))")
 	return [λ[t] for t in OW]
 end
 
 function RampLimitUpDuals(m::Model)
 	OW = OptimizationWindow(m)
+	return zeros(length(OW))
 	generators = ["Base", "Shoulder", "Peak"]# Generators(m)
 	rampDual  = dual.(m.ext[:constraints][:ramp_limits_up])   # per generator/MTU ramp up dual  [EUR/MWh]
 	rampDualFirst  = dual.(m.ext[:constraints][:ramp_limits_up_first])   # per generator ramp up dual for first MTU [EUR/MWh]
@@ -112,6 +114,7 @@ end
 
 function RampLimitDownDuals(m::Model)
 	OW = OptimizationWindow(m)
+	return zeros(length(OW))
 	generators = ["Base", "Shoulder", "Peak"]# Generators(m)
 	rampDual  = dual.(m.ext[:constraints][:ramp_limits_down])   # per generator/MTU ramp down dual  [EUR/MWh]
 	rampDualFirst  = dual.(m.ext[:constraints][:ramp_limits_down_first])   # per generator ramp down dual for first MTU [EUR/MWh]
