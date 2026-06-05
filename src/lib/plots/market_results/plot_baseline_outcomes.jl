@@ -17,13 +17,13 @@ function plot(marketresult, config, test_range, test_id)
     println(indicators)
     println(agent_indicators)
 
-    XLSX.writetable("../DATA/$(test_id)/economic_indicators.xlsx", "data" => indicators, "interpretation" => Interpretations.EconomicIndicatorsInterpretation)
+    XLSX.writetable("results/$(test_id)/economic_indicators.xlsx", "data" => indicators, "interpretation" => Interpretations.EconomicIndicatorsInterpretation)
 
-    XLSX.writetable("../DATA/$(test_id)/agent_indicators.xlsx", "data" => agent_indicators, "interpretation" => Interpretations.AgentIndicatorsInterpretation)
+    XLSX.writetable("results/$(test_id)/agent_indicators.xlsx", "data" => agent_indicators, "interpretation" => Interpretations.AgentIndicatorsInterpretation)
 
-    XLSX.writetable("../DATA/$(test_id)/transactions.xlsx", "data" => transactions, "interpretation" => Interpretations.TransactionsInterpretation)
+    XLSX.writetable("results/$(test_id)/transactions.xlsx", "data" => transactions, "interpretation" => Interpretations.TransactionsInterpretation)
 
-    XLSX.writetable("../DATA/$(test_id)/final_market_results.xlsx", "data" => final_market_results, "interpretation" => Interpretations.DecisionVariablesInterpretation)
+    XLSX.writetable("results/$(test_id)/final_market_results.xlsx", "data" => final_market_results, "interpretation" => Interpretations.DecisionVariablesInterpretation)
 
 end
 
@@ -48,11 +48,11 @@ function plotCompare(market_results, config, test_range, test_id)
         combined_agent_indicators = vcat(combined_agent_indicators, agent_indicators)
 
 
-        XLSX.writetable("../DATA/$(test_id)/transactions_$(marketName).xlsx", "data" => transactions, "interpretation" => Interpretations.TransactionsInterpretation)
+        XLSX.writetable("results/$(test_id)/transactions_$(marketName).xlsx", "data" => transactions, "interpretation" => Interpretations.TransactionsInterpretation)
 
-        XLSX.writetable("../DATA/$(test_id)/final_market_results_$(marketName).xlsx", "data" => final_market_results, "interpretation" => Interpretations.DecisionVariablesInterpretation)
+        XLSX.writetable("results/$(test_id)/final_market_results_$(marketName).xlsx", "data" => final_market_results, "interpretation" => Interpretations.DecisionVariablesInterpretation)
         
-        XLSX.writetable("../DATA/$(test_id)/mtu_economic_results_$(marketName).xlsx", "data" => mtu_economic_outcomes) #, "interpretation" => Interpretations.DecisionVariablesInterpretation)
+        XLSX.writetable("results/$(test_id)/mtu_economic_results_$(marketName).xlsx", "data" => mtu_economic_outcomes) #, "interpretation" => Interpretations.DecisionVariablesInterpretation)
 
         println("MTU level results for $marketName")
         println(mtu_economic_outcomes)
@@ -98,9 +98,9 @@ function plotCompare(market_results, config, test_range, test_id)
     println(combined_indicators)
     println(combined_agent_indicators)
 
-    XLSX.writetable("../DATA/$(test_id)/economic_indicators.xlsx", "data" => combined_indicators, "interpretation" => Interpretations.EconomicIndicatorsInterpretation)
+    XLSX.writetable("results/$(test_id)/economic_indicators.xlsx", "data" => combined_indicators, "interpretation" => Interpretations.EconomicIndicatorsInterpretation)
 
-    XLSX.writetable("../DATA/$(test_id)/agent_indicators.xlsx", "data" => combined_agent_indicators, "interpretation" => Interpretations.AgentIndicatorsInterpretation)
+    XLSX.writetable("results/$(test_id)/agent_indicators.xlsx", "data" => combined_agent_indicators, "interpretation" => Interpretations.AgentIndicatorsInterpretation)
 
 end
 

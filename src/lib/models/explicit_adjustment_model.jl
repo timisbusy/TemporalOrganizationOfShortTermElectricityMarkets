@@ -103,6 +103,16 @@ function process_time_series_data!(m::Model, time_period::Int, marketresults, in
     end
 
 
+    if true && var["Wind"]["capacity"] > 0.0
+        HelperInputData.add_wind_forecast_noise!(
+            Q_gen,
+            "Wind",
+            Float64(var["Wind"]["capacity"]),
+            OW,
+            time_period;
+            precomputed_errors=data[:wind_forecast_errors],
+        )
+    end
 
 
     # demand side: prices Pr_dem and maximum quantities Q_dem[d,h]

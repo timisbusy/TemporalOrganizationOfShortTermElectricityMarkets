@@ -48,17 +48,19 @@ include("../output_data/market_data_storage.jl")
 include("../output_data/interpretations.jl")
 
 
-USE_EXPLICIT_ADJUSTMENT_MODEL = false
+USE_EXPLICIT_ADJUSTMENT_MODEL = true
 USE_LAURA_CONVERGENCE_MODEL = false
-USE_LAURA_MINIMUM_MATCH_MODEL = true
+USE_LAURA_MINIMUM_MATCH_MODEL = false
 
 
 function ClearSimple(config_file, test_id)
 
 	config = DataImporter.load_input_data(config_file)
 	longest_market_window = max.([m[:optimizationWindow] for m in config[:marketSequence]])[1]
-	last_mtp = config[:clearForDays]*config[:timePeriodsPerDay] - longest_market_window
-	time_period_range = range(0,last_mtp) # go from time_period 0 to the last mtp for which we have a full data set
+	last_mtp_simulation = config[:clearForDays]*config[:timePeriodsPerDay] - longest_market_window
+	last_mtp_full = config[:clearForDays]*config[:timePeriodsPerDay]
+	time_period_range = range(0,last_mtp_simulation) # go from time_period 0 to the last mtp for which we have a full data set
+    full_time_period_range = range(0,last_mtp_full) # go from time_period 0 to the last mtp - this is for getting forecast data, for example
     
     marketSequence = MarketSequence.GenerateMarketSequence(config[:marketSequence], time_period_range)
 	marketresult = Vector{MarketDataStorage.MarketResult}()
@@ -67,7 +69,7 @@ function ClearSimple(config_file, test_id)
 	    	:Q_gen => Dict{String,Float64}( (g, float(gConfig["initialQuantity"])) for (g, gConfig) in config[:dispatchableGenerators])
 	    )
 
-	config[:wind_noise_scenario_path] = "../DATA/inputs/laura/wind_forecast_error_shared_final_20260502.csv"
+	config[:wind_noise_scenario_path] = "input_data/laura/wind_forecast_error_shared_final_20260502.csv"
 
     config[:wind_forecast_errors] = HelperInputData.load_or_create_wind_forecast_error_scenario!(config, config[:noiseLevel], length(time_period_range), longest_market_window) # this comes from market_clearing_rolling.jl in LLD's code
 
@@ -79,15 +81,15 @@ function ClearSimple(config_file, test_id)
     	variableGeneratorProfiles[gName] = Vector{Float64}()
     	if haskey(gData,"profile")
 	    	input_profile = gData["profile"]
-	    	for t in time_period_range
+	    	for t in full_time_period_range
 	    		push!(variableGeneratorProfiles[gName], input_profile[(t%length(input_profile))+ 1])
 	    	end
 	    elseif haskey(gData,"profile_file") && haskey(gData,"profile_type") 
 	    	columnName = (gData["profile_type"] == "availability") ? "percentage" : (gData["profile_type"] == "quantity") ? "volume (kWh)" : throw("unrecognized profile_type for $gName: $(gData["profile_type"])")
 	    	input_profile = HelperInputData.GetProfileFromFile(gData["profile_file"], columnName, config[:startDate]:config[:endDate], config[:timePeriodsPerDay])
-	    	for t in time_period_range
+	    	for t in full_time_period_range
 	    		# println("$(input_profile[(t%length(input_profile))+ 1] * gData["conversionFactor"]):$(gData["capacity"]):$(input_profile[(t%length(input_profile))+ 1] * gData["conversionFactor"] / gData["capacity"])")
-	    		profile_value = (gData["profile_type"] == "availability") ? input_profile[(t%length(input_profile))+ 1] : (gData["profile_type"] == "quantity") ? (input_profile[(t%length(input_profile))+ 1] * gData["conversionFactor"] / gData["capacity"]) : 0.0
+	    		profile_value = gData["capacity"] <= 0.0 ? 0.0 : (gData["profile_type"] == "availability") ? input_profile[(t%length(input_profile))+ 1] : (gData["profile_type"] == "quantity") ? (input_profile[(t%length(input_profile))+ 1] * gData["conversionFactor"] / gData["capacity"]) : 0.0
 	    		push!(variableGeneratorProfiles[gName], profile_value)
 	    	end
 	    	# println(gName, variableGeneratorProfiles[gName])
@@ -99,7 +101,7 @@ function ClearSimple(config_file, test_id)
 				input_profile = HelperInputData.GetProfileFromFile(filename, columnName, config[:startDate]:config[:endDate], config[:timePeriodsPerDay])
 	    		push!(input_profiles, input_profile)
 	    	end
-	    	for t in time_period_range
+	    	for t in full_time_period_range
 	    		profile_value = (gData["profile_type"] == "quantity") ? (sum(input_profile[(t%length(input_profile))+ 1] for input_profile in input_profiles)  * gData["conversionFactor"] / gData["capacity"]) : 0.0
 	    		push!(variableGeneratorProfiles[gName], profile_value)
 	    	end
@@ -129,10 +131,10 @@ function ClearSimple(config_file, test_id)
     # for each market in marketSequences note the nesting here so a single time period could hold more than one market (but really probably won't in most cases) - case where it would - could be when holding a market 2 days ahead, for example
 
 	for t in time_period_range
-		if t < 12
+		#= if t < 12
 			println("skipping at $t < 12")
 			continue
-		end
+		end =#
 		marketsAtTime = MarketSequence.GetMarketsForMTU(marketSequence, t)
 		for market in marketsAtTime
 			println("$(market[:name]) market at time: $t looking ahead $(market[:lookAheadDistance]) with optimization window length $(market[:optimizationWindow])")
@@ -142,14 +144,13 @@ function ClearSimple(config_file, test_id)
 			println(termination_status(m))
 			MarketDataStorage.AddMarketResult!(marketresult, m, t, market[:name])
 
-    		XLSX.writetable("../DATA/$(test_id)/decisionvariables_$(config[:name])_$(t).xlsx", "data" => marketresult[length(marketresult)].DecisionVariables, "interpretation" => Interpretations.DecisionVariablesInterpretation)
+    		XLSX.writetable("results/$(test_id)/decisionvariables_$(config[:name])_$(t).xlsx", "data" => marketresult[length(marketresult)].DecisionVariables, "interpretation" => Interpretations.DecisionVariablesInterpretation)
 		
-		    XLSX.writetable("../DATA/$(test_id)/transactions_$(config[:name])_$(t).xlsx", "data" => marketresult[length(marketresult)].Transactions, "interpretation" => Interpretations.TransactionsInterpretation)
+		    XLSX.writetable("results/$(test_id)/transactions_$(config[:name])_$(t).xlsx", "data" => marketresult[length(marketresult)].Transactions, "interpretation" => Interpretations.TransactionsInterpretation)
 		
     		if mePlotDone == false
     			mePlotDone = true
     			PlotMarketEquilibriumForWindow.plot(marketresult, t+market[:lookAheadDistance]:t+market[:lookAheadDistance]+market[:optimizationWindow] - 1)
-    			println(m)
     		end
 		end
 
@@ -244,9 +245,9 @@ function ClearMarketComparisonForConfig(config, test_id)
 				end
 				MarketDataStorage.AddMarketResult!(marketResults[marketName], m, t, market[:name])
 
-	    		XLSX.writetable("../DATA/$(test_id)/decisionvariables_$(marketName)_$(t).xlsx", "data" => marketResults[marketName][length(marketResults[marketName])].DecisionVariables, "interpretation" => Interpretations.DecisionVariablesInterpretation)
+	    		XLSX.writetable("results/$(test_id)/decisionvariables_$(marketName)_$(t).xlsx", "data" => marketResults[marketName][length(marketResults[marketName])].DecisionVariables, "interpretation" => Interpretations.DecisionVariablesInterpretation)
 			
-			    XLSX.writetable("../DATA/$(test_id)/transactions_$(marketName)_$(t).xlsx", "data" => marketResults[marketName][length(marketResults[marketName])].Transactions, "interpretation" => Interpretations.TransactionsInterpretation)
+			    XLSX.writetable("results/$(test_id)/transactions_$(marketName)_$(t).xlsx", "data" => marketResults[marketName][length(marketResults[marketName])].Transactions, "interpretation" => Interpretations.TransactionsInterpretation)
 			
 	    		if mePlotDone == false
 	    			mePlotDone = true

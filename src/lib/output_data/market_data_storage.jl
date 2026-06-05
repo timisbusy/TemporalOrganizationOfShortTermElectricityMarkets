@@ -56,7 +56,7 @@ function AddMarketResult!(resultset, model, time_cleared, market_name)
 	mr.TerminationStatus = termination_status(model)
 	mr.ObjectiveValue = objective_value(model)
 	mr.DecisionVariables = HelperModelResults.DecisionVariables(optimization_window, agent_map, model) # todo: docs on this
-	mr.Transactions = HelperModelResults.Transactions(mr, GetMarketResults(resultset), market_name) # todo: docs on this
+	mr.Transactions = HelperModelResults.Transactions(mr, GetMarketResults(resultset), market_name, resultset) # todo: docs on this
 
 	push!(resultset, mr)
 end

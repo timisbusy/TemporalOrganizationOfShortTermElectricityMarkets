@@ -207,11 +207,12 @@ mutable struct Transaction
 	Price::Float64
 	MTU::Int
 	ClearingMTU::Int
+	TimesCleared::Int
 	AgentType::AgentTypeEnum
 	Transaction() = new()
 end
 
-function MakeTransaction(agent, quantity, price, mtu, clearing_mtu, agent_type, market_name) 
+function MakeTransaction(agent, quantity, price, mtu, clearing_mtu, times_cleared, agent_type, market_name) 
 	t = Transaction()
 	t.MarketName = market_name
 	t.Agent = agent
@@ -219,6 +220,7 @@ function MakeTransaction(agent, quantity, price, mtu, clearing_mtu, agent_type, 
 	t.Price = price
 	t.MTU = mtu
 	t.ClearingMTU = clearing_mtu
+	t.TimeCleared = times_cleared
 	t.AgentType = agent_type
 	return t
 end
@@ -226,7 +228,17 @@ end
 # compare clearing outcomes with previous clearings to generate a set of transactions
 
 
-function Transactions(marketresult, previous_dispatch, market_name)
+function mtu_times_cleared(resultset, mtu)
+	times_cleared = 1
+	for mr in resultset
+		if mtu >= mr.OptimizationWindow.start && mtu <= mr.OptimizationWindow.stop
+			times_cleared = times_cleared + 1
+		end
+	end
+	return times_cleared
+end
+
+function Transactions(marketresult, previous_dispatch, market_name, resultset)
 	transaction_mtu = marketresult.TimeCleared
 
 	transactions = []
@@ -234,6 +246,7 @@ function Transactions(marketresult, previous_dispatch, market_name)
 	# for each demand, in each mtu cleared
 	for row in eachrow(marketresult.DecisionVariables)
 		for d in marketresult.AgentMap[AGENT_DEMAND]
+			times_cleared = has_last_result ? mtu_times_cleared(resultset, row["mtu"]) : 1
 			last_qs_at_time = has_last_result ? previous_dispatch[previous_dispatch.mtu .== row["mtu"], d] : [] # if we don't have any old data
 			adjust_from_q = length(last_qs_at_time) > 0 ? last_qs_at_time[1] : 0.0 # if we don't have data for this row
 			adjustment_q = row[d] - adjust_from_q
@@ -244,13 +257,15 @@ function Transactions(marketresult, previous_dispatch, market_name)
 				transaction.Price = row["price"]
 				transaction.MTU = row["mtu"]
 				transaction.ClearingMTU = transaction_mtu
+				transaction.TimesCleared = times_cleared
 				transaction.AgentType = AGENT_DEMAND
 				transaction.MarketName = market_name
 				push!(transactions, transaction)
 			end
 		end
 
-		for g in marketresult.AgentMap[AGENT_GENERATOR]
+		for g in ["Base", "Shoulder", "Peak"] # marketresult.AgentMap[AGENT_GENERATOR]
+			times_cleared = has_last_result ? mtu_times_cleared(resultset, row["mtu"]) : 1
 			last_qs_at_time = has_last_result ? previous_dispatch[previous_dispatch.mtu .== row["mtu"], g] : [] # if we don't have any old data
 			adjust_from_q = length(last_qs_at_time) > 0 ? last_qs_at_time[1] : 0.0 # if we don't have data for this row
 			adjustment_q = row[g] - adjust_from_q
@@ -261,6 +276,7 @@ function Transactions(marketresult, previous_dispatch, market_name)
 				transaction.Price = row["price"]
 				transaction.MTU = row["mtu"]
 				transaction.ClearingMTU = transaction_mtu
+				transaction.TimesCleared = times_cleared
 				transaction.AgentType = AGENT_GENERATOR
 				transaction.MarketName = market_name
 				push!(transactions, transaction)
@@ -278,25 +294,27 @@ function Transactions(marketresult, previous_dispatch, market_name)
 		adjustment_q = (row["StorageDischarge"] - row["StorageCharge"]) - (adjust_from_q_storage_discharge - adjust_from_q_storage_charge)
 		
 		if adjustment_q != 0.0
+			times_cleared = has_last_result ? mtu_times_cleared(resultset, row["mtu"]) : 1
 			transaction = Transaction()
 			transaction.Agent = "Storage"
 			transaction.Quantity = adjustment_q
 			transaction.Price = row["price"]
 			transaction.MTU = row["mtu"]
 			transaction.ClearingMTU = transaction_mtu
+			transaction.TimesCleared = times_cleared
 			transaction.AgentType = AGENT_STORAGE
 			transaction.MarketName = market_name
 			push!(transactions, transaction)
 		end
 	end
 
-	transactions_df = DataFrame(MarketName=String[], Agent=String[], Quantity=Float64[], Price=Float64[], MTU=Int[], ClearingMTU=Int[], AgentType=String[])
+	transactions_df = DataFrame(MarketName=String[], Agent=String[], Quantity=Float64[], Price=Float64[], MTU=Int[], ClearingMTU=Int[], TimesCleared=Int[], AgentType=String[])
 	for t in transactions
-		push!(transactions_df, [t.MarketName, t.Agent, t.Quantity, t.Price, t.MTU, t.ClearingMTU, string(Symbol(t.AgentType))])
+		push!(transactions_df, [t.MarketName, t.Agent, t.Quantity, t.Price, t.MTU, t.ClearingMTU, t.TimesCleared, string(Symbol(t.AgentType))])
 	end
 
-	long_names = ["Market Name", "Agent", "Quantity (MWh)", "Price (€/MWh)", "Market Time Unit", "Clearing MTU", "Agent Type"]
-	short_names = ["MarketName", "Agent", "Quantity", "Price", "MTU", "ClearingMTU", "AgentType"]
+	long_names = ["Market Name", "Agent", "Quantity (MWh)", "Price (€/MWh)", "Market Time Unit", "Clearing MTU", "Times Cleared", "Agent Type"]
+	short_names = ["MarketName", "Agent", "Quantity", "Price", "MTU", "ClearingMTU", "TimesCleared", "AgentType"]
 	rename!(transactions_df, short_names .=> long_names)
 
 	return transactions_df
