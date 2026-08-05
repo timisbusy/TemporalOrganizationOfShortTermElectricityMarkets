@@ -1,0 +1,28 @@
+# This configuration resembles the status quo markets in Europe, etc
+# Define a set of markets that will be cleared over the course of the experiment
+# all parameters are expressed in MTU - in this case 15m
+
+timePeriodsPerDay: 24 # define the assumed MTU for this market configuration - this allows for validation that this market is appropriate for the experiment
+overrideMTU1Restriction: true
+
+marketSequence:
+  DayAhead: # name of market
+    clearingInterval: 24 # number of MTU between market clearing/optimization rounds
+    optimizationWindow: 24 # number of MTU to consider in each clearing
+    lookAheadDistance: 12 # number of MTU after which to start optimization window
+    clockTimeBegin: 12 # number of MTU after midnight to hold first clearing
+  Intraday1: # name of market
+    clearingInterval: 24 # number of MTU between market clearing/optimization rounds
+    optimizationWindow: 24 # number of MTU to consider in each clearing
+    lookAheadDistance: 9 # number of MTU after which to start optimization window
+    clockTimeBegin: 15 # number of MTU after midnight to hold first clearing
+  Intraday2: # name of market
+    clearingInterval: 24 # number of MTU between market clearing/optimization rounds
+    optimizationWindow: 24 # number of MTU to consider in each clearing
+    lookAheadDistance: 2 # number of MTU after which to start optimization window
+    clockTimeBegin: 22 # number of MTU after midnight to hold first clearing
+  Intraday3: # name of market
+    clearingInterval: 24 # number of MTU between market clearing/optimization rounds
+    optimizationWindow: 12 # number of MTU to consider in each clearing
+    lookAheadDistance: 2 # number of MTU after which to start optimization window
+    clockTimeBegin: 10 # number of MTU after midnight to hold first clearing

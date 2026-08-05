@@ -2,10 +2,13 @@ module ExplicitAdjustmentMarketModel
 
 using JuMP
 using HiGHS
+using Gurobi
 
 using ..Helpers.MarketDataStorage
 
 include("../helpers/helper_input_data.jl")
+
+const gurobi_env = Gurobi.Env()
 
 # NOTE: THIS IS A COPY OF THE FLEXIBLE MODEL with explicit handling for adjustment market periods (those for which a dispatch has already been made)
 
@@ -36,7 +39,8 @@ function define_sets!(m::Model, time_period::Int, marketresults, initialization:
 
     # generators IG = list of all generator names (dispatchable + variable)
     IG = String[]
-    DG = String[]
+    DG = String[] # dispatchable generators only
+    VG = String[] # variable generators only, for accounting ex-post
     for g in keys(disp_gen) # ["Base", "Peak"]
         push!(IG, String(g))
         push!(DG, String(g))
@@ -44,8 +48,10 @@ function define_sets!(m::Model, time_period::Int, marketresults, initialization:
     m.ext[:sets][:DG] = DG
     for g in keys(var_gen) # ["Wind"]
         push!(IG, String(g))
+        push!(VG, String(g))
     end
     m.ext[:sets][:IG] = IG
+    m.ext[:sets][:VG] = VG
 
     # demand segments ID = list of all demand segment names (Base, Flex)
     ID = String[]
@@ -89,31 +95,36 @@ function process_time_series_data!(m::Model, time_period::Int, marketresults, in
         g = String(gname)
         P = float(gdata_any["bidPrice"])   # bid price (often 0 or negative)
         Q = float(gdata_any["capacity"])   # installed capacity [MW]
-        profile_any = gdata_any["profile"] # availability factors per hour
-        profile = [float(x) for x in profile_any]
+        profile_df = gdata_any["profile"] # availability factors per hour
+        # profile = [float(x) for x in profile_any]
 
         # This block modifies the capacity with the availability factor (profile) from the config
         for t in OW
-            profileMTU = (t % length(profile)) + 1 # modulo operator here makes af below repeat the input profile to fill +1 b/c these are not zero indexed
-            af = profile[profileMTU]                # availability factor in hour profileH
+            # profileMTU = (t % length(profile)) + 1 # modulo operator here makes af below repeat the input profile to fill +1 b/c these are not zero indexed
+            af = profile_df[profile_df.mtu .== t,Symbol("Value")][1,1]                # availability factor in hour profileH
             Pr_gen[(g,t)] = P
             Q_gen[(g,t)]  = Q * m.ext[:sets][:power_to_energy_scale] * af         # available capacity = Q * profile[t]
             Q_prev_gen[(g,t)] = MarketDataStorage.GenPreviousDispatchDataForTimePeriod(marketresults, g, t)
         end
     end
 
+    offset = data[:windOffset]
+
     # adding forecast noise to all variable generators
     if true 
         for (gname, gdata_any) in var
-            if gdata_any["capacity"] > 0.0
-                HelperInputData.add_wind_forecast_noise!(
-                    Q_gen,
-                    gname,
-                    Float64(var[gname]["capacity"]),
-                    OW,
-                    time_period;
-                    precomputed_errors=data[:wind_forecast_errors],
-                )
+            if occursin("Wind", gname)
+                if gdata_any["capacity"] > 0.0
+                    HelperInputData.add_wind_forecast_noise!(
+                        Q_gen,
+                        gname,
+                        Float64(var[gname]["capacity"]),
+                        OW,
+                        time_period,
+                        offset;
+                        precomputed_errors=data[:wind_forecast_errors],
+                    )
+                end
             end
         end
     end
@@ -128,13 +139,13 @@ function process_time_series_data!(m::Model, time_period::Int, marketresults, in
     for (dname, ddata_any) in dem
         d = String(dname)
         P = float(ddata_any["bidPrice"])        # value of demand segment [EUR/MWh]
-        q_any = ddata_any["profile"] .* m.ext[:sets][:power_to_energy_scale]        # mtu max quantity
-        q_vec = [float(x) for x in q_any]
+        profile_df = ddata_any["profile"]         # mtu max quantity
+        # q_vec = [float(x) for x in q_any]
 
         for t in OW
-            demandMTU = (t % length(q_vec)) + 1 # modulo here repeats the data in the demand quantity input over the requested days +1 b/c these are not zero index
+            # demandMTU = (t % length(q_vec)) + 1 # modulo here repeats the data in the demand quantity input over the requested days +1 b/c these are not zero index
             Pr_dem[(d,t)] = P
-            Q_dem[(d,t)]  = q_vec[demandMTU] # similar to above, use the demandH here to repeat demand profile each day
+            Q_dem[(d,t)]  = profile_df[profile_df.mtu .== t,Symbol("Value")][1,1] .* m.ext[:sets][:power_to_energy_scale] 
             Q_prev_dem[(d,t)] = MarketDataStorage.DemPreviousDispatchDataForTimePeriod(marketresults, d, t)
         end
     end
@@ -350,11 +361,13 @@ end
 # data - information about assets - prices, availability factors, etc
 # market - defines when the window for which this market clears and the market name
 
+USE_GUROBI = true
+
 function build(time_period, marketresults, initialization, data, market)
 
-	# create the optimisation model with HiGHS as the solver
+	# create the optimisation model with HiGHS/Gurobi as the solver
 
-    m = Model(HiGHS.Optimizer)
+    m = USE_GUROBI ? Model(() -> Gurobi.Optimizer(gurobi_env)) : Model(HiGHS.Optimizer)
     set_silent(m)
 	# build the sets, time series and parameters based on the inputs
 	define_sets!(m, time_period, marketresults, initialization, data, market)

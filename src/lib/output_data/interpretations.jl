@@ -47,4 +47,14 @@ AgentIndicatorsInterpretation = DataFrame([
 	(DataPoint="WelfareGained", Interpretation="Producer/Consumer Surplus gained by agent, equals net revenue for storage (€)")
 	])
 
+
+RetradingInterpretation = DataFrame([
+	(DataPoint="Agent", Interpretation="Name of Agent"), 
+	(DataPoint="Revenue", Interpretation="Total revenues received/paid by agent in adjustment transactions in test period (€)"),
+	(DataPoint="Quantity", Interpretation="Quantity traded in adjustment during test period (MWh)"),
+	(DataPoint="UtilityChange", Interpretation="Utility gained or lost by demand agent in test period (€)"), 
+	(DataPoint="FuelCostChange", Interpretation="Fuel cost change for generator from adjustment transactions in test period (€)"),
+	(DataPoint="SurplusChange", Interpretation="Producer/Consumer Surplus gained/lost by agent, equal to revenue for storage (€)")
+	])
+
 end;

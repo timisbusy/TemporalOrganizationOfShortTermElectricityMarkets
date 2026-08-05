@@ -11,7 +11,7 @@ clearForDays: 7 # number of days to clear market for
 startDate: 2026-04-03
 
 # set the uncertainty in renewable generation
-noiseLevel: 0.0
+noiseLevel: 0.05
 
 # choose a market configuration from the markets directory
 marketConfigs: 
