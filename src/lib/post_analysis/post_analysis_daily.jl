@@ -8,11 +8,6 @@ using XLSX
 using Distributions
 using Latexify
 
-
-results_path_base = "results/1785426007_compare_lld_match_no_end_soc_no_cnst_pen"
-
-analysis_dir_path = "$results_path_base/additional_analysis/post_analysis_daily"
-
 function CleanDirectory(path)
 	mkpath(path)
 end
@@ -30,21 +25,28 @@ marketConfigurationDisplayNames = Dict{String, String}(
 )
 
 
-dispatch_decision_paths = Dict{String,String}(
-	"Fixed Horizon" => "$results_path_base/RAW/final_dispatch_decisions_Fixed.xlsx",
-	"Rolling Horizon" => "$results_path_base/RAW/final_dispatch_decisions_Rolling.xlsx",
-	"Auction Only" => "$results_path_base/RAW/final_dispatch_decisions_FixedSQ.xlsx",
-)
 
-mtu_economic_indicator_paths = Dict{String,String}(
-    "Fixed Horizon" => "$results_path_base/mtu_economic_results_Fixed.xlsx",
-    "Rolling Horizon" => "$results_path_base/mtu_economic_results_Rolling.xlsx",
-    "Auction Only" => "$results_path_base/mtu_economic_results_FixedSQ.xlsx",
-)
+function PerformAnalysis(results_path_base_in)
 
+    if results_path_base_in != ""
+        results_path_base = results_path_base_in
 
+        analysis_dir_path = "$results_path_base/additional_analysis/post_analysis_daily"
 
-function PerformAnalysis()
+        dispatch_decision_paths = Dict{String,String}(
+            "Fixed Horizon" => "$results_path_base/RAW/final_dispatch_decisions_Fixed.xlsx",
+            "Rolling Horizon" => "$results_path_base/RAW/final_dispatch_decisions_Rolling.xlsx",
+            "Auction Only" => "$results_path_base/RAW/final_dispatch_decisions_FixedSQ.xlsx",
+        )
+
+        mtu_economic_indicator_paths = Dict{String,String}(
+            "Fixed Horizon" => "$results_path_base/mtu_economic_results_Fixed.xlsx",
+            "Rolling Horizon" => "$results_path_base/mtu_economic_results_Rolling.xlsx",
+            "Auction Only" => "$results_path_base/mtu_economic_results_FixedSQ.xlsx",
+        )
+
+    end
+
 	CleanDirectory(analysis_dir_path)
 
     may_19_interval = 20*24:(21*24 - 1)
@@ -53,38 +55,38 @@ function PerformAnalysis()
 
     print_cases = ["Fixed Horizon", "Rolling Horizon","Auction Only"]
 
-	dds = GetDispatchDecisions(print_cases)
-    mtu_economic_indicators = GetMTUEconomicIndicators(print_cases)
+	dds = GetDispatchDecisions(print_cases, dispatch_decision_paths)
+    mtu_economic_indicators = GetMTUEconomicIndicators(print_cases, mtu_economic_indicator_paths)
 
 	println("MAY 19 RESULTS")
 
-    plotPhysicalIndicator(dds, may_19_interval, Symbol("SOC"), print_cases, "May 19")
-    plotPhysicalIndicator(dds, may_19_interval, Symbol("6G_Wind"), print_cases, "May 19")
-    plotPhysicalIndicator(dds, may_19_interval, Symbol("2D_ModerateBid"), print_cases, "May 19")
-    plotPhysicalIndicator(dds, may_19_interval, Symbol("4G_Shoulder"), print_cases, "May 19")
+    plotPhysicalIndicator(dds, may_19_interval, Symbol("SOC"), print_cases, "May 19", analysis_dir_path)
+    plotPhysicalIndicator(dds, may_19_interval, Symbol("6G_Wind"), print_cases, "May 19", analysis_dir_path)
+    plotPhysicalIndicator(dds, may_19_interval, Symbol("2D_ModerateBid"), print_cases, "May 19", analysis_dir_path)
+    plotPhysicalIndicator(dds, may_19_interval, Symbol("4G_Shoulder"), print_cases, "May 19", analysis_dir_path)
 
     println("MAY 20 RESULTS")
 
-    plotPhysicalIndicator(dds, may_20_interval, Symbol("SOC"), print_cases, "May 20")
-    plotPhysicalIndicator(dds, may_20_interval, Symbol("6G_Wind"), print_cases, "May 20")
-    plotPhysicalIndicator(dds, may_20_interval, Symbol("2D_ModerateBid"), print_cases, "May 20")
-    plotPhysicalIndicator(dds, may_20_interval, Symbol("4G_Shoulder"), print_cases, "May 20")
+    plotPhysicalIndicator(dds, may_20_interval, Symbol("SOC"), print_cases, "May 20", analysis_dir_path)
+    plotPhysicalIndicator(dds, may_20_interval, Symbol("6G_Wind"), print_cases, "May 20", analysis_dir_path)
+    plotPhysicalIndicator(dds, may_20_interval, Symbol("2D_ModerateBid"), print_cases, "May 20", analysis_dir_path)
+    plotPhysicalIndicator(dds, may_20_interval, Symbol("4G_Shoulder"), print_cases, "May 20", analysis_dir_path)
 
     println("MAY 21 RESULTS")
 
-    plotPhysicalIndicator(dds, may_21_interval, Symbol("SOC"), print_cases, "May 21")
-    plotPhysicalIndicator(dds, may_21_interval, Symbol("6G_Wind"), print_cases, "May 21")
-    plotPhysicalIndicator(dds, may_21_interval, Symbol("2D_ModerateBid"), print_cases, "May 21")
-    plotPhysicalIndicator(dds, may_21_interval, Symbol("4G_Shoulder"), print_cases, "May 21")
+    plotPhysicalIndicator(dds, may_21_interval, Symbol("SOC"), print_cases, "May 21", analysis_dir_path)
+    plotPhysicalIndicator(dds, may_21_interval, Symbol("6G_Wind"), print_cases, "May 21", analysis_dir_path)
+    plotPhysicalIndicator(dds, may_21_interval, Symbol("2D_ModerateBid"), print_cases, "May 21", analysis_dir_path)
+    plotPhysicalIndicator(dds, may_21_interval, Symbol("4G_Shoulder"), print_cases, "May 21", analysis_dir_path)
 
-    plotSEWDifference(mtu_economic_indicators, may_19_interval, print_cases, "May 19")
-    plotSEWDifference(mtu_economic_indicators, may_20_interval, print_cases, "May 20")
-    plotSEWDifference(mtu_economic_indicators, may_21_interval, print_cases, "May 21")
+    plotSEWDifference(mtu_economic_indicators, may_19_interval, print_cases, "May 19", analysis_dir_path)
+    plotSEWDifference(mtu_economic_indicators, may_20_interval, print_cases, "May 20", analysis_dir_path)
+    plotSEWDifference(mtu_economic_indicators, may_21_interval, print_cases, "May 21", analysis_dir_path)
 
-    AnalyzeDailySEW(print_cases, mtu_economic_indicators, dds)
+    AnalyzeDailySEW(print_cases, mtu_economic_indicators, dds, analysis_dir_path)
 end
 
-function GetDispatchDecisions(cases)
+function GetDispatchDecisions(cases, dispatch_decision_paths)
 	dds = Dict{String,Any}()
 	for case in cases
 		dds[case] = LoadFile(dispatch_decision_paths[case])
@@ -94,7 +96,7 @@ function GetDispatchDecisions(cases)
 end
 
 
-function GetMTUEconomicIndicators(cases)
+function GetMTUEconomicIndicators(cases, mtu_economic_indicator_paths)
     inds = Dict{String,Any}()
     for case in cases
         inds[case] = LoadFile(mtu_economic_indicator_paths[case])
@@ -109,7 +111,7 @@ function LoadFile(filepath)
     return df
 end
 
-function plotPhysicalIndicator(dds, test_range, indicator, print_cases, print_date)
+function plotPhysicalIndicator(dds, test_range, indicator, print_cases, print_date, analysis_dir_path)
 
     indicatorData = Dict{String, Any}()
     # daily_indicators = Dict{String, Any}()
@@ -133,7 +135,7 @@ end
 
 sewSymbol =  Symbol("Socioeconomic Welfare (€)")
 
-function AnalyzeDailySEW(print_cases, mtu_economic_indicators, dds)
+function AnalyzeDailySEW(print_cases, mtu_economic_indicators, dds, analysis_dir_path)
 
     daily_sews = Dict{String,Any}()
     for (marketConfiguration, mtu_economic_indicator_df) in mtu_economic_indicators
@@ -147,12 +149,12 @@ function AnalyzeDailySEW(print_cases, mtu_economic_indicators, dds)
 
 
 
-    AnalyzeDrivers(print_cases, mtu_economic_indicators, dds, daily_sews)
-    CreateComparisonStats(mtu_economic_indicators, daily_sews)
+    AnalyzeDrivers(print_cases, mtu_economic_indicators, dds, daily_sews, analysis_dir_path)
+    CreateComparisonStats(mtu_economic_indicators, daily_sews, analysis_dir_path)
 
 end
 
-function CreateComparisonStats(mtu_economic_indicators, daily_sews)
+function CreateComparisonStats(mtu_economic_indicators, daily_sews, analysis_dir_path)
 
     comparisonStats = Dict{String,Any}()
 
@@ -218,7 +220,7 @@ end
 
 shoulderPeakDispatchSymbol = Symbol("ShoulderPeakDispatch")
 
-function AnalyzeDrivers(print_cases, mtu_economic_indicators, dispatch_decisions, daily_sews)
+function AnalyzeDrivers(print_cases, mtu_economic_indicators, dispatch_decisions, daily_sews, analysis_dir_path)
     daily_net_discharges = Dict{String,Any}()
     daily_shoulder_peak_dispatches = Dict{String,Any}()
     # dispatch_decisions = GetDispatchDecisions(print_cases)
@@ -309,7 +311,7 @@ function AddDayAndHour!(df, mtu_symbol)
 end
 
 
-function plotSEWDifference(mtu_economic_indicators, interval, print_cases, print_date)
+function plotSEWDifference(mtu_economic_indicators, interval, print_cases, print_date, analysis_dir_path)
     case_xs = Dict{String,Any}()
     for case in print_cases
         case_eis = mtu_economic_indicators[case]

@@ -1,17 +1,8 @@
 module PostAnalysisStorage
 
-using XLSX, DataFrames, Plots, Statistics, Latexify
+using XLSX, DataFrames, Plots, Statistics, Latexify, Printf
 
 
-
-results_path_base = "results/1785426007_compare_lld_match_no_end_soc_no_cnst_pen"
-
-analysis_dir_path = "$results_path_base/additional_analysis/post_analysis_storage"
-
-dispatch_decision_paths = Dict{String,String}(
-	"Fixed Horizon" => "$results_path_base/RAW/final_dispatch_decisions_Fixed.xlsx",
-	"Rolling Horizon" => "$results_path_base/RAW/final_dispatch_decisions_Rolling.xlsx",
-)
 
 results_path_base_LD = "../DATA/_laura_data"
 
@@ -21,12 +12,28 @@ dispatch_decision_paths_LD = Dict{String,String}(
 	"Rolling Horizon" => "$results_path_base_LD/decisionvariables_laura_Rolling36.xlsx",
 )
 
+
+percent_format = Ref(Printf.Format("%0.3f%%"))
+
 function CleanDirectory(path)
 	mkpath(path)
 end
 
+function PerformAnalysis(results_path_base_in)
 
-function PerformAnalysis()
+	if results_path_base_in != ""
+		results_path_base = results_path_base_in
+
+		
+		analysis_dir_path = "$results_path_base/additional_analysis/post_analysis_storage"
+
+		dispatch_decision_paths = Dict{String,String}(
+			"Fixed Horizon" => "$results_path_base/RAW/final_dispatch_decisions_Fixed.xlsx",
+			"Rolling Horizon" => "$results_path_base/RAW/final_dispatch_decisions_Rolling.xlsx",
+		)
+
+	end
+
 	println("starting analysis")
 	CleanDirectory(analysis_dir_path)
 	dds = Dict{String,DataFrame}()
@@ -54,7 +61,7 @@ function PerformAnalysis()
 	end
 
 	storage_analysis_df[!, Symbol("Change")] = storage_analysis_df[!, Symbol("Rolling Horizon")] .- storage_analysis_df[!, Symbol("Fixed Horizon")]
-	storage_analysis_df[!, Symbol("% Change")] = storage_analysis_df[!, Symbol("Change")] ./ storage_analysis_df[!, Symbol("Fixed Horizon")]
+	storage_analysis_df[!, Symbol("% Change")] = Printf.format.(percent_format,100*(storage_analysis_df[!, Symbol("Change")] ./ storage_analysis_df[!, Symbol("Fixed Horizon")]))
 
 	println(storage_analysis_df)
 
@@ -63,7 +70,7 @@ function PerformAnalysis()
 	storage_analysis_tex = latexify(storage_analysis_df; env = :table, booktabs = true, snakecase=true, latex=false,fmt="%'\''d\n")
 	write("$analysis_dir_path/storage_details.tex",storage_analysis_tex)
 
-	NetDischargePerHour(dds)
+	NetDischargePerHour(dds, analysis_dir_path)
 end
 
 function PrintStorageDetails(case, dd)
@@ -80,7 +87,7 @@ function PrintStorageDetails(case, dd)
 	return discharge_total,charge_total,discharge_per_day,charge_per_day
 end
 
-function NetDischargePerHour(dds)
+function NetDischargePerHour(dds, analysis_dir_path)
 	xPlotIndicator = 0:23
     pNetDischarge = Plots.plot(xlabel="Hour of Day", ylabel="Mean Net Discharge (MWh)",
                             title="Mean Net Discharge (MWh)")

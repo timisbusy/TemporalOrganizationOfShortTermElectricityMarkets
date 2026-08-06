@@ -3,13 +3,6 @@ module PostAnalysisQuantitiesByAgent
 using XLSX, DataFrames, Plots, Statistics, Latexify, Printf
 
 
-
-results_path_base = "results/1785426007_compare_lld_match_no_end_soc_no_cnst_pen"
-
-analysis_dir_path = "$results_path_base/additional_analysis/post_analysis_quantities_by_agent"
-
-agent_ind_data_path = "$results_path_base/agent_indicators.xlsx"
-
 function CleanDirectory(path)
 	mkpath(path)
 end
@@ -22,19 +15,28 @@ agent_names = ["1D_HighBid","2D_ModerateBid","3G_Base","4G_Shoulder","5G_Peak","
 quantitySymbol = Symbol("Quantity (MWh)")
 surplusSymbol = Symbol("Surplus (€)")
 
-function PerformAnalysis()
+function PerformAnalysis(results_path_base_in)
+
+	if results_path_base_in != ""
+		results_path_base = results_path_base_in
+
+		analysis_dir_path = "$results_path_base/additional_analysis/post_analysis_quantities_by_agent"
+
+		agent_ind_data_path = "$results_path_base/agent_indicators.xlsx"
+	end
+
 	println("starting analysis")
 	CleanDirectory(analysis_dir_path)
 	
 	indicators = LoadFile(agent_ind_data_path)
 	println(indicators)
 
-	AnalyzeQuantities(indicators)
-	AnalyzeSurpluses(indicators)
+	AnalyzeQuantities(indicators, analysis_dir_path)
+	AnalyzeSurpluses(indicators, analysis_dir_path)
 
 end
 
-function AnalyzeQuantities(indicators)
+function AnalyzeQuantities(indicators, analysis_dir_path)
 
 	final_agent_ind_df = DataFrame(Agent=String[],Fixed=Float64[],Rolling=Float64[],RollingDiff=Float64[],FixedSQ=Float64[],FixedSQDiff=Float64[])
 	# DataFrame([Float64[] for i in 1:length(short_names)], short_names)
@@ -82,7 +84,7 @@ function AnalyzeQuantities(indicators)
 	write("$analysis_dir_path/agent_quantities.tex",agent_quantities_analysis_tex)
 end
 
-function AnalyzeSurpluses(indicators)
+function AnalyzeSurpluses(indicators, analysis_dir_path)
 	final_agent_ind_df = DataFrame(Agent=String[],Fixed=Float64[],Rolling=Float64[],RollingDiff=Float64[],FixedSQ=Float64[],FixedSQDiff=Float64[])
 	# DataFrame([Float64[] for i in 1:length(short_names)], short_names)
 	println(final_agent_ind_df)

@@ -3,22 +3,6 @@ module PostAnalysisLeadTime
 using XLSX, DataFrames, Plots, Statistics, StatsPlots, Latexify
 
 
-
-results_path_base = "results/1785426007_compare_lld_match_no_end_soc_no_cnst_pen"
-
-analysis_dir_path = "$results_path_base/additional_analysis/lead_time_analysis"
-
-dispatch_decision_paths = Dict{String,String}(
-	"Fixed" => "$results_path_base/RAW/final_dispatch_decisions_Fixed.xlsx",
-	"Rolling" => "$results_path_base/RAW/final_dispatch_decisions_Rolling.xlsx",
-)
-
-transaction_paths = Dict{String,String}(
-	"Fixed Horizon" => "$results_path_base/RAW/transactions_Fixed.xlsx",
-	"Rolling Horizon" => "$results_path_base/RAW/transactions_Rolling.xlsx",
-	"Auction Only" => "$results_path_base/RAW/transactions_FixedSQ.xlsx",
-)
-
 mtuSymbol = Symbol("Market Time Unit")
 clearingMTUSymbol = Symbol("Clearing MTU")
 timesClearedSymbol = Symbol("Times Cleared")
@@ -33,7 +17,25 @@ function CleanDirectory(path)
 	mkpath(path)
 end
 
-function PerformAnalysis()
+function PerformAnalysis(results_path_base_in)
+
+	if results_path_base_in != ""
+		results_path_base = results_path_base_in
+
+		analysis_dir_path = "$results_path_base/additional_analysis/lead_time_analysis"
+
+		dispatch_decision_paths = Dict{String,String}(
+			"Fixed" => "$results_path_base/RAW/final_dispatch_decisions_Fixed.xlsx",
+			"Rolling" => "$results_path_base/RAW/final_dispatch_decisions_Rolling.xlsx",
+		)
+
+		transaction_paths = Dict{String,String}(
+			"Fixed Horizon" => "$results_path_base/RAW/transactions_Fixed.xlsx",
+			"Rolling Horizon" => "$results_path_base/RAW/transactions_Rolling.xlsx",
+			"Auction Only" => "$results_path_base/RAW/transactions_FixedSQ.xlsx",
+		)
+	end
+
 	println("starting analysis")
 	CleanDirectory(analysis_dir_path)
 
@@ -78,10 +80,10 @@ function PerformAnalysis()
 	transaction_details_tex = latexify(transaction_details_df; env = :table, booktabs = true, snakecase=true, latex=false,fmt="%'\''d\n")
 	write("$analysis_dir_path/transaction_details.tex",transaction_details_tex)
 
-	AgentSellPriceByLeadTime(transactions_by_case, "3G_Base")
-	AgentSellPriceByLeadTime(transactions_by_case, "6G_Wind")
+	AgentSellPriceByLeadTime(transactions_by_case, "3G_Base", analysis_dir_path)
+	AgentSellPriceByLeadTime(transactions_by_case, "6G_Wind", analysis_dir_path)
 
-	SellAndBuybackPrices(transactions_by_case)
+	SellAndBuybackPrices(transactions_by_case, analysis_dir_path)
 end
 
 function GetTransactionDetails(case, ts)
@@ -102,73 +104,7 @@ function GetTransactionDetails(case, ts)
 	return details
 end
 
-#=function BaseSellPriceByLeadTime(transactions_by_case)
-	CASES =  ["Fixed","Rolling"]
-	groupRanges = [1:12, 13:24, 25:36]
-	groupNames = ["1-12", "13-24", "25-36"]
-
-
-    volume = zeros(Float64, length(groupNames), length(CASES))
-    price = zeros(Float64, length(groupNames), length(CASES))
-
-    
-    for (i,groupName) in enumerate(groupNames), (j, case) in enumerate(CASES)
-		case_ts = transactions_by_case[case]
-		case_ts = case_ts[(case_ts.Agent .== "3G_Base" .&& case_ts[!,quantitySymbol] .>= 0),:]
-		case_ts[:,:LeadTime] = case_ts[!,mtuSymbol] .- case_ts[!,clearingMTUSymbol] 
-		case_ts_in_group = case_ts[groupRanges[i].start .<= case_ts[!,:LeadTime] .<= groupRanges[i].stop,:]
-		
-		volume_in_group = combine(case_ts_in_group, quantitySymbol => sum )[1,1]
-		print("Volume for $groupName in $case: $volume_in_group")
-		price_in_group = combine(case_ts_in_group, [priceSymbol,quantitySymbol] => ( (p,q) -> sum(p .* q)/sum(q) ) )[1,1]
-		print("Price for $groupName in $case: $price_in_group")
-
-		volume[i,j] = volume_in_group / 1e6
-		price[i,j] = price_in_group
-		
-	end
-
-
-
-    p1 = groupedbar(
-        groupNames,
-        volume,
-        label = reshape(CASES, 1, :),
-        bar_position = :dodge,
-        color = [:steelblue3 :darkorange2],
-        ylabel = "Sold volume (m MWh)",
-        title = "Base Sales by Lead Time",
-        legend = :topright,
-        grid = :y,
-        framestyle = :box,
-        ylims = (0, maximum(volume) * 1.22),
-        # left_margin = 16mm,
-        # bottom_margin = 14mm,
-    )
-
-    p2 = groupedbar(
-        groupNames,
-        price,
-        label = reshape(CASES, 1, :),
-        bar_position = :dodge,
-        color = [:steelblue3 :darkorange2],
-        ylabel = "Avg sell price (EUR/MWh)",
-        title = "Base Sell Price by Lead Time",
-        legend = :topright,
-        grid = :y,
-        framestyle = :box,
-        ylims = (0, maximum(price) * 1.20),
-        # left_margin = 16mm,
-        # bottom_margin = 14mm,
-    )
-
-    display(plot(p1))
-    display(plot(p2))
-
-end
-=#
-
-function AgentSellPriceByLeadTime(transactions_by_case,agent)
+function AgentSellPriceByLeadTime(transactions_by_case,agent, analysis_dir_path)
 	CASES =  ["Fixed Horizon","Rolling Horizon", "Auction Only"]
 	groupRanges = [1:12, 13:24, 25:36]
 	groupNames = ["1-12", "13-24", "25-36"]
@@ -204,7 +140,7 @@ function AgentSellPriceByLeadTime(transactions_by_case,agent)
         color = colors,
         ylabel = "Sold volume (m MWh)",
         title = "$agent Sales by Lead Time",
-        legend = :topright,
+        legend = :topleft,
         grid = :y,
         framestyle = :box,
         ylims = (0, maximum(volume) * 1.22),
@@ -220,7 +156,7 @@ function AgentSellPriceByLeadTime(transactions_by_case,agent)
         color = colors,
         ylabel = "Avg sell price (EUR/MWh)",
         title = "$agent Sell Price by Lead Time",
-        legend = :topright,
+        legend = :topleft,
         grid = :y,
         framestyle = :box,
         ylims = (0, maximum(price) * 1.20),
@@ -238,7 +174,7 @@ end
 
 
 
-function SellAndBuybackPrices(transactions_by_case)
+function SellAndBuybackPrices(transactions_by_case, analysis_dir_path)
 	CASES =  ["Fixed Horizon","Rolling Horizon", "Auction Only"]
 	agents = ["3G_Base","6G_Wind","7G_Solar"]
 

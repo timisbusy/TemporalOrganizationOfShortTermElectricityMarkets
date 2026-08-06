@@ -2,14 +2,6 @@ module PostAnalysisSEW
 
 using XLSX, DataFrames, Plots, Statistics, Latexify, Printf
 
-
-
-results_path_base = "results/1785426007_compare_lld_match_no_end_soc_no_cnst_pen"
-
-analysis_dir_path = "$results_path_base/additional_analysis/post_analysis_SEW"
-
-sew_data_path = "$results_path_base/economic_indicators.xlsx"
-
 function CleanDirectory(path)
 	mkpath(path)
 end
@@ -18,7 +10,17 @@ short_names = ["Fixed", "Rolling", "FixedSQ"]
 long_names = ["Fixed Horizon", "Rolling Horizon", "Auction Only"]
 
 
-function PerformAnalysis()
+function PerformAnalysis(results_path_base_in)
+
+	if results_path_base_in != ""
+		results_path_base = results_path_base_in
+
+		analysis_dir_path = "$results_path_base/additional_analysis/post_analysis_SEW"
+
+		sew_data_path = "$results_path_base/economic_indicators.xlsx"
+	end
+
+
 	println("starting analysis")
 	CleanDirectory(analysis_dir_path)
 	
