@@ -1,0 +1,57 @@
+
+# Generator parameters
+dispatchableGenerators:
+ 3G_Base:
+  bidPrice: 60 # EUR/MWh
+  capacity: 3309 # MW
+  rampRate: 2 # % of nominal power per minute
+  initialQuantity: 3309
+  emissionFactor: 980 # kgCO2e/MWh
+
+ 4G_Shoulder:
+  bidPrice: 90 # EUR/MWh
+  capacity: 9523 # MW
+  rampRate: 6 # % of nominal power per minute
+  initialQuantity: 0
+  emissionFactor: 420 # kgCO2e/MWh
+
+ 5G_Peak:
+  bidPrice: 120 # EUR/MWh
+  capacity: 3738 # MW
+  rampRate: 12 # % of nominal power per minute
+  initialQuantity: 0
+  emissionFactor: 420 # kgCO2e/MWh
+
+variableGenerators:
+  6G_Wind:
+    bidPrice: 0         # EUR/MWh
+    capacity: 11036        # MW
+    profile_files: ["input_data/laura/windon_data_2025_ned.csv", "input_data/laura/windoff_data_2025_ned.csv"]
+    profile_type: quantity
+    conversionFactor: .001
+  7G_Solar:
+    bidPrice: 0         # EUR/MWh
+    capacity: 24700        # MW
+    profile_file: input_data/laura/solar_data_2025_ned.csv
+    profile_type: quantity 
+    conversionFactor: .001
+
+# Storage parameters
+batteryStorage:
+  energyCapacity: 2000 # MWh
+  powerCapacity: 1000 # MW
+  efficiency: 0.9
+  initialSOC: 0.5 # as fraction of energyCapacity
+  endSOC: 0.5 # as fraction of energyCapacity
+  
+# Demand parameters
+demand:
+  segments:
+    1D_Inelastic:
+      bidPrice: 300   # EUR/MWh (high willingness to pay)
+      profile_file: input_data/laura/demand_data_2025_ned2.csv
+      profile_type: demand_quantity
+      conversionFactor: .001
+    2D_Elastic:
+      bidPrice: 70   # EUR/MWh (elastic, only if price low)
+      quantity_constant: 200

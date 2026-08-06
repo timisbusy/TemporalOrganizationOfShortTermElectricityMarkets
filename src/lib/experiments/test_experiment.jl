@@ -18,6 +18,7 @@ function VerySimpleExperiment()
 	test_name = @sprintf "supersimple%d" datetime2unix(now())
 	results_dir = "results/$(test_name)"
 	mkdir(results_dir)
+	mkdir("$results_dir/RAW")
 	println(test_name)
 	result = ClearMarket.ClearSimple("MPLAMarketClearingLib/src/configs/simple_test_config.yaml",test_name)
 	println(result)
@@ -30,6 +31,7 @@ function RunSweepRampRatesTest(test_output_name, config_file, start_sweep, end_s
 		test_name = @sprintf "%d_%s_%.2f" datetime2unix(now()) test_output_name ramp_rate
 		results_dir = "results/$(test_name)"
 		mkdir(results_dir)
+		mkdir("$results_dir/RAW")
 		println(test_name)
 		result = ClearMarket.ClearMarketComparisonWithRampRate(config_file,test_name, ramp_rate)
 	end
@@ -39,10 +41,37 @@ function RunBasic(output_name, config_file)
 	test_name = @sprintf "%d_%s" datetime2unix(now()) output_name
 	results_dir = "results/$(test_name)"
 	mkdir(results_dir)
+	mkdir("$results_dir/RAW")
 	println(test_name)
 	result = ClearMarket.ClearSimple(config_file,test_name)
 	println("Results can be found here: $results_dir")
 end
+
+function RunComparisonExperiment(output_name, config_file)
+	test_name = @sprintf "%d_%s" datetime2unix(now()) output_name
+	results_dir = "results/$(test_name)"
+	mkdir(results_dir)
+	mkdir("$results_dir/RAW")
+	println(test_name)
+	result = ClearMarket.ClearMarketComparison(config_file,test_name)
+	println("Results can be found here: $results_dir")
+end
+
+function RunComparisonExperimentWithErrors(output_name, config_file, error_indexes)
+	test_parent = @sprintf "stochastic_test_%d" datetime2unix(now())
+	test_result_parent_dir = "results/$test_parent"
+	mkdir(test_result_parent_dir)
+	for i in error_indexes
+		test_name = @sprintf "%s/%s_%d" test_parent output_name i
+		results_dir = "results/$(test_name)"
+		mkdir(results_dir)
+		mkdir("$results_dir/RAW")
+		println(test_name)
+		result = ClearMarket.ClearMarketComparisonWithErrors(config_file,test_name,i)
+		println("Results can be found here: $results_dir")
+	end
+end
+
 
 
 #=

@@ -10,13 +10,16 @@ using ..Helpers.MarketDataStorage
 
 
 function plot(marketresults, time_range::UnitRange{Int})
-	if length(marketresults) < 1
+	if length(marketresults.Results) < 1
 		println("no results in market results")
 		return
 	end
 
-	agentMap = marketresults[1].AgentMap
-	dispatch_decisions = MarketDataStorage.GetMarketResultsForRange(marketresults,time_range) # working on this now
+	println("not plotting equilibrium for now")
+	return
+
+	agentMap = marketresults.Results[1].AgentMap
+	dispatch_decisions = MarketDataStorage.GetFinalDispatchDecisionsForRange(marketresults,time_range) # needs to be able to retrieve a price
 
 	# println(dispatch_decisions)
 

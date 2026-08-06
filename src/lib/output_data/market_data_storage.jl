@@ -5,6 +5,8 @@ using Dates, JuMP, MathOptInterface, DataFrames
 # this library fetches data from a JuMP optimization model
 using ..Helpers.HelperModelResults
 
+include("./table_header_renaming.jl")
+
 # Storage format for results of each market clearing 
 # this is an update from ProcessData.ClearingData struct type with more explicit relation between MTUs and decision variables 
 # removed fields here for WIP notes
@@ -19,18 +21,10 @@ mutable struct MarketResult
 	# BaseTimePeriod::Int
 	OptimizationWindow::UnitRange{Int}
 	AgentMap::Dict{HelperModelResults.AgentTypeEnum, Vector{String}}
-
+	VariableGenerators::Vector{String}
 	# model optimization outcome
 	TerminationStatus::MathOptInterface.TerminationStatusCode
 	ObjectiveValue::Number
-	#=TimePeriods::Vector{Int}
-	Prices::Vector{Number}
-	GenData::Dict{String, Vector{Float64}}
-	BidPrices::Dict{String, Vector{Float64}} # gens and demands
-	DemandData::Dict{String, Vector{Float64}}
-	StorageDischargeQuantities::Vector{Float64} # TODO: should rethink data format here for storage
-	StorageChargeQuantities::Vector{Float64}
-	StorageStateOfCharge::Vector{Float64} =#
 
 	# detailed outcomes for market agents
 	DecisionVariables::DataFrame
@@ -39,10 +33,32 @@ mutable struct MarketResult
 	MarketResult() = new()
 end
 
-# generate a new market result and add to resultset
-# big TODO here: make the helper for making the DecisionVariables matrix and rebuild transaction generation
+# Storage for overall results with cache for faster data access
 
-function AddMarketResult!(resultset, model, time_cleared, market_name)
+mutable struct MarketResultContainer
+
+	Results::Vector{MarketResult}
+	TransactionsCache::DataFrame
+	DecisionVariablesCache::DataFrame
+	DecisionVariablesCacheBust::Bool
+	TransactionsCacheBust::Bool
+	
+	MarketResultContainer() = new()
+end
+
+function MakeMarketResultContainer()
+	mrc = MarketResultContainer()
+	mrc.Results = Vector{MarketResult}()
+	mrc.DecisionVariablesCacheBust = true
+	mrc.TransactionsCacheBust = true
+	return mrc
+end
+
+
+
+# generate a new MarketResult and add to MarketResultContainer, bust cache
+
+function AddMarketResult!(market_result_container, model, time_cleared, market_name)
 	optimization_window = HelperModelResults.OptimizationWindow(model)
 	agent_map = HelperModelResults.AgentMap(model)
 
@@ -53,12 +69,19 @@ function AddMarketResult!(resultset, model, time_cleared, market_name)
 	mr.TimeCleared = time_cleared # MTU
 	mr.OptimizationWindow = optimization_window # range(MTU,MTU)
 	mr.AgentMap = agent_map
+	mr.VariableGenerators = HelperModelResults.VariableGenerators(model)
 	mr.TerminationStatus = termination_status(model)
 	mr.ObjectiveValue = objective_value(model)
 	mr.DecisionVariables = HelperModelResults.DecisionVariables(optimization_window, agent_map, model) # todo: docs on this
-	mr.Transactions = HelperModelResults.Transactions(mr, GetMarketResults(resultset), market_name, resultset) # todo: docs on this
+	mr.Transactions = HelperModelResults.Transactions(mr, GetFinalDispatchDecisions(market_result_container), market_name, market_result_container.Results, model) # todo: docs on this
 
-	push!(resultset, mr)
+	push!(market_result_container.Results, mr)
+	CacheBust!(market_result_container)
+end
+
+function CacheBust!(market_result_container)
+	market_result_container.DecisionVariablesCacheBust = true
+	market_result_container.TransactionsCacheBust = true
 end
 
 # TODO: replicate helpers for data access from ProcessData
@@ -80,18 +103,33 @@ end
 # function GenQuantities(resultset, filter)
 	# uses FinalDispatchDecisions
 
+function GenQuantities(market_result_container, mtu_range)
+	mr = GetFinalDispatchDecisions(market_result_container)
+	gens = market_result_container.Results[1].AgentMap[HelperModelResults.AGENT_GENERATOR]
+
+	quantities = Dict{String,Vector{Float64}}()
+	for gName in gens
+		quantities[gName] = zeros(mtu_range.stop)
+		for mtu in mtu_range
+			quantities[gName][mtu] = length(mr[mr.mtu .== mtu, gName]) > 0 ? mr[mr.mtu .== mtu, gName][1] : 0.0
+		end
+	end
+
+	return quantities
+end
+
 # function Transactions(resultset, filter)
 
 # function EconomicOutcomes(resultset, filter)
 	# uses Transactions, FinalDispatchDecisions
 
 
-# This function takes marketresults and gets the latest decision variable of column_name for a particular mtu
+# This function takes market_result_container and gets the latest decision variable of column_name for a particular mtu
 
-function DecisionVariableValueForTimePeriod(marketresults, column_name, mtu)
+function DecisionVariableValueForTimePeriod(market_result_container, column_name, mtu)
 	previous_value = 0.0
 	has_previous_value = false
-	for marketresult in marketresults
+	for marketresult in market_result_container.Results
 		if mtu in marketresult.OptimizationWindow
 			dvs = marketresult.DecisionVariables
 			previous_value = dvs[dvs.mtu .== mtu, Symbol(column_name)][1]
@@ -101,73 +139,92 @@ function DecisionVariableValueForTimePeriod(marketresults, column_name, mtu)
 	return (previous_value, has_previous_value)
 end
 
-# This function takes marketresults and gets the latest dispatch for a generator for a particular mtu
+function TransactionQuantitySumValueForMTU(market_result_container, agent_name, mtu)
+	previous_value = 0.0
+	has_previous_value = false
+	length(market_result_container.Results) == 0 && return (previous_value, has_previous_value)
+	transactions = GetTransactions(market_result_container)
+	previous_value = combine(transactions[transactions[!, "Market Time Unit"] .== mtu .&& transactions[!, "Agent"] .== agent_name, :], Symbol("Quantity (MWh)") => sum)[1,1]
+	return (previous_value, has_previous_value)
+end
 
-function GenPreviousDispatchDataForTimePeriod(marketresults, generator, mtu)
-	(previous_value, has_previous_value) = DecisionVariableValueForTimePeriod(marketresults, generator, mtu)
+# This function takes market_result_container and gets the latest dispatch for a generator for a particular mtu
+
+function GenPreviousDispatchDataForTimePeriod(market_result_container, generator, mtu)
+	(previous_value, has_previous_value) = TransactionQuantitySumValueForMTU(market_result_container, generator, mtu)
 	return previous_value
 end
 
-# This function takes marketresults and gets the latest dispatch for a demand for a particular mtu
+# This function takes market_result_container and gets the latest dispatch for a demand for a particular mtu
 
-function DemPreviousDispatchDataForTimePeriod(marketresults, demand, mtu)
-	(previous_value, has_previous_value) = DecisionVariableValueForTimePeriod(marketresults, demand, mtu)
+function DemPreviousDispatchDataForTimePeriod(market_result_container, demand, mtu)
+	(previous_value, has_previous_value) = TransactionQuantitySumValueForMTU(market_result_container, demand, mtu)
 	return previous_value
 end
 
-# This function takes marketresults and gets the latest dispatch for a demand for a particular mtu
+# This function takes market_result_container and gets the latest dispatch for a demand for a particular mtu
 
-function StorageSOCForTimePeriod(marketresults, mtu)
-	return DecisionVariableValueForTimePeriod(marketresults, "SOC", mtu)
+function StorageSOCForTimePeriod(market_result_container, mtu)
+	return DecisionVariableValueForTimePeriod(market_result_container, "SOC", mtu)
 end
 
 
-# this function gets all market results from decisionvariables and merges them into a single dataframe
-function GetMarketResults(marketresults)
-	finalMarketResults = DataFrame()
+# this function gets final dispatch decisions from decisionvariables and merges them into a single dataframe
+function GetFinalDispatchDecisions(market_result_container)
+	if !market_result_container.DecisionVariablesCacheBust
+		return market_result_container.DecisionVariablesCache
+	end
+	finalDispatchDecisions = DataFrame()
 
-	if length(marketresults) == 0
-		return finalMarketResults
+	if length(market_result_container.Results) == 0
+		return finalDispatchDecisions
 	end
 
-	for marketresult in marketresults
+	for marketresult in market_result_container.Results
 		dvs = marketresult.DecisionVariables
-		finalMarketResults = vcat(finalMarketResults, dvs)
+		finalDispatchDecisions = vcat(finalDispatchDecisions, dvs)
 	end
 
-	finalMarketResults = unique!(finalMarketResults, "mtu"; keep=:last)
+	finalDispatchDecisions = unique!(finalDispatchDecisions, "mtu"; keep=:last)
 
-
-	return finalMarketResults
+	select!(finalDispatchDecisions,Not(["price"]))
+	market_result_container.DecisionVariablesCache = finalDispatchDecisions
+	market_result_container.DecisionVariablesCacheBust = false
+	return finalDispatchDecisions
 
 end
 
-function GetTransactions(marketresults)
+function GetTransactions(market_result_container)
+	if !market_result_container.TransactionsCacheBust
+		return market_result_container.TransactionsCache
+	end
 	all_transactions = DataFrame()
 
-	if length(marketresults) == 0
+	if length(market_result_container.Results) == 0
 		return all_transactions
 	end
 
-	for marketresult in marketresults
+	for marketresult in market_result_container.Results
 		transactions = marketresult.Transactions
 		all_transactions = vcat(all_transactions, transactions)
 	end
+	market_result_container.TransactionsCache = all_transactions
+	market_result_container.TransactionsCacheBust = false
 	return all_transactions
 end
 
-# This function takes marketresults and gets the latest dispatch over a range of mtus
+# This function takes market_result_container and gets the final dispatch decisions over a range of mtus
 
-function GetMarketResultsForRange(marketresults,time_range)
-	finalMarketResults = GetMarketResults(marketresults)
-	if nrow(finalMarketResults) == 0
-		return finalMarketResults
+function GetFinalDispatchDecisionsForRange(market_result_container,time_range)
+	finalDispatchDecisions = GetFinalDispatchDecisions(market_result_container)
+	if nrow(finalDispatchDecisions) == 0
+		return finalDispatchDecisions
 	end
-	return finalMarketResults[(time_range.start .<= finalMarketResults.mtu .<= time_range.stop), :]
+	return finalDispatchDecisions[(time_range.start .<= finalDispatchDecisions.mtu .<= time_range.stop), :]
 end
 
-function GetTransactionsForRange(marketresults,time_range)
-	transactions = GetTransactions(marketresults)
+function GetTransactionsForRange(market_result_container,time_range)
+	transactions = GetTransactions(market_result_container)
 	if nrow(transactions) == 0
 		return transactions
 	end
@@ -175,18 +232,18 @@ function GetTransactionsForRange(marketresults,time_range)
 end
 
 
-function GetEconomicIndicatorsForRange(marketresults,time_range)
+function GetEconomicIndicatorsForRange(market_result_container,time_range)
 	
-	indicators = DataFrame(SEW=[],ProducerSurplus=[],ConsumerSurplus=[],StorageRevenue=[])# , WeightedAveragePrice=[])
+	economic_indicators = DataFrame(SEW=[], DemandUtility=[], ProductionCosts=[], ProducerSurplus=[],ConsumerSurplus=[],StorageRevenue=[])# , WeightedAveragePrice=[])
 	agent_indicators = DataFrame(Agent=[],Quantity=[],LoadUtility=[],Payments=[],Revenue=[],FuelCost=[],Surplus=[],SOCChange=[])
-	mtu_economic_indicators = DataFrame(MTU=[],SEW=[],ProducerSurplus=[],ConsumerSurplus=[],StorageRevenue=[])
+	mtu_economic_indicators = DataFrame(MTU=[], SEW=[], DemandUtility=[], ProductionCosts=[], ProducerSurplus=[],ConsumerSurplus=[],StorageRevenue=[])
 
 	# get data from market clearing
-	finalMarketResults = GetMarketResultsForRange(marketresults,time_range)
-	transactions = GetTransactionsForRange(marketresults,time_range)
+	finalDispatchDecisions = GetFinalDispatchDecisionsForRange(market_result_container,time_range)
+	transactions = GetTransactionsForRange(market_result_container,time_range)
 
-	if length(marketresults) < 1
-		return (indicators, agent_indicators, transactions, finalMarketResults, mtu_economic_indicators)
+	if length(market_result_container.Results) < 1
+		return (economic_indicators, agent_indicators, transactions, finalDispatchDecisions, mtu_economic_indicators)
 	end
 
 	# add calculated columns to transactions
@@ -198,22 +255,25 @@ function GetEconomicIndicatorsForRange(marketresults,time_range)
 	transactions[!, payrev_symbol] = transactions[!, quantity_symbol] .* transactions[!, price_symbol]
 
 	# handle gens and demands
-	agentMap = marketresults[1].AgentMap
+	agentMap = market_result_container.Results[1].AgentMap
 
-	for (a_type, agents) in agentMap 
+	display_order = [HelperModelResults.AGENT_DEMAND, HelperModelResults.AGENT_GENERATOR]
+
+	for a_type in display_order
+		agents = agentMap[a_type] 
 		for agent in agents
 			# add some calculated columns
 			if (a_type == HelperModelResults.AGENT_DEMAND)
-				finalMarketResults[!, Symbol("utility_$agent")] = finalMarketResults[!, Symbol(agent)] .* finalMarketResults[!, Symbol("P_$agent")]
+				finalDispatchDecisions[!, Symbol("utility_$agent")] = finalDispatchDecisions[!, Symbol(agent)] .* finalDispatchDecisions[!, Symbol("P_$agent")]
 			end
 			if (a_type == HelperModelResults.AGENT_GENERATOR)
-				finalMarketResults[!, Symbol("fuelcost_$agent")] = finalMarketResults[!, Symbol(agent)] .* finalMarketResults[!, Symbol("P_$agent")]
+				finalDispatchDecisions[!, Symbol("fuelcost_$agent")] = finalDispatchDecisions[!, Symbol(agent)] .* finalDispatchDecisions[!, Symbol("P_$agent")]
 			end
-			quantity = combine(finalMarketResults, Symbol(agent) => sum)[1,1]
-			load_utility = (a_type == HelperModelResults.AGENT_DEMAND) ? combine(finalMarketResults, Symbol("utility_$agent") => sum)[1,1] : 0.0
+			quantity = combine(finalDispatchDecisions, Symbol(agent) => sum)[1,1]
+			load_utility = (a_type == HelperModelResults.AGENT_DEMAND) ? combine(finalDispatchDecisions, Symbol("utility_$agent") => sum)[1,1] : 0.0
 			payments = (a_type == HelperModelResults.AGENT_DEMAND) ? combine((transactions[transactions.Agent .== agent, :]), payrev_symbol => sum)[1,1] : 0.0
 			revenue = (a_type == HelperModelResults.AGENT_GENERATOR) ? combine((transactions[transactions.Agent .== agent, :]), payrev_symbol => sum)[1,1] : 0.0
-			fuel_cost = (a_type == HelperModelResults.AGENT_GENERATOR) ? combine(finalMarketResults, Symbol("fuelcost_$agent") => sum)[1,1] : 0.0
+			fuel_cost = (a_type == HelperModelResults.AGENT_GENERATOR) ? combine(finalDispatchDecisions, Symbol("fuelcost_$agent") => sum)[1,1] : 0.0
 			surplus = (load_utility - payments) + (revenue - fuel_cost)
 
 			quantity = isapprox(quantity, 0.0, atol=1e-4) ? 0.0 : quantity
@@ -239,14 +299,14 @@ function GetEconomicIndicatorsForRange(marketresults,time_range)
 
 	storage_revenue = combine((transactions[transactions.Agent .== "Storage", :]), payrev_symbol => sum)[1,1]
 	# like this we report out the sum quantity of energy charged and discharged - the difference is also interesting
-	storage_quantity = 	combine(finalMarketResults, :StorageDischarge => sum)[1,1] + combine(finalMarketResults, :StorageCharge => sum)[1,1]
+	storage_quantity = 	combine(finalDispatchDecisions, :StorageDischarge => sum)[1,1] # + combine(finalDispatchDecisions, :StorageCharge => sum)[1,1]
 	
 
 
 
-	(storage_soc_begin, has_soc_begin) = StorageSOCForTimePeriod(marketresults, time_range.start - 1)
+	(storage_soc_begin, has_soc_begin) = StorageSOCForTimePeriod(market_result_container, time_range.start - 1)
 
-	(storage_soc_end, has_soc_end) = StorageSOCForTimePeriod(marketresults, time_range.stop)
+	(storage_soc_end, has_soc_end) = StorageSOCForTimePeriod(market_result_container, time_range.stop)
 
 	if !has_soc_begin || !has_soc_end
 		println("WARNING: SOC begin or end not found. change reported may be invalid.")
@@ -262,8 +322,8 @@ function GetEconomicIndicatorsForRange(marketresults,time_range)
 
 	# which MTUs had storage charge and discharge quantities in their final dispatch 
 	# TODO: think about how to approach MTUs where no charge or discharge appeared in final dispatch
-	charge_mtus = finalMarketResults[finalMarketResults.StorageCharge .> 0.0, :].mtu
-	discharge_mtus = finalMarketResults[finalMarketResults.StorageDischarge .> 0.0, :].mtu
+	charge_mtus = finalDispatchDecisions[finalDispatchDecisions.StorageCharge .> 0.0, :].mtu
+	discharge_mtus = finalDispatchDecisions[finalDispatchDecisions.StorageDischarge .> 0.0, :].mtu
 
 	println("charge MTUs: $charge_mtus")
 	println("discharge MTUs: $discharge_mtus")
@@ -293,25 +353,29 @@ function GetEconomicIndicatorsForRange(marketresults,time_range)
 	# note that revenue here is also reported as SEW, assuming no costs
 	push!(agent_indicators, ["Storage", storage_quantity, 0.0, 0.0, storage_revenue, 0.0, storage_revenue, storage_soc_change])
 	
+	demand_utility = combine((agent_indicators[ [a in agentMap[HelperModelResults.AGENT_DEMAND] for a in agent_indicators[!, :Agent]], :]), :LoadUtility => sum)[1,1]
+	production_costs = combine((agent_indicators[ [a in agentMap[HelperModelResults.AGENT_GENERATOR] for a in agent_indicators[!, :Agent]], :]), :FuelCost => sum)[1,1]
 	consumer_surplus = combine((agent_indicators[ [a in agentMap[HelperModelResults.AGENT_DEMAND] for a in agent_indicators[!, :Agent]], :]), :Surplus => sum)[1,1] 
 	producer_surplus = combine((agent_indicators[ [a in agentMap[HelperModelResults.AGENT_GENERATOR] for a in agent_indicators[!, :Agent]], :]), :Surplus => sum)[1,1] 
-	sew = consumer_surplus + producer_surplus
-	push!(indicators,[sew,producer_surplus,consumer_surplus,storage_revenue]) #,weighted_average_price])
+	sew = demand_utility - production_costs
+	push!(economic_indicators,[sew, demand_utility, production_costs, producer_surplus,consumer_surplus,storage_revenue]) #,weighted_average_price])
 
 	for mtu in time_range
-		mtu_storage_revenue = combine((transactions[transactions.Agent .== "Storage" .&& transactions[!, mtu_symbol] == mtu, :]), payrev_symbol => sum)[1,1]
+		mtu_storage_revenue = combine((transactions[transactions.Agent .== "Storage" .&& transactions[!, mtu_symbol] .== mtu, :]), payrev_symbol => sum)[1,1]
 		mtu_storage_revenue = isapprox(mtu_storage_revenue, 0.0, atol=1e-4) ? 0.0 : mtu_storage_revenue
 		mtu_consumer_surplus = 0.0
 		mtu_producer_surplus = 0.0
+		mtu_demand_utility = 0.0
+		mtu_production_costs = 0.0
+		mtu_finalDispatchDecisions = finalDispatchDecisions[finalDispatchDecisions.mtu .== mtu, :]
+		mtu_transactions = transactions[transactions[!, mtu_symbol] .== mtu, :]
 		for (a_type, agents) in agentMap 
 			for agent in agents
-				mtu_finalMarketResults = finalMarketResults[finalMarketResults.mtu .== mtu, :]
-				mtu_transactions = transactions[transactions[!, mtu_symbol] .== mtu, :]
-				mtu_quantity = combine(mtu_finalMarketResults, Symbol(agent) => sum)[1,1]
-				mtu_load_utility = (a_type == HelperModelResults.AGENT_DEMAND) ? combine(mtu_finalMarketResults, Symbol("utility_$agent") => sum)[1,1] : 0.0
+				mtu_quantity = combine(mtu_finalDispatchDecisions, Symbol(agent) => sum)[1,1]
+				mtu_load_utility = (a_type == HelperModelResults.AGENT_DEMAND) ? combine(mtu_finalDispatchDecisions, Symbol("utility_$agent") => sum)[1,1] : 0.0
 				mtu_payments = (a_type == HelperModelResults.AGENT_DEMAND) ? combine((mtu_transactions[mtu_transactions.Agent .== agent, :]), payrev_symbol => sum)[1,1] : 0.0
 				mtu_revenue = (a_type == HelperModelResults.AGENT_GENERATOR) ? combine((mtu_transactions[mtu_transactions.Agent .== agent, :]), payrev_symbol => sum)[1,1] : 0.0
-				mtu_fuel_cost = (a_type == HelperModelResults.AGENT_GENERATOR) ? combine(mtu_finalMarketResults, Symbol("fuelcost_$agent") => sum)[1,1] : 0.0
+				mtu_fuel_cost = (a_type == HelperModelResults.AGENT_GENERATOR) ? combine(mtu_finalDispatchDecisions, Symbol("fuelcost_$agent") => sum)[1,1] : 0.0
 				mtu_surplus = (mtu_load_utility - mtu_payments) + (mtu_revenue - mtu_fuel_cost)
 
 				mtu_quantity = isapprox(mtu_quantity, 0.0, atol=1e-4) ? 0.0 : mtu_quantity
@@ -326,21 +390,26 @@ function GetEconomicIndicatorsForRange(marketresults,time_range)
 
 				if a_type == HelperModelResults.AGENT_DEMAND
 					mtu_consumer_surplus += mtu_surplus
+					mtu_demand_utility += mtu_load_utility
 				else
 					mtu_producer_surplus += mtu_surplus
+					mtu_production_costs += mtu_fuel_cost
 				end
 			end
 		end
-		# mtu_consumer_surplus = combine((finalMarketResults[ [a in agentMap[HelperModelResults.AGENT_DEMAND] for a in agent_indicators[!, :Agent]] .&& finalMarketResults.mtu .== mtu, :]), :Surplus => sum)[1,1] 
-		# mtu_producer_surplus = combine((finalMarketResults[ [a in agentMap[HelperModelResults.AGENT_GENERATOR] for a in agent_indicators[!, :Agent]] .&& finalMarketResults.mtu .== mtu, :]), :Surplus => sum)[1,1] 
-		
 
-		mtu_sew = mtu_consumer_surplus + mtu_producer_surplus
-		push!(mtu_economic_indicators,[mtu, mtu_sew,mtu_producer_surplus,mtu_consumer_surplus,mtu_storage_revenue]) #,weighted_average_price])
+
+		mtu_sew = mtu_demand_utility - mtu_production_costs
+		push!(mtu_economic_indicators,[mtu, mtu_sew, mtu_demand_utility, mtu_production_costs,  mtu_producer_surplus,mtu_consumer_surplus,mtu_storage_revenue]) #,weighted_average_price])
 
 	end
 
-	return (indicators, agent_indicators, transactions, finalMarketResults, mtu_economic_indicators)
+	TableHeaderRenaming.RenameDataFrameHeaders!(agent_indicators, "agent_indicators")
+	TableHeaderRenaming.RenameDataFrameHeaders!(economic_indicators, "economic_indicators")
+	TableHeaderRenaming.RenameDataFrameHeaders!(mtu_economic_indicators, "economic_indicators")
+
+
+	return (economic_indicators, agent_indicators, transactions, finalDispatchDecisions, mtu_economic_indicators)
 end
 
 end;

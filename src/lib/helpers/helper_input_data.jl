@@ -1,6 +1,6 @@
 module HelperInputData
 
-using CSV, DataFrames, Dates, XLSX
+using CSV, DataFrames, Dates, XLSX, Distributions, Random
 
 # adds noise to the input Q_gen_window for generator g from first_time_period to last_time_period. constrained by total_capacity and with magnitude noise_std
 
@@ -125,9 +125,118 @@ function wind_forecast_error_rows_from_csv(scenario_path::AbstractString)
     return forecast_errors, maximum(df.window_start_hour), maximum(df.abs_hour)
 end
 
+
+
+const phi = 0.8  # AR(1) autocorrelation coefficient for wind forecast errors, 0.0 errors are independent, 0.8 is strong correlation (recommended for wind)
+
+
+function anchored_forecast_std(lead_time::Int, max_noise_std::Float64)
+    lead_time <= 1 && return 0.0
+
+    # Preserve the existing 36h behavior exactly on 1..36h:
+    # std = max_noise_std * sqrt((lead_time - 1) / 35)
+    # Then extend the curve with anchored square-root growth so that
+    # equal absolute lead times imply equal forecast uncertainty
+    # across all look-ahead cases.
+    anchor_hours = [1, 36, 48, 72]
+    anchor_stds = [
+        0.0,
+        max_noise_std,
+        max_noise_std + 0.05,
+        max_noise_std + 0.10,
+    ]
+
+    if lead_time <= anchor_hours[2]
+        return anchor_stds[2] * sqrt((lead_time - 1) / (anchor_hours[2] - 1))
+    end
+
+    if lead_time >= anchor_hours[end]
+        return anchor_stds[end]
+    end
+
+    for idx in 2:(length(anchor_hours) - 1)
+        h1 = anchor_hours[idx]
+        h2 = anchor_hours[idx + 1]
+        s1 = anchor_stds[idx]
+        s2 = anchor_stds[idx + 1]
+
+        if h1 < lead_time <= h2
+            frac = (lead_time - h1) / (h2 - h1)
+            curved_frac = sqrt(frac)
+            return s1 + (s2 - s1) * curved_frac
+        end
+    end
+
+    return anchor_stds[end]
+end
+
+
+function generate_wind_forecast_error_scenario(simulation_hours::Int, max_window_length::Int, max_noise_std::Float64; seed::Int=20260325, df::Int=10)
+    simulation_hours >= 1 || error("simulation_hours must be >= 1")
+    max_window_length >= 1 || error("max_window_length must be >= 1")
+    max_noise_std >= 0.0 || error("max_noise_std must be >= 0")
+
+    rng = MersenneTwister(seed)
+    t_dist = TDist(df)
+    forecast_errors = Dict{Tuple{Int, Int}, Float64}()
+    rows = DataFrame(
+        window_start_hour=Int[],
+        abs_hour=Int[],
+        lead_time=Int[],
+        raw_draw=Float64[],
+        z_value=Float64[],
+        std_dev=Float64[],
+        forecast_error=Float64[],
+    )
+
+    max_abs_hour = simulation_hours + max_window_length
+    for abs_hour in 1:max_abs_hour
+        z_prev = 0.0
+        earliest_window_start = max(1, abs_hour - max_window_length + 1)
+        latest_window_start = abs_hour
+
+        for window_start_hour in earliest_window_start:latest_window_start
+            lead_time = abs_hour - window_start_hour + 1
+
+            if lead_time == 1
+                raw_draw = 0.0
+                z_value = 0.0
+                std_dev = 0.0
+                forecast_error = 0.0
+            else
+                raw_draw = rand(rng, t_dist)
+                if window_start_hour == earliest_window_start
+                    # The first available forecast update for a delivery hour has no
+                    # previous window to correlate with, so start the standardized
+                    # process at a full innovation draw instead of a damped zero state.
+                    z_value = raw_draw
+                else
+                    z_value = phi * z_prev + sqrt(1 - phi^2) * raw_draw
+                end
+                std_dev = anchored_forecast_std(lead_time, max_noise_std)
+                forecast_error = std_dev * z_value
+                z_prev = z_value
+            end
+
+            forecast_errors[(window_start_hour, abs_hour)] = forecast_error
+            push!(rows, (window_start_hour, abs_hour, lead_time, raw_draw, z_value, std_dev, forecast_error))
+        end
+    end
+
+    return forecast_errors, rows
+end
+
+function write_wind_forecast_error_rows_csv(scenario_path::AbstractString, rows::DataFrame)
+    mkpath(dirname(scenario_path))
+    CSV.write(scenario_path, rows)
+    return rows
+end
+
+
+
 function load_or_create_wind_forecast_error_scenario!(cfg::Dict, max_noise_std::Float64, simulation_hours::Int, max_window_length::Int)
     scenario_path = cfg[:wind_noise_scenario_path]
-    noise_seed = 20260325
+    noise_seed = haskey(cfg, :noise_seed) ? cfg[:noise_seed] : 20260325
     scenario_total_hours = max(simulation_hours, 792)
     scenario_max_window_length = max(max_window_length, 72)
     required_abs_hour = scenario_total_hours + scenario_max_window_length
@@ -142,25 +251,22 @@ function load_or_create_wind_forecast_error_scenario!(cfg::Dict, max_noise_std::
         return forecast_errors
     end
 
-    throw("only allowing loaded file for wind noise creation for now")
-    #=
+    
     forecast_errors, rows = generate_wind_forecast_error_scenario(scenario_total_hours, scenario_max_window_length, max_noise_std; seed=noise_seed)
     endswith(lowercase(scenario_path), ".csv") || error("Predefined wind forecast error scenario must be a CSV file: $scenario_path")
     write_wind_forecast_error_rows_csv(scenario_path, rows)
     validate_wind_forecast_error_coverage(forecast_errors, scenario_total_hours, scenario_max_window_length)
     return forecast_errors
-    =#
 end
 
-function add_wind_forecast_noise!(Q_gen::Dict, gen::String, max_capacity::Float64, optimization_window::UnitRange{Int}, current_mtu::Int; precomputed_errors::Union{Nothing, Dict{Tuple{Int, Int}, Float64}}=nothing)
+function add_wind_forecast_noise!(Q_gen::Dict, gen::String, max_capacity::Float64, optimization_window::UnitRange{Int}, current_mtu::Int, offset::Int; precomputed_errors::Union{Nothing, Dict{Tuple{Int, Int}, Float64}}=nothing)
 
 
     precomputed_errors === nothing && error("precomputed_errors is required when wind forecast noise is enabled")
 
 
     for mtu in optimization_window
-        # note modifications here to align input data with LLD's implementation
-        offset = 11
+        # note modifications here to align input data with LLD's implementation - offset should be set to zero in normal circumstances
         if current_mtu < offset + 1 || mtu < offset + 1
             continue
         end
@@ -210,27 +316,18 @@ end
 # field allows us to extract the data we need (sometimes "percentage", sometimes "volume (kWh)")
 # periodsPerDay allows for extrapolation/expansion of data to meet expectations of caller
 
-function GetProfileFromFile(filepath, field, dateRange, periodsPerDay)
+function GetProfileFromFile(filepath, profile_type, dateRange, periodsPerDay, conversion_factor, capacity)
     if periodsPerDay % 24 != 0
         throw("invalid number of periods per day: $periodsPerDay - should be a multiple of 24")
     end
+
+    columnName = (profile_type == "availability") ? "percentage" : (profile_type == "quantity") ? "volume (kWh)" : (profile_type == "demand_quantity") ? "volume (kWh)" : throw("unrecognized profile_type $profile_type")
+
     data = ImportDataFromFile(filepath)
-    hourly_profile_data = data[(dateRange.start .<= data[!,"validfrom (UTC)"] .< dateRange.stop), :][:,field]
+    hourly_profile_data = data[(dateRange.start .<= data[!,"validfrom (UTC)"] .< dateRange.stop), :][:,columnName]
     
     periods_per_hour = (periodsPerDay/24)
 
-    #=
-    # using simple repeat pattern here
-    expanded_profile_data = Float64[]
-    for hourly_datum in hourly_profile_data
-        for i in 1:periods_per_hour
-            push!(expanded_profile_data,hourly_datum)
-        end
-    end
-    =#
-
-    # if we did a linear interpolation
-    # it would be better if we grabbed the following time period as well - should be doable
 
     linear_interpolation_data = Float64[]
     for (hour,hourly_datum) in enumerate(hourly_profile_data)
@@ -242,7 +339,57 @@ function GetProfileFromFile(filepath, field, dateRange, periodsPerDay)
         end
     end
 
-    return linear_interpolation_data
+
+    linear_interpolation_data .*= conversion_factor
+
+    if profile_type == "availability" || profile_type == "quantity"
+        linear_interpolation_data ./= capacity
+    end
+
+    profile_df = DataFrame(mtu=0:(length(linear_interpolation_data)-1), Value=linear_interpolation_data)
+    
+    return profile_df
+end
+
+
+function GetProfileFromFiles(filepaths, profile_type, dateRange, periodsPerDay, conversion_factor, capacity)
+    if periodsPerDay % 24 != 0
+        throw("invalid number of periods per day: $periodsPerDay - should be a multiple of 24")
+    end
+
+    columnName = (profile_type == "availability") ? "percentage" : (profile_type == "quantity") ? "volume (kWh)" : (profile_type == "demand_quantity") ? "volume (kWh)" : throw("unrecognized profile_type $profile_type")
+
+    profiles_from_files = []
+
+    for filepath in filepaths
+        data = ImportDataFromFile(filepath)
+        push!(profiles_from_files, data[(dateRange.start .<= data[!,"validfrom (UTC)"] .< dateRange.stop), :][:,columnName])
+    end
+    hourly_profile_data = []
+    for t in 1:length(profiles_from_files[1])
+        push!(hourly_profile_data, sum(profile[t] for profile in profiles_from_files) )
+    end
+    periods_per_hour = (periodsPerDay/24)
+
+    linear_interpolation_data = Float64[]
+    for (hour,hourly_datum) in enumerate(hourly_profile_data)
+        next_hour_datum = ( (hour + 1) > length(hourly_profile_data) ) ? hourly_datum : hourly_profile_data[hour+1]
+        for i in 0:(periods_per_hour - 1)
+            t_shift = i/periods_per_hour
+            new_point = hourly_datum + t_shift*(next_hour_datum-hourly_datum)
+            push!(linear_interpolation_data,new_point)
+        end
+    end
+
+    linear_interpolation_data .*= conversion_factor
+
+    if profile_type == "availability" || profile_type == "quantity"
+        linear_interpolation_data ./= capacity
+    end
+
+    profile_df = DataFrame(mtu=0:(length(linear_interpolation_data)-1), Value=linear_interpolation_data)
+
+    return profile_df
 end
 
 end;

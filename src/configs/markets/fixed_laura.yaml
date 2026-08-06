@@ -58,7 +58,7 @@ marketSequence:
   Fixed11of24: # name of market
     clearingInterval: 24 # number of MTU between market clearing/optimization rounds
     optimizationWindow: 26 # number of MTU to consider in each clearing
-    lookAheadDistance: 2 # number of MTU after which to start optimization window
+    lookAheadDistance: 0 # number of MTU after which to start optimization window
     clockTimeBegin: 22 # number of MTU after midnight to hold first clearing
   Fixed12of24: # name of market
     clearingInterval: 24 # number of MTU between market clearing/optimization rounds

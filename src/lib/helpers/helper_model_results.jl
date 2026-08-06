@@ -29,14 +29,18 @@ function DecisionVariables(optimization_window::UnitRange{Int}, agent_map::Dict{
 	# ramp_limit_down_duals = RampLimitDownDuals(m)
 	
 
-	explicitAgentMapOrder = ["Base_D", "Flex", "Base", "Shoulder", "Peak", "Wind", "Solar"] # Note: this will ignore any new agents that are not in the list - TODO: fix this
+	explicitAgentMapOrder = AllAgents(m) # ["Base_D", "Flex", "Base", "Shoulder", "Peak", "Wind", "Solar"] # Note: this will ignore any new agents that are not in the list - TODO: fix this
 	for agent in explicitAgentMapOrder
 		if termination_status(m) !== MathOptInterface.OPTIMAL
 			df[!,agent] = zeros(length(optimization_window))
 		else
 			a_type = in(agent, agent_map[AGENT_DEMAND]) ? AGENT_DEMAND : AGENT_GENERATOR
 			agent_type_data = a_type == AGENT_DEMAND ? m.ext[:variables][:Qd] : a_type == AGENT_GENERATOR ? m.ext[:variables][:Qg] : throw("unknown agent type: $a_type")
+			agent_adj_type_data = a_type == AGENT_DEMAND ? m.ext[:variables][:Qd_adj] : a_type == AGENT_GENERATOR ? m.ext[:variables][:Qg_adj] : throw("unknown agent type: $a_type")
 			df[!,agent] = [value(agent_type_data[agent,t]) for t in optimization_window]
+			if !m.ext[:data_storage][:ex_post_transactions]
+				df[!,"$(agent)_adj"] = [value(agent_adj_type_data[agent,t]) for t in optimization_window]
+			end
 			#= if haskey(ramp_limit_up_duals, agent)
 				df[!,"$(agent)_ramp_up_dual"] = ramp_limit_up_duals[agent]
 				df[!,"$(agent)_ramp_down_dual"] = ramp_limit_down_duals[agent]
@@ -51,7 +55,9 @@ function DecisionVariables(optimization_window::UnitRange{Int}, agent_map::Dict{
 		a_type = in(agent, agent_map[AGENT_DEMAND]) ? AGENT_DEMAND : AGENT_GENERATOR
 		agent_type_price_data = a_type == AGENT_DEMAND ? m.ext[:timeseries][:Pr_dem] : a_type == AGENT_GENERATOR ? m.ext[:timeseries][:Pr_gen] : throw("unknown agent type: $a_type")
 		agent_type_quantity_data = a_type == AGENT_DEMAND ? m.ext[:timeseries][:Q_dem] : a_type == AGENT_GENERATOR ? m.ext[:timeseries][:Q_gen] : throw("unknown agent type: $a_type")
+		agent_type_prev_data = a_type == AGENT_DEMAND ? m.ext[:timeseries][:Q_prev_dem] : a_type == AGENT_GENERATOR ? m.ext[:timeseries][:Q_prev_gen] : throw("unknown agent type: $a_type")
 		df[!,"Q_$agent"] =  [value(agent_type_quantity_data[agent,t]) for t in optimization_window]
+		df[!,"Q_prev_$agent"] =  [value(agent_type_prev_data[agent,t]) for t in optimization_window]
 		df[!,"P_$agent"] =  [value(agent_type_price_data[agent,t]) for t in optimization_window]
 	end
 
@@ -66,11 +72,22 @@ function AgentMap(m::Model)
 end
 
 function Generators(m::Model)
-	return [g for g in m.ext[:sets][:IG]]
+	return sort([g for g in m.ext[:sets][:IG]])
+end
+
+function VariableGenerators(m::Model)
+	return sort([g for g in m.ext[:sets][:VG]])
 end
 
 function Demands(m::Model)
-	return [d for d in m.ext[:sets][:ID]]
+	return sort([d for d in m.ext[:sets][:ID]])
+end
+
+function AllAgents(m::Model)
+	gens = Generators(m)
+	dems = Demands(m)
+	all_agents = [dems;gens]
+	return all_agents
 end
 
 
@@ -102,7 +119,7 @@ end
 function RampLimitUpDuals(m::Model)
 	OW = OptimizationWindow(m)
 	return zeros(length(OW))
-	generators = ["Base", "Shoulder", "Peak"]# Generators(m)
+	generators = Generators(m)
 	rampDual  = dual.(m.ext[:constraints][:ramp_limits_up])   # per generator/MTU ramp up dual  [EUR/MWh]
 	rampDualFirst  = dual.(m.ext[:constraints][:ramp_limits_up_first])   # per generator ramp up dual for first MTU [EUR/MWh]
 	rampLimitUpDuals = Dict{String,Vector{Float64}}()
@@ -115,7 +132,7 @@ end
 function RampLimitDownDuals(m::Model)
 	OW = OptimizationWindow(m)
 	return zeros(length(OW))
-	generators = ["Base", "Shoulder", "Peak"]# Generators(m)
+	generators = Generators(m)
 	rampDual  = dual.(m.ext[:constraints][:ramp_limits_down])   # per generator/MTU ramp down dual  [EUR/MWh]
 	rampDualFirst  = dual.(m.ext[:constraints][:ramp_limits_down_first])   # per generator ramp down dual for first MTU [EUR/MWh]
 	rampLimitDownDuals = Dict{String,Vector{Float64}}()
@@ -238,7 +255,7 @@ function mtu_times_cleared(resultset, mtu)
 	return times_cleared
 end
 
-function Transactions(marketresult, previous_dispatch, market_name, resultset)
+function Transactions(marketresult, previous_dispatch, market_name, resultset, m::Model)
 	transaction_mtu = marketresult.TimeCleared
 
 	transactions = []
@@ -247,9 +264,19 @@ function Transactions(marketresult, previous_dispatch, market_name, resultset)
 	for row in eachrow(marketresult.DecisionVariables)
 		for d in marketresult.AgentMap[AGENT_DEMAND]
 			times_cleared = has_last_result ? mtu_times_cleared(resultset, row["mtu"]) : 1
-			last_qs_at_time = has_last_result ? previous_dispatch[previous_dispatch.mtu .== row["mtu"], d] : [] # if we don't have any old data
-			adjust_from_q = length(last_qs_at_time) > 0 ? last_qs_at_time[1] : 0.0 # if we don't have data for this row
-			adjustment_q = row[d] - adjust_from_q
+			if m.ext[:data_storage][:ex_post_transactions]
+				last_qs_at_time = has_last_result ? previous_dispatch[previous_dispatch.mtu .== row["mtu"], d] : [] # if we don't have any old data
+				adjust_from_q = length(last_qs_at_time) > 0 ? last_qs_at_time[1] : 0.0 # if we don't have data for this row
+				adjustment_q = row[d] - adjust_from_q
+			else
+				adjustment_q = row["$(d)_adj"]
+			end
+			q_prev_key = "Q_prev_$d"
+			if adjustment_q != row[d] - row[q_prev_key]
+				println("adjustment mismatch: $(adjustment_q) $(row[d] - row[q_prev_key])")
+			end
+
+
 			if adjustment_q != 0.0
 				transaction = Transaction()
 				transaction.Agent = d
@@ -264,11 +291,22 @@ function Transactions(marketresult, previous_dispatch, market_name, resultset)
 			end
 		end
 
-		for g in ["Base", "Shoulder", "Peak"] # marketresult.AgentMap[AGENT_GENERATOR]
+		for g in marketresult.AgentMap[AGENT_GENERATOR]
 			times_cleared = has_last_result ? mtu_times_cleared(resultset, row["mtu"]) : 1
-			last_qs_at_time = has_last_result ? previous_dispatch[previous_dispatch.mtu .== row["mtu"], g] : [] # if we don't have any old data
-			adjust_from_q = length(last_qs_at_time) > 0 ? last_qs_at_time[1] : 0.0 # if we don't have data for this row
-			adjustment_q = row[g] - adjust_from_q
+			if m.ext[:data_storage][:ex_post_transactions]
+				last_qs_at_time = has_last_result ? previous_dispatch[previous_dispatch.mtu .== row["mtu"], g] : [] # if we don't have any old data
+				adjust_from_q = length(last_qs_at_time) > 0 ? last_qs_at_time[1] : 0.0 # if we don't have data for this row
+				adjustment_q = row[g] - adjust_from_q
+			else
+				adjustment_q = row["$(g)_adj"]
+			end
+
+			q_prev_key = "Q_prev_$g"
+			if adjustment_q != row[g] - row[q_prev_key]
+				println("adjustment mismatch: $(adjustment_q) $(row[g] - row[q_prev_key])")
+			end
+
+
 			if adjustment_q != 0.0
 				transaction = Transaction()
 				transaction.Agent = g

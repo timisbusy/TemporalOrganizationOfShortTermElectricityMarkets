@@ -12,12 +12,14 @@ function load_market_configuration(path::String, expTimePeriodsPerDay::Int)
     # ensure that the market configuration matches with the experiment configuration
     marketTimePeriodsPerDay = get(marketCfg,"timePeriodsPerDay", Int) 
     expTimePeriodsPerDay == marketTimePeriodsPerDay || throw("market and experiment configurations do not match: $(marketTimePeriodsPerDay) !== $(expTimePeriodsPerDay)")
-
+    overrideMTU1Restriction = haskey(marketCfg,"overrideMTU1Restriction") ? get(marketCfg,"overrideMTU1Restriction", Bool) : false
+    
     marketSequence = []
     for (name, market) in get(marketCfg,"marketSequence",Dict())
         addMarket = Dict{Symbol,Any}()
         addMarket[:name] = name
         addMarket[:timePeriodsPerDay] = expTimePeriodsPerDay
+        addMarket[:overrideMTU1Restriction] = overrideMTU1Restriction
         addMarket[:clearingInterval] = get(market,"clearingInterval", Int) # number of time periods between market clearing/optimization rounds
         addMarket[:optimizationWindow] = get(market,"optimizationWindow", Int) # number of time periods to consider in each round
         addMarket[:lookAheadDistance] = get(market,"lookAheadDistance", Int) # window under consideration starts lookAheadDistance time periods ahead
@@ -72,8 +74,13 @@ function load_input_data(path::String)
     data[:clearForDays] = Int(cfg["clearForDays"])
     data[:timePeriodsPerDay] = Int(cfg["timePeriodsPerDay"]) # number of time periods (timesteps) in each day
     data[:noiseLevel] = float(cfg["noiseLevel"])
-    data[:startDate] = haskey(cfg,"startDate") ? cfg["startDate"] : Date(2026,1,1) 
+    data[:startDate] = haskey(cfg,"startDate") ? cfg["startDate"] : Date(2025,1,1) 
     data[:endDate] = data[:startDate] + Dates.Day(data[:clearForDays])
+
+    data[:skipEarlyAuctions] = haskey(cfg,"skipEarlyAuctions") ? Int(cfg["skipEarlyAuctions"]) : 0
+    data[:windOffset] = haskey(cfg,"windOffset") ? Int(cfg["windOffset"]) : 0
+    data[:samplePeriodExcludeSpinUp] = haskey(cfg,"samplePeriodExcludeSpinUp") ? Int(cfg["samplePeriodExcludeSpinUp"]) : 2
+    data[:samplePeriodExcludeEnd] = haskey(cfg,"samplePeriodExcludeEnd") ? Int(cfg["samplePeriodExcludeEnd"]) : 2
 
     if haskey(cfg, "compare") && cfg["compare"] == "market"
         data[:marketSequences] = Dict{String,Any}()
@@ -98,6 +105,11 @@ function load_input_data(path::String)
     # storage parameters
     data[:batteryStorage] = get(agentCfg, "batteryStorage", nothing)
 
+    # optimization model selection and customization
+
+    if haskey(cfg, "optimizationModelConfig")
+        data[:optimizationModelConfig] = cfg["optimizationModelConfig"]
+    end
 
     return data
 end

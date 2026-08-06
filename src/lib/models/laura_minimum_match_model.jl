@@ -101,6 +101,7 @@ function process_time_series_data!(m::Model, time_period::Int, marketresults, in
         end
     end
 
+    offset = data[:windOffset]
 
     if true && var["Wind"]["capacity"] > 0.0
         HelperInputData.add_wind_forecast_noise!(
@@ -108,7 +109,8 @@ function process_time_series_data!(m::Model, time_period::Int, marketresults, in
             "Wind",
             Float64(var["Wind"]["capacity"]),
             OW,
-            time_period;
+            time_period,
+            offset;
             precomputed_errors=data[:wind_forecast_errors],
         )
     end
@@ -333,7 +335,7 @@ function build_market_clearing!(m::Model, time_period::Int, marketresults, initi
     end
 
     # TAtoLLD Change 1: replicate Laura's limit on trading for base/shoulder in the first MTU 
-    if length(marketresults) != 0
+    if length(marketresults.Results) != 0
         for g in ["Base", "Shoulder"]
             @constraint(m, Qg_adj[g,start_at_period] == 0)
         end
