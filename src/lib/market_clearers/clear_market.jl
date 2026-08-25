@@ -248,6 +248,8 @@ function ClearMarketComparisonForConfig(config, test_id)
 	for (market_name, market_result_container) in marketResults
 		println("storage anomalies for $market_name")
 		MarketDataStorage.PrintStorageAnomalies(market_result_container)
+		println("adjustment anomalies for $market_name")
+		MarketDataStorage.PrintAdjustmentAnomalies(market_result_container)
 	end
 	PlotBaselineOutcomes.plotCompare(marketResults, config, test_range, test_id, FAST_MODE)
 	if !FAST_MODE
