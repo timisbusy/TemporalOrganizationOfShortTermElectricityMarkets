@@ -229,19 +229,6 @@ mutable struct Transaction
 	Transaction() = new()
 end
 
-function MakeTransaction(agent, quantity, price, mtu, clearing_mtu, times_cleared, agent_type, market_name) 
-	t = Transaction()
-	t.MarketName = market_name
-	t.Agent = agent
-	t.Quantity = quantity
-	t.Price = price
-	t.MTU = mtu
-	t.ClearingMTU = clearing_mtu
-	t.TimeCleared = times_cleared
-	t.AgentType = agent_type
-	return t
-end
-
 # compare clearing outcomes with previous clearings to generate a set of transactions
 
 
