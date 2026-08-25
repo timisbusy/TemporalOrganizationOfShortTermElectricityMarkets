@@ -116,9 +116,10 @@ function GenQuantities(market_result_container, mtu_range)
 
 	quantities = Dict{String,Vector{Float64}}()
 	for gName in gens
-		quantities[gName] = zeros(mtu_range.stop)
-		for mtu in mtu_range
-			quantities[gName][mtu] = length(mr[mr.mtu .== mtu, gName]) > 0 ? mr[mr.mtu .== mtu, gName][1] : 0.0
+		quantities[gName] = zeros(length(mtu_range))
+		for (i, mtu) in enumerate(mtu_range)
+			matches = mr[mr.mtu .== mtu, gName]
+			quantities[gName][i] = length(matches) > 0 ? matches[1] : 0.0
 		end
 	end
 
