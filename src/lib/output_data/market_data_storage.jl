@@ -38,8 +38,8 @@ end
 mutable struct MarketResultContainer
 
 	Results::Vector{MarketResult}
-	TransactionsCache::DataFrame
-	DecisionVariablesCache::DataFrame
+	TransactionsCache::Union{DataFrame, Nothing}
+	DecisionVariablesCache::Union{DataFrame, Nothing}
 	DecisionVariablesCacheBust::Bool
 	TransactionsCacheBust::Bool
 	
@@ -51,6 +51,8 @@ function MakeMarketResultContainer()
 	mrc.Results = Vector{MarketResult}()
 	mrc.DecisionVariablesCacheBust = true
 	mrc.TransactionsCacheBust = true
+	mrc.TransactionsCache = nothing
+	mrc.DecisionVariablesCache = nothing
 	return mrc
 end
 
@@ -76,7 +78,9 @@ function AddMarketResult!(market_result_container, model, time_cleared, market_n
 	mr.Transactions = HelperModelResults.Transactions(mr, GetFinalDispatchDecisions(market_result_container), market_name, market_result_container.Results, model) # todo: docs on this
 
 	push!(market_result_container.Results, mr)
-	CacheBust!(market_result_container)
+	AddDecisionVariablesToCache!(market_result_container, mr)
+	AddTransactionsToCache!(market_result_container, mr)
+	# CacheBust!(market_result_container)
 end
 
 function CacheBust!(market_result_container)
@@ -169,7 +173,7 @@ function StorageSOCForTimePeriod(market_result_container, mtu)
 end
 
 
-# this function gets final dispatch decisions from decisionvariables and merges them into a single dataframe
+# this function gets final dispatch decisions from decisionvariables and merges them into a single dataframe (or uses a cached version)
 function GetFinalDispatchDecisions(market_result_container)
 	if !market_result_container.DecisionVariablesCacheBust
 		return market_result_container.DecisionVariablesCache
@@ -194,6 +198,22 @@ function GetFinalDispatchDecisions(market_result_container)
 
 end
 
+# add new decision variables from latest market result to existing cached version for speedier update
+
+function AddDecisionVariablesToCache!(market_result_container, mr)
+	finalDispatchDecisions = something(market_result_container.DecisionVariablesCache, DataFrame())
+
+	dvs = mr.DecisionVariables
+	select!(dvs,Not(["price"]))
+	finalDispatchDecisions = vcat(finalDispatchDecisions, dvs)
+	finalDispatchDecisions = unique!(finalDispatchDecisions, "mtu"; keep=:last)
+
+	market_result_container.DecisionVariablesCache = finalDispatchDecisions
+	market_result_container.DecisionVariablesCacheBust = false
+end
+
+# this function gets all transactions and merges them into a single dataframe (or uses a cached version)
+
 function GetTransactions(market_result_container)
 	if !market_result_container.TransactionsCacheBust
 		return market_result_container.TransactionsCache
@@ -211,6 +231,19 @@ function GetTransactions(market_result_container)
 	market_result_container.TransactionsCache = all_transactions
 	market_result_container.TransactionsCacheBust = false
 	return all_transactions
+end
+
+
+# add new transactions from latest market result to existing cached version for speedier update
+
+function AddTransactionsToCache!(market_result_container, mr)
+	all_transactions = something(market_result_container.TransactionsCache, DataFrame())
+
+	transactions = mr.Transactions
+	all_transactions = vcat(all_transactions, transactions)
+
+	market_result_container.TransactionsCache = all_transactions
+	market_result_container.TransactionsCacheBust = false
 end
 
 # This function takes market_result_container and gets the final dispatch decisions over a range of mtus
