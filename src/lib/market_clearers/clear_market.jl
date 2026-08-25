@@ -245,7 +245,10 @@ function ClearMarketComparisonForConfig(config, test_id)
 	# short_test_range = range(config[:timePeriodsPerDay]*3,config[:timePeriodsPerDay]*5 - 1)
 	zoom_19_21 = range(config[:timePeriodsPerDay]*19,config[:timePeriodsPerDay]*22 - 1)
 	println(test_range.start, test_range.stop)
-
+	for (market_name, market_result_container) in marketResults
+		println("storage anomalies for $market_name")
+		MarketDataStorage.PrintStorageAnomalies(market_result_container)
+	end
 	PlotBaselineOutcomes.plotCompare(marketResults, config, test_range, test_id, FAST_MODE)
 	if !FAST_MODE
 		PlotPriceDispersionByMTU.plotCompare(marketResults, config, test_range, test_id)
