@@ -43,7 +43,8 @@ mutable struct MarketResultContainer
 	DecisionVariablesCacheBust::Bool
 	TransactionsCacheBust::Bool
 	StorageAnomalies::Union{DataFrame, Nothing}
-	
+	AdjustmentAnomalies::Union{DataFrame, Nothing}
+
 	MarketResultContainer() = new()
 end
 
@@ -55,6 +56,7 @@ function MakeMarketResultContainer()
 	mrc.TransactionsCache = nothing
 	mrc.DecisionVariablesCache = nothing
 	mrc.StorageAnomalies = nothing
+	mrc.AdjustmentAnomalies = nothing
 	return mrc
 end
 
@@ -77,12 +79,14 @@ function AddMarketResult!(market_result_container, model, time_cleared, market_n
 	mr.TerminationStatus = termination_status(model)
 	mr.ObjectiveValue = objective_value(model)
 	mr.DecisionVariables = HelperModelResults.DecisionVariables(optimization_window, agent_map, model) # todo: docs on this
-	mr.Transactions = HelperModelResults.Transactions(mr, GetFinalDispatchDecisions(market_result_container), market_name, market_result_container.Results, model) # todo: docs on this
+	(transactions, adjustment_anomalies) = HelperModelResults.Transactions(mr, GetFinalDispatchDecisions(market_result_container), market_name, market_result_container.Results, model) # todo: docs on this
+	mr.Transactions = transactions
 
 	push!(market_result_container.Results, mr)
 	AddDecisionVariablesToCache!(market_result_container, mr)
 	AddTransactionsToCache!(market_result_container, mr)
 	AddStorageAnomalies!(market_result_container, mr)
+	AddAdjustmentAnomalies!(market_result_container, adjustment_anomalies)
 	# CacheBust!(market_result_container)
 end
 
@@ -265,6 +269,17 @@ end
 
 function PrintStorageAnomalies(market_result_container)
 	println(market_result_container.StorageAnomalies)
+end
+
+# add adjustment irregularities (adjustment quantity disagreeing with dispatch - previous dispatch) from the latest market result to the existing cached version
+
+function AddAdjustmentAnomalies!(market_result_container, adjustment_anomalies)
+	existing = something(market_result_container.AdjustmentAnomalies, DataFrame())
+	market_result_container.AdjustmentAnomalies = vcat(existing, adjustment_anomalies)
+end
+
+function PrintAdjustmentAnomalies(market_result_container)
+	println(market_result_container.AdjustmentAnomalies)
 end
 
 # This function takes market_result_container and gets the final dispatch decisions over a range of mtus
