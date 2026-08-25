@@ -42,6 +42,7 @@ mutable struct MarketResultContainer
 	DecisionVariablesCache::Union{DataFrame, Nothing}
 	DecisionVariablesCacheBust::Bool
 	TransactionsCacheBust::Bool
+	StorageAnomalies::Union{DataFrame, Nothing}
 	
 	MarketResultContainer() = new()
 end
@@ -53,6 +54,7 @@ function MakeMarketResultContainer()
 	mrc.TransactionsCacheBust = true
 	mrc.TransactionsCache = nothing
 	mrc.DecisionVariablesCache = nothing
+	mrc.StorageAnomalies = nothing
 	return mrc
 end
 
@@ -80,6 +82,7 @@ function AddMarketResult!(market_result_container, model, time_cleared, market_n
 	push!(market_result_container.Results, mr)
 	AddDecisionVariablesToCache!(market_result_container, mr)
 	AddTransactionsToCache!(market_result_container, mr)
+	AddStorageAnomalies!(market_result_container, mr)
 	# CacheBust!(market_result_container)
 end
 
@@ -244,6 +247,24 @@ function AddTransactionsToCache!(market_result_container, mr)
 
 	market_result_container.TransactionsCache = all_transactions
 	market_result_container.TransactionsCacheBust = false
+end
+
+
+# add new decision variables from latest market result to existing cached version for speedier update
+
+function AddStorageAnomalies!(market_result_container, mr)
+	storageAnomalies = something(market_result_container.StorageAnomalies, DataFrame())
+
+	dvs = mr.DecisionVariables
+	anomalies = filter(row -> row.StorageCharge > 0 && row.StorageDischarge > 0, dvs)
+	anomalies.ClearingMTU .= mr.TimeCleared
+	storageAnomalies = vcat(storageAnomalies, anomalies)
+	
+	market_result_container.StorageAnomalies = storageAnomalies
+end
+
+function PrintStorageAnomalies(market_result_container)
+	println(market_result_container.StorageAnomalies)
 end
 
 # This function takes market_result_container and gets the final dispatch decisions over a range of mtus
