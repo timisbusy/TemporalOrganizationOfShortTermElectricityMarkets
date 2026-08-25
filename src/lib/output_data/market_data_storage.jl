@@ -466,4 +466,25 @@ function GetEconomicIndicatorsForRange(market_result_container,time_range)
 	return (economic_indicators, agent_indicators, transactions, finalDispatchDecisions, mtu_economic_indicators)
 end
 
+# CO2e emissions from conventional (dispatchable) generators over a range of mtus, based on
+# each generator's configured emissionFactor (kgCO2e/MWh). Variable generators (wind, solar)
+# have no emissionFactor in the agent configuration and are excluded, since they're zero-emission.
+function GetEmissionsForRange(market_result_container, config, time_range)
+	emissions = DataFrame(Generator=String[], Quantity=Float64[], EmissionFactor=Float64[], Emissions=Float64[])
+
+	finalDispatchDecisions = GetFinalDispatchDecisionsForRange(market_result_container, time_range)
+	if nrow(finalDispatchDecisions) == 0
+		return emissions
+	end
+
+	for (gName, gConfig) in config[:dispatchableGenerators]
+		quantity = combine(finalDispatchDecisions, Symbol(gName) => sum)[1,1] # MWh
+		emission_factor = float(gConfig["emissionFactor"]) # kgCO2e/MWh
+		generator_emissions = quantity * emission_factor / 1000.0 # tCO2e
+		push!(emissions, [gName, quantity, emission_factor, generator_emissions])
+	end
+
+	return emissions
+end
+
 end;
