@@ -302,8 +302,26 @@ function GetTransactionsForRange(market_result_container,time_range)
 end
 
 
+# snaps values within atol of zero to exactly 0.0, so downstream near-zero float noise doesn't get reported as a nonzero indicator
+function snap0(x, atol=1e-4)
+	return isapprox(x, 0.0; atol=atol) ? 0.0 : x
+end
+
+# raw (unsnapped) quantity/utility/payments/revenue/fuel_cost/surplus for one agent, over
+# whatever (already time-range-filtered) finalDispatchDecisions/transactions subset is passed in -
+# shared by both the whole-range and per-mtu aggregations in GetEconomicIndicatorsForRange
+function AgentEconomicMetrics(finalDispatchDecisions, transactions, a_type, agent, payrev_symbol)
+	quantity = combine(finalDispatchDecisions, Symbol(agent) => sum)[1,1]
+	load_utility = (a_type == HelperModelResults.AGENT_DEMAND) ? combine(finalDispatchDecisions, Symbol("utility_$agent") => sum)[1,1] : 0.0
+	payments = (a_type == HelperModelResults.AGENT_DEMAND) ? combine((transactions[transactions.Agent .== agent, :]), payrev_symbol => sum)[1,1] : 0.0
+	revenue = (a_type == HelperModelResults.AGENT_GENERATOR) ? combine((transactions[transactions.Agent .== agent, :]), payrev_symbol => sum)[1,1] : 0.0
+	fuel_cost = (a_type == HelperModelResults.AGENT_GENERATOR) ? combine(finalDispatchDecisions, Symbol("fuelcost_$agent") => sum)[1,1] : 0.0
+	surplus = (load_utility - payments) + (revenue - fuel_cost)
+	return (quantity=quantity, load_utility=load_utility, payments=payments, revenue=revenue, fuel_cost=fuel_cost, surplus=surplus)
+end
+
 function GetEconomicIndicatorsForRange(market_result_container,time_range)
-	
+
 	economic_indicators = DataFrame(SEW=[], DemandUtility=[], ProductionCosts=[], ProducerSurplus=[],ConsumerSurplus=[],StorageRevenue=[])# , WeightedAveragePrice=[])
 	agent_indicators = DataFrame(Agent=[],Quantity=[],LoadUtility=[],Payments=[],Revenue=[],FuelCost=[],Surplus=[],SOCChange=[])
 	mtu_economic_indicators = DataFrame(MTU=[], SEW=[], DemandUtility=[], ProductionCosts=[], ProducerSurplus=[],ConsumerSurplus=[],StorageRevenue=[])
@@ -339,22 +357,9 @@ function GetEconomicIndicatorsForRange(market_result_container,time_range)
 			if (a_type == HelperModelResults.AGENT_GENERATOR)
 				finalDispatchDecisions[!, Symbol("fuelcost_$agent")] = finalDispatchDecisions[!, Symbol(agent)] .* finalDispatchDecisions[!, Symbol("P_$agent")]
 			end
-			quantity = combine(finalDispatchDecisions, Symbol(agent) => sum)[1,1]
-			load_utility = (a_type == HelperModelResults.AGENT_DEMAND) ? combine(finalDispatchDecisions, Symbol("utility_$agent") => sum)[1,1] : 0.0
-			payments = (a_type == HelperModelResults.AGENT_DEMAND) ? combine((transactions[transactions.Agent .== agent, :]), payrev_symbol => sum)[1,1] : 0.0
-			revenue = (a_type == HelperModelResults.AGENT_GENERATOR) ? combine((transactions[transactions.Agent .== agent, :]), payrev_symbol => sum)[1,1] : 0.0
-			fuel_cost = (a_type == HelperModelResults.AGENT_GENERATOR) ? combine(finalDispatchDecisions, Symbol("fuelcost_$agent") => sum)[1,1] : 0.0
-			surplus = (load_utility - payments) + (revenue - fuel_cost)
+			metrics = AgentEconomicMetrics(finalDispatchDecisions, transactions, a_type, agent, payrev_symbol)
 
-			quantity = isapprox(quantity, 0.0, atol=1e-4) ? 0.0 : quantity
-			load_utility = isapprox(load_utility, 0.0, atol=1e-4) ? 0.0 : load_utility
-			payments = isapprox(payments, 0.0, atol=1e-4) ? 0.0 : payments
-			revenue = isapprox(revenue, 0.0, atol=1e-4) ? 0.0 : revenue
-			fuel_cost = isapprox(fuel_cost, 0.0, atol=1e-4) ? 0.0 : fuel_cost
-			surplus = isapprox(surplus, 0.0, atol=1e-4) ? 0.0 : surplus
-			
-
-			push!(agent_indicators, [agent,quantity,load_utility,payments,revenue,fuel_cost,surplus, 0.0])
+			push!(agent_indicators, [agent, snap0(metrics.quantity), snap0(metrics.load_utility), snap0(metrics.payments), snap0(metrics.revenue), snap0(metrics.fuel_cost), snap0(metrics.surplus), 0.0])
 
 		end
 	end
@@ -417,8 +422,8 @@ function GetEconomicIndicatorsForRange(market_result_container,time_range)
 
     =#
 
-	storage_revenue = isapprox(storage_revenue, 0.0, atol=1e-4) ? 0.0 : storage_revenue
-	storage_quantity = isapprox(storage_quantity, 0.0, atol=1e-4) ? 0.0 : storage_quantity
+	storage_revenue = snap0(storage_revenue)
+	storage_quantity = snap0(storage_quantity)
 	
 	# note that revenue here is also reported as SEW, assuming no costs
 	push!(agent_indicators, ["Storage", storage_quantity, 0.0, 0.0, storage_revenue, 0.0, storage_revenue, storage_soc_change])
@@ -431,30 +436,19 @@ function GetEconomicIndicatorsForRange(market_result_container,time_range)
 	push!(economic_indicators,[sew, demand_utility, production_costs, producer_surplus,consumer_surplus,storage_revenue]) #,weighted_average_price])
 
 	for mtu in time_range
-		mtu_storage_revenue = combine((transactions[transactions.Agent .== "Storage" .&& transactions[!, mtu_symbol] .== mtu, :]), payrev_symbol => sum)[1,1]
-		mtu_storage_revenue = isapprox(mtu_storage_revenue, 0.0, atol=1e-4) ? 0.0 : mtu_storage_revenue
+		mtu_storage_revenue = snap0(combine((transactions[transactions.Agent .== "Storage" .&& transactions[!, mtu_symbol] .== mtu, :]), payrev_symbol => sum)[1,1])
 		mtu_consumer_surplus = 0.0
 		mtu_producer_surplus = 0.0
 		mtu_demand_utility = 0.0
 		mtu_production_costs = 0.0
 		mtu_finalDispatchDecisions = finalDispatchDecisions[finalDispatchDecisions.mtu .== mtu, :]
 		mtu_transactions = transactions[transactions[!, mtu_symbol] .== mtu, :]
-		for (a_type, agents) in agentMap 
+		for (a_type, agents) in agentMap
 			for agent in agents
-				mtu_quantity = combine(mtu_finalDispatchDecisions, Symbol(agent) => sum)[1,1]
-				mtu_load_utility = (a_type == HelperModelResults.AGENT_DEMAND) ? combine(mtu_finalDispatchDecisions, Symbol("utility_$agent") => sum)[1,1] : 0.0
-				mtu_payments = (a_type == HelperModelResults.AGENT_DEMAND) ? combine((mtu_transactions[mtu_transactions.Agent .== agent, :]), payrev_symbol => sum)[1,1] : 0.0
-				mtu_revenue = (a_type == HelperModelResults.AGENT_GENERATOR) ? combine((mtu_transactions[mtu_transactions.Agent .== agent, :]), payrev_symbol => sum)[1,1] : 0.0
-				mtu_fuel_cost = (a_type == HelperModelResults.AGENT_GENERATOR) ? combine(mtu_finalDispatchDecisions, Symbol("fuelcost_$agent") => sum)[1,1] : 0.0
-				mtu_surplus = (mtu_load_utility - mtu_payments) + (mtu_revenue - mtu_fuel_cost)
-
-				mtu_quantity = isapprox(mtu_quantity, 0.0, atol=1e-4) ? 0.0 : mtu_quantity
-				mtu_load_utility = isapprox(mtu_load_utility, 0.0, atol=1e-4) ? 0.0 : mtu_load_utility
-				mtu_payments = isapprox(mtu_payments, 0.0, atol=1e-4) ? 0.0 : mtu_payments
-				mtu_revenue = isapprox(mtu_revenue, 0.0, atol=1e-4) ? 0.0 : mtu_revenue
-				mtu_fuel_cost = isapprox(mtu_fuel_cost, 0.0, atol=1e-4) ? 0.0 : mtu_fuel_cost
-				mtu_surplus = isapprox(mtu_surplus, 0.0, atol=1e-4) ? 0.0 : mtu_surplus
-
+				metrics = AgentEconomicMetrics(mtu_finalDispatchDecisions, mtu_transactions, a_type, agent, payrev_symbol)
+				mtu_load_utility = snap0(metrics.load_utility)
+				mtu_fuel_cost = snap0(metrics.fuel_cost)
+				mtu_surplus = snap0(metrics.surplus)
 
 				# note: more per agent economic info here that is not being reported out yet
 
