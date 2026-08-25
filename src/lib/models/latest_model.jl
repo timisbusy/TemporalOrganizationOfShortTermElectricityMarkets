@@ -400,13 +400,26 @@ end
 # data - information about assets - prices, availability factors, etc
 # market - defines when the window for which this market clears and the market name
 
-USE_GUROBI = true
+DEFAULT_SOLVER = "gurobi"
+
+# solver is chosen via data[:optimizationModelConfig]["solver"] ("gurobi" or "highs"), defaulting to DEFAULT_SOLVER
+function select_optimizer(data::Dict{Symbol,Any})
+    solver = haskey(data, :optimizationModelConfig) && haskey(data[:optimizationModelConfig], "solver") ? lowercase(String(data[:optimizationModelConfig]["solver"])) : DEFAULT_SOLVER
+
+    if solver == "gurobi"
+        return () -> Gurobi.Optimizer(gurobi_env)
+    elseif solver == "highs"
+        return HiGHS.Optimizer
+    else
+        throw("unknown solver \"$solver\" in optimizationModelConfig - supported solvers are \"gurobi\" and \"highs\"")
+    end
+end
 
 function build(time_period, marketresults, initialization, data, market)
 
-	# create the optimisation model with HiGHS/Gurobi as the solver
+	# create the optimisation model with the configured solver (default Gurobi)
 
-    m = USE_GUROBI ? Model(() -> Gurobi.Optimizer(gurobi_env)) : Model(HiGHS.Optimizer)
+    m = Model(select_optimizer(data))
     set_silent(m)
 	# build the sets, time series and parameters based on the inputs
 	define_sets!(m, time_period, marketresults, initialization, data, market)
