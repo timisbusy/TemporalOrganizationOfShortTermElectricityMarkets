@@ -112,7 +112,7 @@ function plotCompare(market_results, config, test_range, test_id, fast_mode)
         may_20_interval = 21*24:(22*24 - 1)
         may_21_interval = 22*24:(23*24 - 1)
 
-        print_cases = ["Fixed", "Rolling","FixedSQ"]
+        print_cases = ["Fixed", "Rolling","AuctionOnly"]
 
         plotInRangeByIntervalLength(market_results, sew_assessment_interval, config[:timePeriodsPerDay], Symbol("Socioeconomic Welfare (€)"))
         plotInRangeByIntervalLength(market_results, sew_assessment_interval, config[:timePeriodsPerDay], Symbol("Storage Revenue (€)"))
@@ -219,7 +219,7 @@ end
 marketConfigurationDisplayNames = Dict{String, String}(
     "Fixed" => "Fixed Horizon", 
     "Rolling" =>  "Rolling Horizon",
-    "FixedSQ" => "Auction Only",
+    "AuctionOnly" => "Auction Only",
 )
 
 function plotPhysicalIndicator(market_results, test_range, indicator, print_cases)

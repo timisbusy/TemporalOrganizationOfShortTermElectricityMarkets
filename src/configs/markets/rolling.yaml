@@ -3,7 +3,7 @@
 # all parameters are expressed in MTU - in this case 1h
 
 timePeriodsPerDay: 24 # define the assumed MTU for this market configuration - this allows for validation that this market is appropriate for the experiment
-overrideMTU1Restriction: true
+# overrideMTU1Restriction: true
 
 marketSequence:
   RollingHorizon: # name of market

@@ -366,27 +366,19 @@ function build_market_clearing!(m::Model, time_period::Int, marketresults, initi
     if haskey(data, :optimizationModelConfig) && data[:optimizationModelConfig]["restrict_mtu1_trading"] == true && !market[:overrideMTU1Restriction]
         
         # TAtoLLD Change 1: replicate Laura's limit on trading for base/shoulder in the first MTU 
-        if length(marketresults.Results) != 0
+        if length(marketresults.Results) != 0 && time_period == start_at_period
             for g in ["3G_Base", "4G_Shoulder"]
                 @constraint(m, Qg_adj[g,start_at_period] == 0)
             end
         end
     end
 
-    # OBJECTIVE: maximise welfare (utility of demand minus generation cost for all traded quantities)
-    # sum_d,t P_dem(d) * Qd_adj[d,t]  -  sum_g,t P_gen(g,t) * Qg_adj[g,t]
-    if false
-        m.ext[:objective] = @objective(m, Max,
-            sum(Pr_dem[(String(d),t)] * Qd[d,t] for d in ID, t in OW) -
-            sum(Pr_gen[(String(g),t)] * Qg[g,t] for g in IG, t in OW) -
-            sum(.00001*(Qch[t] + Qdis[t]) for t in OW)
-        )
-    else
-        m.ext[:objective] = @objective(m, Max,
-            sum(Pr_dem[(String(d),t)] * Qd[d,t] for d in ID, t in OW) -
-            sum(Pr_gen[(String(g),t)] * Qg[g,t] for g in IG, t in OW)
-        )
-    end
+
+    m.ext[:objective] = @objective(m, Max,
+        sum(Pr_dem[(String(d),t)] * Qd[d,t] for d in ID, t in OW) -
+        sum(Pr_gen[(String(g),t)] * Qg[g,t] for g in IG, t in OW)
+    )
+
 
 
     return m
