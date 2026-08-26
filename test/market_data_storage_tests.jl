@@ -83,6 +83,42 @@ using .ClearMarket.LatestMarketModel
 		@test isapprox(emissions.Quantity[1], 24.0)
 		@test isapprox(emissions.EmissionFactor[1], 500.0)
 		@test isapprox(emissions.Emissions[1], 24.0 * 500.0 / 1000.0) # tCO2e
+    
+  end
+  
+	@testset "Test GetEconomicIndicatorsForRange" begin
+
+		# GIVEN the same two accumulated clearings as above (mtu 0,2,3 at demand 5.0, mtu 1
+		# revised to 9.0), with generator "G" (bidPrice 50) always marginal against demand
+		# "D" (bidPrice 100) since its capacity is never binding, so every mtu clears at
+		# price 50 - known, hand-computable economics to check GetEconomicIndicatorsForRange against
+
+		(economic_indicators, agent_indicators, transactions, finalDispatchDecisions, mtu_economic_indicators) =
+			MarketDataStorage.GetEconomicIndicatorsForRange(market_result_container, 0:3)
+
+		# agent_indicators/economic_indicators/mtu_economic_indicators columns are renamed
+		# to long display names (TableHeaderRenaming), e.g. SEW -> "Socioeconomic Welfare (€)"
+		d_row = agent_indicators[agent_indicators.Agent .== "D", :]
+		g_row = agent_indicators[agent_indicators.Agent .== "G", :]
+
+		# total dispatched quantity across mtu 0,1,2,3 = 5 + 9 + 5 + 5 = 24
+		@test isapprox(d_row[1, "Quantity (MWh)"], 24.0)
+		@test isapprox(g_row[1, "Quantity (MWh)"], 24.0)
+		@test isapprox(d_row[1, "Load Utility (€)"], 24.0 * 100.0) # demand bid price 100
+		@test isapprox(g_row[1, "Fuel Cost (€)"], 24.0 * 50.0) # generator bid price 50
+		@test isapprox(economic_indicators[1, "Socioeconomic Welfare (€)"], 24.0 * (100.0 - 50.0))
+
+		# THEN the aggregate indicators (computed once, over the whole range) and the
+		# per-mtu indicators (computed once per mtu) agree with each other - both now
+		# derive from the same AgentEconomicMetrics call, so a per-mtu sum must equal
+		# the aggregate rather than risk drifting apart the way two independently
+		# hand-written versions of the same formula could
+		@test nrow(mtu_economic_indicators) == 4
+		@test isapprox(sum(mtu_economic_indicators[!, "Socioeconomic Welfare (€)"]), economic_indicators[1, "Socioeconomic Welfare (€)"])
+		@test isapprox(sum(mtu_economic_indicators[!, "Demand Utility (€)"]), economic_indicators[1, "Demand Utility (€)"])
+		@test isapprox(sum(mtu_economic_indicators[!, "Production Costs (€)"]), economic_indicators[1, "Production Costs (€)"])
+		@test isapprox(sum(mtu_economic_indicators[!, "Consumer Surplus (€)"]), economic_indicators[1, "Consumer Surplus (€)"])
+		@test isapprox(sum(mtu_economic_indicators[!, "Producer Surplus (€)"]), economic_indicators[1, "Producer Surplus (€)"])
 
 	end
 

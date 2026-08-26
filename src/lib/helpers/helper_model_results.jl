@@ -229,19 +229,6 @@ mutable struct Transaction
 	Transaction() = new()
 end
 
-function MakeTransaction(agent, quantity, price, mtu, clearing_mtu, times_cleared, agent_type, market_name) 
-	t = Transaction()
-	t.MarketName = market_name
-	t.Agent = agent
-	t.Quantity = quantity
-	t.Price = price
-	t.MTU = mtu
-	t.ClearingMTU = clearing_mtu
-	t.TimeCleared = times_cleared
-	t.AgentType = agent_type
-	return t
-end
-
 # compare clearing outcomes with previous clearings to generate a set of transactions
 
 
@@ -259,6 +246,7 @@ function Transactions(marketresult, previous_dispatch, market_name, resultset, m
 	transaction_mtu = marketresult.TimeCleared
 
 	transactions = []
+	adjustment_anomalies = []
 	has_last_result = nrow(previous_dispatch) > 0 # special handling for first market
 	# for each demand, in each mtu cleared
 	for row in eachrow(marketresult.DecisionVariables)
@@ -272,8 +260,9 @@ function Transactions(marketresult, previous_dispatch, market_name, resultset, m
 				adjustment_q = row["$(d)_adj"]
 			end
 			q_prev_key = "Q_prev_$d"
-			if adjustment_q != row[d] - row[q_prev_key]
-				println("adjustment mismatch: $(adjustment_q) $(row[d] - row[q_prev_key])")
+			expected_adjustment_q = row[d] - row[q_prev_key]
+			if adjustment_q != expected_adjustment_q
+				push!(adjustment_anomalies, (market_name, d, AGENT_DEMAND, row["mtu"], transaction_mtu, adjustment_q, expected_adjustment_q))
 			end
 
 
@@ -302,8 +291,9 @@ function Transactions(marketresult, previous_dispatch, market_name, resultset, m
 			end
 
 			q_prev_key = "Q_prev_$g"
-			if adjustment_q != row[g] - row[q_prev_key]
-				println("adjustment mismatch: $(adjustment_q) $(row[g] - row[q_prev_key])")
+			expected_adjustment_q = row[g] - row[q_prev_key]
+			if adjustment_q != expected_adjustment_q
+				push!(adjustment_anomalies, (market_name, g, AGENT_GENERATOR, row["mtu"], transaction_mtu, adjustment_q, expected_adjustment_q))
 			end
 
 
@@ -355,7 +345,12 @@ function Transactions(marketresult, previous_dispatch, market_name, resultset, m
 	short_names = ["MarketName", "Agent", "Quantity", "Price", "MTU", "ClearingMTU", "TimesCleared", "AgentType"]
 	rename!(transactions_df, short_names .=> long_names)
 
-	return transactions_df
+	adjustment_anomalies_df = DataFrame(MarketName=String[], Agent=String[], AgentType=String[], MTU=Int[], ClearingMTU=Int[], AdjustmentQ=Float64[], ExpectedAdjustmentQ=Float64[], Diff=Float64[])
+	for (mn, agent, a_type, mtu, clearing_mtu, adjustment_q, expected_adjustment_q) in adjustment_anomalies
+		push!(adjustment_anomalies_df, [mn, agent, string(Symbol(a_type)), mtu, clearing_mtu, adjustment_q, expected_adjustment_q, adjustment_q - expected_adjustment_q])
+	end
+
+	return (transactions_df, adjustment_anomalies_df)
 end
 
 end;
