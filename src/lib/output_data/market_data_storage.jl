@@ -1,6 +1,6 @@
 module MarketDataStorage
 
-using Dates, JuMP, MathOptInterface, DataFrames
+using Dates, JuMP, MathOptInterface, DataFrames, XLSX
 
 # this library fetches data from a JuMP optimization model
 using ..Helpers.HelperModelResults
@@ -268,8 +268,14 @@ function AddStorageAnomalies!(market_result_container, mr)
 	market_result_container.StorageAnomalies = storageAnomalies
 end
 
-function PrintStorageAnomalies(market_result_container)
-	println(market_result_container.StorageAnomalies)
+function WriteStorageAnomalies(market_result_container, market_name, test_id)
+	anomalies = market_result_container.StorageAnomalies
+	n = anomalies === nothing ? 0 : nrow(anomalies)
+	println("storage anomalies for $market_name: $n row(s)")
+	if n > 0
+		mkpath("results/$(test_id)/anomalies")
+		XLSX.writetable("results/$(test_id)/anomalies/storage_anomalies_$(market_name).xlsx", "data" => anomalies)
+	end
 end
 
 # add adjustment irregularities (adjustment quantity disagreeing with dispatch - previous dispatch) from the latest market result to the existing cached version
@@ -279,8 +285,14 @@ function AddAdjustmentAnomalies!(market_result_container, adjustment_anomalies)
 	market_result_container.AdjustmentAnomalies = vcat(existing, adjustment_anomalies)
 end
 
-function PrintAdjustmentAnomalies(market_result_container)
-	println(market_result_container.AdjustmentAnomalies)
+function WriteAdjustmentAnomalies(market_result_container, market_name, test_id)
+	anomalies = market_result_container.AdjustmentAnomalies
+	n = anomalies === nothing ? 0 : nrow(anomalies)
+	println("adjustment anomalies for $market_name: $n row(s)")
+	if n > 0
+		mkpath("results/$(test_id)/anomalies")
+		XLSX.writetable("results/$(test_id)/anomalies/adjustment_anomalies_$(market_name).xlsx", "data" => anomalies)
+	end
 end
 
 # This function takes market_result_container and gets the final dispatch decisions over a range of mtus
