@@ -12,7 +12,7 @@ function CleanDirectory(path)
 	mkpath(path)
 end
 
-short_names = ["Fixed", "Rolling", "FixedSQ"]
+short_names = ["Fixed", "Rolling", "AuctionOnly"]
 long_names = ["Fixed Horizon", "Rolling Horizon", "Auction Only"]
 
 quantitySymbol = Symbol("Quantity (MWh)")
@@ -21,7 +21,7 @@ quantitySymbol = Symbol("Quantity (MWh)")
 marketConfigurationDisplayNames = Dict{String, String}(
     "Fixed" => "Fixed Horizon", 
     "Rolling" =>  "Rolling Horizon",
-    "FixedSQ" => "Auction Only",
+    "AuctionOnly" => "Auction Only",
 )
 
 
@@ -36,13 +36,13 @@ function PerformAnalysis(results_path_base_in)
         dispatch_decision_paths = Dict{String,String}(
             "Fixed Horizon" => "$results_path_base/RAW/final_dispatch_decisions_Fixed.xlsx",
             "Rolling Horizon" => "$results_path_base/RAW/final_dispatch_decisions_Rolling.xlsx",
-            "Auction Only" => "$results_path_base/RAW/final_dispatch_decisions_FixedSQ.xlsx",
+            "Auction Only" => "$results_path_base/RAW/final_dispatch_decisions_AuctionOnly.xlsx",
         )
 
         mtu_economic_indicator_paths = Dict{String,String}(
             "Fixed Horizon" => "$results_path_base/mtu_economic_results_Fixed.xlsx",
             "Rolling Horizon" => "$results_path_base/mtu_economic_results_Rolling.xlsx",
-            "Auction Only" => "$results_path_base/mtu_economic_results_FixedSQ.xlsx",
+            "Auction Only" => "$results_path_base/mtu_economic_results_AuctionOnly.xlsx",
         )
 
     end
