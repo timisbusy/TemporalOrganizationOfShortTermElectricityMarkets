@@ -7,7 +7,7 @@ function CleanDirectory(path)
 	mkpath(path)
 end
 
-short_names = ["Fixed", "Rolling", "FixedSQ"]
+short_names = ["Fixed", "Rolling", "AuctionOnly"]
 long_names = ["Fixed Horizon", "Rolling Horizon", "Auction Only"]
 
 agent_names = ["1D_HighBid","2D_ModerateBid","3G_Base","4G_Shoulder","5G_Peak","6G_Wind","7G_Solar"]
@@ -38,7 +38,7 @@ end
 
 function AnalyzeQuantities(indicators, analysis_dir_path)
 
-	final_agent_ind_df = DataFrame(Agent=String[],Fixed=Float64[],Rolling=Float64[],RollingDiff=Float64[],FixedSQ=Float64[],FixedSQDiff=Float64[])
+	final_agent_ind_df = DataFrame(Agent=String[],Fixed=Float64[],Rolling=Float64[],RollingDiff=Float64[],AuctionOnly=Float64[],AuctionOnlyDiff=Float64[])
 	# DataFrame([Float64[] for i in 1:length(short_names)], short_names)
 	println(final_agent_ind_df)
 	for (j,agent) in enumerate(agent_names)
@@ -72,9 +72,9 @@ function AnalyzeQuantities(indicators, analysis_dir_path)
 
 	renamed_agent_ind_df[!,"Rolling Horizon % Diff"] = Printf.format.(percent_format,100*(final_agent_ind_df[!,Symbol("Rolling")] .- final_agent_ind_df[!,Symbol("Fixed")]) ./ final_agent_ind_df[!,Symbol("Fixed")])
 
-	renamed_agent_ind_df[!,"Auction Only Quantity (GWh)"] = final_agent_ind_df[!, "FixedSQ"] ./ 1000
+	renamed_agent_ind_df[!,"Auction Only Quantity (GWh)"] = final_agent_ind_df[!, "AuctionOnly"] ./ 1000
 
-	renamed_agent_ind_df[!,"Auction Only % Diff"] = Printf.format.(percent_format,100*(final_agent_ind_df[!,Symbol("FixedSQ")] .- final_agent_ind_df[!,Symbol("Fixed")]) ./ final_agent_ind_df[!,Symbol("Fixed")])
+	renamed_agent_ind_df[!,"Auction Only % Diff"] = Printf.format.(percent_format,100*(final_agent_ind_df[!,Symbol("AuctionOnly")] .- final_agent_ind_df[!,Symbol("Fixed")]) ./ final_agent_ind_df[!,Symbol("Fixed")])
 
 	println(renamed_agent_ind_df)
 
@@ -85,7 +85,7 @@ function AnalyzeQuantities(indicators, analysis_dir_path)
 end
 
 function AnalyzeSurpluses(indicators, analysis_dir_path)
-	final_agent_ind_df = DataFrame(Agent=String[],Fixed=Float64[],Rolling=Float64[],RollingDiff=Float64[],FixedSQ=Float64[],FixedSQDiff=Float64[])
+	final_agent_ind_df = DataFrame(Agent=String[],Fixed=Float64[],Rolling=Float64[],RollingDiff=Float64[],AuctionOnly=Float64[],AuctionOnlyDiff=Float64[])
 	# DataFrame([Float64[] for i in 1:length(short_names)], short_names)
 	println(final_agent_ind_df)
 	for (j,agent) in enumerate(agent_names)
@@ -119,9 +119,9 @@ function AnalyzeSurpluses(indicators, analysis_dir_path)
 
 	renamed_agent_ind_df[!,"Rolling Horizon % Diff"] = Printf.format.(percent_format,100*(final_agent_ind_df[!,Symbol("Rolling")] .- final_agent_ind_df[!,Symbol("Fixed")]) ./ final_agent_ind_df[!,Symbol("Fixed")])
 
-	renamed_agent_ind_df[!,"Auction Only Surplus (M€)"] = final_agent_ind_df[!, "FixedSQ"] ./ 1e6
+	renamed_agent_ind_df[!,"Auction Only Surplus (M€)"] = final_agent_ind_df[!, "AuctionOnly"] ./ 1e6
 
-	renamed_agent_ind_df[!,"Auction Only % Diff"] = Printf.format.(percent_format,100*(final_agent_ind_df[!,Symbol("FixedSQ")] .- final_agent_ind_df[!,Symbol("Fixed")]) ./ final_agent_ind_df[!,Symbol("Fixed")])
+	renamed_agent_ind_df[!,"Auction Only % Diff"] = Printf.format.(percent_format,100*(final_agent_ind_df[!,Symbol("AuctionOnly")] .- final_agent_ind_df[!,Symbol("Fixed")]) ./ final_agent_ind_df[!,Symbol("Fixed")])
 
 	println(renamed_agent_ind_df)
 

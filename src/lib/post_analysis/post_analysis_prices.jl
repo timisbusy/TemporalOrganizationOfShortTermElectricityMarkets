@@ -13,7 +13,7 @@ function CleanDirectory(path)
 	mkpath(path)
 end
 
-short_names = ["Fixed", "Rolling", "FixedSQ"]
+short_names = ["Fixed", "Rolling", "AuctionOnly"]
 long_names = ["Fixed Horizon", "Rolling Horizon", "Auction Only"]
 
 quantitySymbol = Symbol("Quantity (MWh)")
@@ -22,7 +22,7 @@ quantitySymbol = Symbol("Quantity (MWh)")
 marketConfigurationDisplayNames = Dict{String, String}(
     "Fixed" => "Fixed Horizon", 
     "Rolling" =>  "Rolling Horizon",
-    "FixedSQ" => "Auction Only",
+    "AuctionOnly" => "Auction Only",
 )
 
 case_shortname =    Dict{String,String}(
@@ -41,7 +41,7 @@ function PerformAnalysis(results_path_base_in)
     raw_decision_variables_paths = Dict{String,String}(
         "Fixed Horizon" => "$results_path_base/RAW/decisionvariables_Fixed_",
         "Rolling Horizon" => "$results_path_base/RAW/decisionvariables_Rolling_",
-        "Auction Only" => "$results_path_base/RAW/decisionvariables_FixedSQ_",
+        "Auction Only" => "$results_path_base/RAW/decisionvariables_AuctionOnly_",
     )
 
 
@@ -92,11 +92,10 @@ function plotPrices(dvs, case, interval, highlight_interval, analysis_dir_path)
                             title="Price Evolution $case May 28",
                             size=(1280, 450))
 
-    for mtu in interval.start:(interval.start + 4)   
+    for mtu in interval.start:(interval.start + 4)
         dv = dvs[mtu]
-        prices = dv[mtu .<= dv.mtu .<= interval.stop,:price]
-        xPlotIndicator = mtu:interval.stop
-        Plots.plot!(pPrices, xPlotIndicator, prices, label="Auction at MTU $mtu", legend=:topleft)
+        filtered = dv[mtu .<= dv.mtu .<= interval.stop, :]
+        Plots.plot!(pPrices, filtered.mtu, filtered.price, label="Auction at MTU $mtu", legend=:topleft)
     end
 
     vspan!(pPrices,[highlight_interval.start - 0.5,highlight_interval.stop + 0.5], color = :seagreen2, alpha = 0.1, labels = "May 28")
@@ -112,9 +111,12 @@ function plotTrades(dvs, case, interval, highlight_interval, agent, analysis_dir
     pTrades = Plots.plot(xlabel="MTU", ylabel="Auction MTU",
                             title="$(AgentRenaming.DisplayName(agent)) Adjustments May 28")
 
+    adj_col = Symbol("$(agent)_adj")
+
     xPlotIndicator = interval
     dv = dvs[interval.start]
-    previous = dv[dv.mtu .<= interval.stop, Symbol("Q_prev_$(agent)")]
+    previous_lookup = Dict{Int,Float64}(row.mtu => row[Symbol("Q_prev_$(agent)")] for row in eachrow(dv[dv.mtu .<= interval.stop, :]))
+    previous = [get(previous_lookup, mtu, 0.0) for mtu in interval]
     println(length(previous), length(xPlotIndicator))
     Plots.plot!(pTrades, xPlotIndicator, previous, label="Previous")
 
@@ -122,10 +124,8 @@ function plotTrades(dvs, case, interval, highlight_interval, agent, analysis_dir
 
     for mtu in selected_auctions
         dv = dvs[mtu]
-        adj_quantity = dv[mtu .<= dv.mtu .<= interval.stop, Symbol("$(agent)_adj")]
-        xPlotIndicator = mtu:mtu + length(adj_quantity) - 1
-        println(length(adj_quantity), length(xPlotIndicator))
-        Plots.plot!(pTrades, xPlotIndicator, adj_quantity, label="MTU $mtu")
+        adj_quantity_df = dv[mtu .<= dv.mtu .<= interval.stop, [:mtu, adj_col]]
+        Plots.plot!(pTrades, adj_quantity_df.mtu, adj_quantity_df[!, adj_col], label="MTU $mtu")
     end
     display(pTrades)
     savefig(pTrades, "$analysis_dir_path/trades_$(case_shortname[case])_$(agent).png")
@@ -167,26 +167,21 @@ function plotTrades(dvs, case, interval, highlight_interval, agent, analysis_dir
 
         for (row_idx, auction_mtu) in enumerate(interval.start:(interval.start + 4) )
             dv = dvs[auction_mtu]
-            adj_quantity = dv[auction_mtu .<= dv.mtu .<= interval.stop + 5, Symbol("$(agent)_adj")]
-            for mtu in auction_mtu:interval.stop + 5
-                true_index = ((mtu-auction_mtu) + 1)
-                if true_index > length(adj_quantity)
-                    continue
-                end
-                value = adj_quantity[true_index]
-                if abs(value) > 0.01
-                    bar_color = value > 0 ? :lightgreen : :lightcoral
-                    plot!(
-                        p_gen,
-                        [mtu - 0.4, mtu + 0.4],
-                        [row_idx, row_idx],
-                        fillrange=[row_idx + 0.4, row_idx + 0.4],
-                        fillcolor=bar_color,
-                        fillalpha=0.7,
-                        linewidth=0,
-                    )
-                    maybe_annotate!(p_gen, mtu, row_idx + 0.2, value)
-                end
+            adj_quantity_df = dv[auction_mtu .<= dv.mtu .<= interval.stop + 5, [:mtu, adj_col]]
+            for row in eachrow(adj_quantity_df)
+                value = row[adj_col]
+                abs(value) <= 0.01 && continue
+                bar_color = value > 0 ? :lightgreen : :lightcoral
+                plot!(
+                    p_gen,
+                    [row.mtu - 0.4, row.mtu + 0.4],
+                    [row_idx, row_idx],
+                    fillrange=[row_idx + 0.4, row_idx + 0.4],
+                    fillcolor=bar_color,
+                    fillalpha=0.7,
+                    linewidth=0,
+                )
+                maybe_annotate!(p_gen, row.mtu, row_idx + 0.2, value)
             end
         end
 

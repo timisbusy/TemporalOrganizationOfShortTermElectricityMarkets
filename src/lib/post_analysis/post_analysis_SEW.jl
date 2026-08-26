@@ -6,7 +6,7 @@ function CleanDirectory(path)
 	mkpath(path)
 end
 
-short_names = ["Fixed", "Rolling", "FixedSQ"]
+short_names = ["Fixed", "Rolling", "AuctionOnly"]
 long_names = ["Fixed Horizon", "Rolling Horizon", "Auction Only"]
 
 
@@ -27,7 +27,9 @@ function PerformAnalysis(results_path_base_in)
 	indicators = LoadFile(sew_data_path)
 	println(indicators)
 	indicators_df = permutedims(indicators,Symbol("Market Configuration"))
-	indicators_df = indicators_df[!,Not(:RollingTA)]
+	if hasproperty(indicators_df,:RollingTA)
+		indicators_df = indicators_df[!,Not(:RollingTA)]
+	end
 	indicators_df = rename!(indicators_df, short_names .=> long_names)
 
 	println(indicators_df)

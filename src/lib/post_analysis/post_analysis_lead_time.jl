@@ -32,7 +32,7 @@ function PerformAnalysis(results_path_base_in)
 		transaction_paths = Dict{String,String}(
 			"Fixed Horizon" => "$results_path_base/RAW/transactions_Fixed.xlsx",
 			"Rolling Horizon" => "$results_path_base/RAW/transactions_Rolling.xlsx",
-			"Auction Only" => "$results_path_base/RAW/transactions_FixedSQ.xlsx",
+			"Auction Only" => "$results_path_base/RAW/transactions_AuctionOnly.xlsx",
 		)
 	end
 
