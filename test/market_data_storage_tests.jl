@@ -18,7 +18,7 @@ using .ClearMarket.LatestMarketModel
 	demand_profile = DataFrame(mtu=0:20, Value=fill(5.0, 21))
 
 	data = Dict{Symbol,Any}(
-		:dispatchableGenerators => Dict{String,Any}("G" => Dict{String,Any}("bidPrice" => 50.0, "capacity" => 10.0, "rampRate" => 100.0, "initialQuantity" => 0.0)),
+		:dispatchableGenerators => Dict{String,Any}("G" => Dict{String,Any}("bidPrice" => 50.0, "capacity" => 10.0, "rampRate" => 100.0, "initialQuantity" => 0.0, "emissionFactor" => 500.0)),
 		:variableGenerators => Dict{String,Any}(),
 		:demandSegments => Dict{String,Any}("D" => Dict{String,Any}("bidPrice" => 100.0, "profile" => demand_profile)),
 		:batteryStorage => Dict{String,Any}("energyCapacity" => 0.0, "powerCapacity" => 0.0, "efficiency" => 0.9, "initialSOC" => 0.0, "endSOC" => 0.0),
@@ -71,6 +71,21 @@ using .ClearMarket.LatestMarketModel
 
 	end
 
+	@testset "Test GetEmissionsForRange" begin
+
+		# GIVEN the same accumulated clearings as above, generator "G" (emissionFactor 500
+		# kgCO2e/MWh) dispatched a total of 5 + 9 + 5 + 5 = 24 MWh across mtu 0..3
+
+		emissions = MarketDataStorage.GetEmissionsForRange(market_result_container, data, 0:3)
+
+		@test nrow(emissions) == 1 # only dispatchable generators are included
+		@test emissions.Generator[1] == "G"
+		@test isapprox(emissions.Quantity[1], 24.0)
+		@test isapprox(emissions.EmissionFactor[1], 500.0)
+		@test isapprox(emissions.Emissions[1], 24.0 * 500.0 / 1000.0) # tCO2e
+    
+  end
+  
 	@testset "Test GetEconomicIndicatorsForRange" begin
 
 		# GIVEN the same two accumulated clearings as above (mtu 0,2,3 at demand 5.0, mtu 1

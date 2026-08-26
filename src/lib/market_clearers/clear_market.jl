@@ -45,6 +45,7 @@ include("../plots/market_results/plot_generation_stack.jl")
 include("../plots/market_results/plot_imbalance_outcomes.jl")
 include("../plots/market_results/plot_retrading_impacts.jl")
 include("../plots/market_results/plot_price_dispersion_by_mtu.jl")
+include("../plots/market_results/plot_emissions.jl")
 
 include("../helpers/helper_input_data.jl")
 include("./market_sequence.jl")
@@ -257,9 +258,10 @@ function ClearMarketComparisonForConfig(config, test_id)
 		PlotImbalanceOutcomes.plotCompare(marketResults, config, test_range, test_id, variableGeneratorProfiles,"full")
 		PlotImbalanceOutcomes.plotCompare(marketResults, config, zoom_19_21, test_id, variableGeneratorProfiles,"zoom_19_21")
 		PlotRetradingImpacts.plotCompare(marketResults, config, test_range, test_id)
-	
+
 		# PlotGenerationStack.plotCompare(marketResults, config, short_test_range, test_id)
 		PlotGenerationStack.plotCompare(marketResults, config, test_range, test_id)
+		PlotEmissions.plotCompare(marketResults, config, test_range, test_id)
 	end
 	return marketResults
 
