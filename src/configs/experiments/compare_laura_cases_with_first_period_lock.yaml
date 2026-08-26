@@ -21,7 +21,7 @@ windOffset: -12
 marketConfigs: 
   Rolling: rolling_laura.yaml
   Fixed: fixed_laura.yaml
-  FixedSQ: status_quo.yaml
+  AuctionOnly: status_quo.yaml
   RollingTA: rolling.yaml
 
 # choose an agent configuration from the agents directory
