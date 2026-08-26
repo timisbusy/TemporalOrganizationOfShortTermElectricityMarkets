@@ -247,10 +247,8 @@ function ClearMarketComparisonForConfig(config, test_id)
 	zoom_19_21 = range(config[:timePeriodsPerDay]*19,config[:timePeriodsPerDay]*22 - 1)
 	println(test_range.start, test_range.stop)
 	for (market_name, market_result_container) in marketResults
-		println("storage anomalies for $market_name")
-		MarketDataStorage.PrintStorageAnomalies(market_result_container)
-		println("adjustment anomalies for $market_name")
-		MarketDataStorage.PrintAdjustmentAnomalies(market_result_container)
+		MarketDataStorage.WriteStorageAnomalies(market_result_container, market_name, test_id)
+		MarketDataStorage.WriteAdjustmentAnomalies(market_result_container, market_name, test_id)
 	end
 	PlotBaselineOutcomes.plotCompare(marketResults, config, test_range, test_id, FAST_MODE)
 	if !FAST_MODE
