@@ -1410,7 +1410,7 @@ uuid = "a4e569a6-e804-4fa4-b0f3-eef7a1d5b13e"
 version = "1.10.0"
 
 [[deps.TemporalOrganizationOfShortTermElectricityMarkets]]
-deps = ["DataFrames", "Distributions", "HiGHS", "IJulia", "JuMP", "Latexify", "MathOptInterface", "Plots", "Random", "StatsPlots", "Test", "XLSX", "YAML"]
+deps = ["DataFrames", "Distributions", "Gurobi", "HiGHS", "IJulia", "JuMP", "Latexify", "MathOptInterface", "Plots", "Random", "StatsPlots", "Test", "XLSX", "YAML"]
 path = "."
 uuid = "0d2fd640-1b4c-444d-93d9-af1895a7fe29"
 version = "0.1.0"
