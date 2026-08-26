@@ -212,8 +212,8 @@ function AddDecisionVariablesToCache!(market_result_container, mr)
 	finalDispatchDecisions = something(market_result_container.DecisionVariablesCache, DataFrame())
 
 	dvs = mr.DecisionVariables
-	select!(dvs,Not(["price"]))
-	finalDispatchDecisions = vcat(finalDispatchDecisions, dvs)
+	dvNoPrice = select(dvs,Not(["price"]))
+	finalDispatchDecisions = vcat(finalDispatchDecisions, dvNoPrice)
 	finalDispatchDecisions = unique!(finalDispatchDecisions, "mtu"; keep=:last)
 
 	market_result_container.DecisionVariablesCache = finalDispatchDecisions
