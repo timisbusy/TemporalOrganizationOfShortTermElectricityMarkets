@@ -14,6 +14,7 @@ include("../models/laura_minimum_match_model.jl")
 include("../models/simple_model.jl")
 include("../models/latest_model.jl")
 include("../models/two_stage_model.jl")
+include("../models/storage_mip_model.jl")
 #=
 include("../plots/plot_hourly_market_equilibrium.jl") # TODO: rename
 include("../plots/plot_market_prices_with_storage.jl")
@@ -65,7 +66,7 @@ FAST_MODE = false
 
 function GetModel(config)
 	if haskey(config, :optimizationModelConfig)
-		return config[:optimizationModelConfig]["model"] == "latest" ? LatestMarketModel : config[:optimizationModelConfig]["model"] == "two_stage" ? TwoStageMarketModel : ExplicitAdjustmentMarketModel # todo: make this more complete
+		return config[:optimizationModelConfig]["model"] == "latest" ? LatestMarketModel : config[:optimizationModelConfig]["model"] == "two_stage" ? TwoStageMarketModel : config[:optimizationModelConfig]["model"] == "storage_mip" ? StorageMipMarketModel : ExplicitAdjustmentMarketModel # todo: make this more complete
 	end
 	return USE_LATEST_MODEL ? LatestMarketModel : USE_EXPLICIT_ADJUSTMENT_MODEL ? ExplicitAdjustmentMarketModel : USE_LAURA_CONVERGENCE_MODEL ? LauraConvergenceMarketModel : USE_LAURA_MINIMUM_MATCH_MODEL ? LauraMinimumMatchModel : SimpleModel
 end
@@ -136,6 +137,7 @@ function ClearSimple(config_file, test_id)
 	MarketDataStorage.WriteStorageAnomalies(marketresult, config[:name], test_id)
 	MarketDataStorage.WriteAdjustmentAnomalies(marketresult, config[:name], test_id)
 	MarketDataStorage.WriteTwoStageConstrainedMTUs(marketresult, config[:name], test_id)
+	MarketDataStorage.WriteStorageMipDecisions(marketresult, config[:name], test_id)
 
 	PlotBaselineOutcomes.plot(marketresult, config, test_range, test_id)
 	PlotGenerationStack.plot(marketresult, config, test_range, test_id)
@@ -255,6 +257,7 @@ function ClearMarketComparisonForConfig(config, test_id)
 		MarketDataStorage.WriteStorageAnomalies(market_result_container, market_name, test_id)
 		MarketDataStorage.WriteAdjustmentAnomalies(market_result_container, market_name, test_id)
 		MarketDataStorage.WriteTwoStageConstrainedMTUs(market_result_container, market_name, test_id)
+		MarketDataStorage.WriteStorageMipDecisions(market_result_container, market_name, test_id)
 	end
 	PlotBaselineOutcomes.plotCompare(marketResults, config, test_range, test_id, FAST_MODE)
 	if !FAST_MODE

@@ -33,6 +33,9 @@ mutable struct MarketResult
 	# two-stage-model diagnostics (nothing for models that don't set model.ext[:two_stage])
 	TwoStageInfo::Union{Dict{Symbol,Any}, Nothing}
 
+	# storage-mip-model diagnostics (nothing for models that don't set model.ext[:storage_mip])
+	StorageMipInfo::Union{Dict{Symbol,Any}, Nothing}
+
 	MarketResult() = new()
 end
 
@@ -48,6 +51,7 @@ mutable struct MarketResultContainer
 	StorageAnomalies::Union{DataFrame, Nothing}
 	AdjustmentAnomalies::Union{DataFrame, Nothing}
 	TwoStageConstrainedMTUs::Union{DataFrame, Nothing}
+	StorageMipDecisions::Union{DataFrame, Nothing}
 
 	MarketResultContainer() = new()
 end
@@ -62,6 +66,7 @@ function MakeMarketResultContainer()
 	mrc.StorageAnomalies = nothing
 	mrc.AdjustmentAnomalies = nothing
 	mrc.TwoStageConstrainedMTUs = nothing
+	mrc.StorageMipDecisions = nothing
 	return mrc
 end
 
@@ -87,6 +92,7 @@ function AddMarketResult!(market_result_container, model, time_cleared, market_n
 	(transactions, adjustment_anomalies) = HelperModelResults.Transactions(mr, GetFinalDispatchDecisions(market_result_container), market_name, market_result_container.Results, model) # todo: docs on this
 	mr.Transactions = transactions
 	mr.TwoStageInfo = haskey(model.ext, :two_stage) ? model.ext[:two_stage] : nothing
+	mr.StorageMipInfo = haskey(model.ext, :storage_mip) ? model.ext[:storage_mip] : nothing
 
 	push!(market_result_container.Results, mr)
 	AddDecisionVariablesToCache!(market_result_container, mr)
@@ -94,6 +100,7 @@ function AddMarketResult!(market_result_container, model, time_cleared, market_n
 	AddStorageAnomalies!(market_result_container, mr)
 	AddAdjustmentAnomalies!(market_result_container, adjustment_anomalies)
 	AddTwoStageConstrainedMTUs!(market_result_container, mr)
+	AddStorageMipDecisions!(market_result_container, mr)
 	# CacheBust!(market_result_container)
 end
 
@@ -326,6 +333,38 @@ function WriteTwoStageConstrainedMTUs(market_result_container, market_name, test
 	if n > 0
 		mkpath("results/$(test_id)/anomalies")
 		XLSX.writetable("results/$(test_id)/anomalies/two_stage_constrained_mtus_$(market_name).xlsx", "data" => constrained)
+	end
+end
+
+# accumulate per-MTU storage charge/discharge exclusivity decisions (from a
+# StorageMipMarketModel clearing's model.ext[:storage_mip], if present) onto the container,
+# tagged with the clearing they came from and both the MIP and fixed-LP re-solve objectives -
+# unlike AddTwoStageConstrainedMTUs!, this covers every MTU in the window every clearing,
+# since the MIP's binary decides charge-vs-discharge for all of them, not just anomalous ones
+function AddStorageMipDecisions!(market_result_container, mr)
+	if mr.StorageMipInfo === nothing
+		return
+	end
+
+	existing = something(market_result_container.StorageMipDecisions, DataFrame())
+
+	forced_zero = mr.StorageMipInfo[:forced_zero]
+	decisions = DataFrame(mtu=collect(keys(forced_zero)), ForcedZero=collect(values(forced_zero)))
+	sort!(decisions, :mtu)
+	decisions.ClearingMTU .= mr.TimeCleared
+	decisions.ObjectiveMip .= mr.StorageMipInfo[:objective_mip]
+	decisions.ObjectiveFixedLP .= mr.StorageMipInfo[:objective_fixed_lp]
+
+	market_result_container.StorageMipDecisions = vcat(existing, decisions)
+end
+
+function WriteStorageMipDecisions(market_result_container, market_name, test_id)
+	decisions = market_result_container.StorageMipDecisions
+	n = decisions === nothing ? 0 : nrow(decisions)
+	println("storage MIP exclusivity decisions for $market_name: $n row(s)")
+	if n > 0
+		mkpath("results/$(test_id)/anomalies")
+		XLSX.writetable("results/$(test_id)/anomalies/storage_mip_decisions_$(market_name).xlsx", "data" => decisions)
 	end
 end
 
