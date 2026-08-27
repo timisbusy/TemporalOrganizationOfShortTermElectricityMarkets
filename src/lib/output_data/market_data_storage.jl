@@ -30,6 +30,9 @@ mutable struct MarketResult
 	DecisionVariables::DataFrame
 	Transactions::DataFrame
 
+	# two-stage-model diagnostics (nothing for models that don't set model.ext[:two_stage])
+	TwoStageInfo::Union{Dict{Symbol,Any}, Nothing}
+
 	MarketResult() = new()
 end
 
@@ -44,6 +47,7 @@ mutable struct MarketResultContainer
 	TransactionsCacheBust::Bool
 	StorageAnomalies::Union{DataFrame, Nothing}
 	AdjustmentAnomalies::Union{DataFrame, Nothing}
+	TwoStageConstrainedMTUs::Union{DataFrame, Nothing}
 
 	MarketResultContainer() = new()
 end
@@ -57,6 +61,7 @@ function MakeMarketResultContainer()
 	mrc.DecisionVariablesCache = nothing
 	mrc.StorageAnomalies = nothing
 	mrc.AdjustmentAnomalies = nothing
+	mrc.TwoStageConstrainedMTUs = nothing
 	return mrc
 end
 
@@ -81,12 +86,14 @@ function AddMarketResult!(market_result_container, model, time_cleared, market_n
 	mr.DecisionVariables = HelperModelResults.DecisionVariables(optimization_window, agent_map, model) # todo: docs on this
 	(transactions, adjustment_anomalies) = HelperModelResults.Transactions(mr, GetFinalDispatchDecisions(market_result_container), market_name, market_result_container.Results, model) # todo: docs on this
 	mr.Transactions = transactions
+	mr.TwoStageInfo = haskey(model.ext, :two_stage) ? model.ext[:two_stage] : nothing
 
 	push!(market_result_container.Results, mr)
 	AddDecisionVariablesToCache!(market_result_container, mr)
 	AddTransactionsToCache!(market_result_container, mr)
 	AddStorageAnomalies!(market_result_container, mr)
 	AddAdjustmentAnomalies!(market_result_container, adjustment_anomalies)
+	AddTwoStageConstrainedMTUs!(market_result_container, mr)
 	# CacheBust!(market_result_container)
 end
 
@@ -292,6 +299,33 @@ function WriteAdjustmentAnomalies(market_result_container, market_name, test_id)
 	if n > 0
 		mkpath("results/$(test_id)/anomalies")
 		XLSX.writetable("results/$(test_id)/anomalies/adjustment_anomalies_$(market_name).xlsx", "data" => anomalies)
+	end
+end
+
+# accumulate the constrained-MTU rows (from a TwoStageMarketModel clearing's model.ext[:two_stage],
+# if present) onto the container, tagged with the clearing they came from and both stage objectives
+function AddTwoStageConstrainedMTUs!(market_result_container, mr)
+	if mr.TwoStageInfo === nothing
+		return
+	end
+
+	existing = something(market_result_container.TwoStageConstrainedMTUs, DataFrame())
+
+	constrained = copy(mr.TwoStageInfo[:constrained_mtus])
+	constrained.ClearingMTU .= mr.TimeCleared
+	constrained.ObjectiveStage1 .= mr.TwoStageInfo[:objective_stage1]
+	constrained.ObjectiveStage2 .= mr.TwoStageInfo[:objective_stage2]
+
+	market_result_container.TwoStageConstrainedMTUs = vcat(existing, constrained)
+end
+
+function WriteTwoStageConstrainedMTUs(market_result_container, market_name, test_id)
+	constrained = market_result_container.TwoStageConstrainedMTUs
+	n = constrained === nothing ? 0 : nrow(constrained)
+	println("two-stage constrained MTUs for $market_name: $n row(s)")
+	if n > 0
+		mkpath("results/$(test_id)/anomalies")
+		XLSX.writetable("results/$(test_id)/anomalies/two_stage_constrained_mtus_$(market_name).xlsx", "data" => constrained)
 	end
 end
 
