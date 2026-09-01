@@ -267,26 +267,25 @@ function build_market_clearing!(m::Model, time_period::Int, marketresults, initi
         # Qch[t] = charge energy in  time period t [MWh]
         # Qdis[t] = discharge energy in  time period t [MWh]
         # SOC[t] = state of charge at end of  time period t [MWh]
-        Qch = m.ext[:variables][:Qch] = @variable(m, 0 <= Qch[t in OW] <= P_cap * m.ext[:sets][:power_to_energy_scale])
-        Qdis = m.ext[:variables][:Qdis] = @variable(m, 0 <= Qdis[t in OW] <= P_cap * m.ext[:sets][:power_to_energy_scale])
+        Qch = m.ext[:variables][:Qch] = @variable(m, 0 <= Qch[t in OW])
+        Qdis = m.ext[:variables][:Qdis] = @variable(m, 0 <= Qdis[t in OW])
         SOC = m.ext[:variables][:SOC] = @variable(m, 0 <= SOC[t in OW] <= E_cap)
         SOC_init = m.ext[:parameters][:storage_initial_soc]
 
-        if haskey(m.ext, :mip_forced_zero)
+        # Big-M is each variable's own upper bound P_cap*scale, the tightest valid M.
+        M = P_cap * m.ext[:sets][:power_to_energy_scale]
+
+        if haskey(m.ext, :z_star)
             # LP re-solve (see build() below): the MIP stage already decided, per MTU,
             # which side the binary z[t] picked - fix the losing side to zero instead of
             # rebuilding the binary/Big-M constraints, so this model is a pure LP and
             # dual.() on energy_balance gives valid prices.
-            m.ext[:constraints][:mip_exclusivity_fixed] = Dict{Int,ConstraintRef}()
-            for (t, forced_side) in m.ext[:mip_forced_zero]
-                m.ext[:constraints][:mip_exclusivity_fixed][t] = forced_side == "charge" ? @constraint(m, Qch[t] == 0) : @constraint(m, Qdis[t] == 0)
-            end
+            m.ext[:constraints][:charge_max_fixed] = @constraint(m, [t in OW], Qch[t] <= M * (1 - m.ext[:z_star][t]))
+            m.ext[:constraints][:discharge_max_fixed] = @constraint(m, [t in OW], Qdis[t] <= M * m.ext[:z_star][t])
         else
             # Big-M disjunctive exclusivity: z[t] == 0 forces discharge to zero (charge-only
             # MTU), z[t] == 1 forces charge to zero (discharge-only MTU) - an exact version of
             # allow_only_one_direction_precise from the Pyomo/AdOpT-NET0 Stor technology.
-            # Big-M is each variable's own upper bound P_cap*scale, the tightest valid M.
-            M = P_cap * m.ext[:sets][:power_to_energy_scale]
             z = m.ext[:variables][:z_storage_direction] = @variable(m, z[t in OW], Bin)
             m.ext[:constraints][:mip_exclusivity_charge] = @constraint(m, [t in OW], Qch[t] <= M * (1 - z[t]))
             m.ext[:constraints][:mip_exclusivity_discharge] = @constraint(m, [t in OW], Qdis[t] <= M * z[t])
@@ -463,20 +462,22 @@ function build(time_period, marketresults, initialization, data, market)
     end
 
     OW = m1.ext[:sets][:OW]
-    z1 = Dict(t => value(m1.ext[:variables][:z_storage_direction][t]) for t in OW)
-    forced_zero = Dict(t => (z1[t] > 0.5 ? "charge" : "discharge") for t in OW)
-
-    # Stage 2: rebuild without the binary, fixing the losing side to zero per stage 1's
-    # decision - build_market_clearing! adds the fixing constraints itself since
-    # m.ext[:mip_forced_zero] is set below before it runs. This turns the model back into a
-    # pure LP whose energy_balance dual is a valid price - see module docstring for why this
-    # re-solve is mandatory rather than conditional on detecting an issue.
+    # round() here matters: the solver only guarantees z within its integrality tolerance
+    # (e.g. Gurobi's default IntFeasTol 1e-5), not exact 0/1 - using an unrounded z_star as
+    # the Big-M multiplier below would shave that tolerance off the winning side's physical
+    # capacity bound in stage 2 instead of leaving it at the true P_cap*scale.
+    z_star = Dict(t => round(value(m1.ext[:variables][:z_storage_direction][t])) for t in OW)
+    # Stage 2: rebuild without the binary, reusing the same Big-M constraints with z fixed to
+    # stage 1's decision - build_market_clearing! adds them itself since m.ext[:z_star] is set
+    # below before it runs. This turns the model back into a pure LP whose energy_balance dual
+    # is a valid price - see module docstring for why this re-solve is mandatory rather than
+    # conditional on detecting an issue.
     m2 = Model(select_optimizer(data))
     set_silent(m2)
     define_sets!(m2, time_period, marketresults, initialization, data, market)
     process_time_series_data!(m2, time_period, marketresults, initialization, data, market)
     process_parameters!(m2, time_period, marketresults, initialization, data, market)
-    m2.ext[:mip_forced_zero] = forced_zero
+    m2.ext[:z_star] = z_star
     build_market_clearing!(m2, time_period, marketresults, initialization, data, market)
     optimize!(m2)
 
@@ -486,7 +487,7 @@ function build(time_period, marketresults, initialization, data, market)
         println("WARNING: StorageMipMarketModel objective mismatch at t=$time_period market=$(market[:name]): mip=$obj1 fixed_lp=$obj2")
     end
 
-    m2.ext[:storage_mip] = Dict(:objective_mip => obj1, :objective_fixed_lp => obj2, :forced_zero => forced_zero)
+    m2.ext[:storage_mip] = Dict(:objective_mip => obj1, :objective_fixed_lp => obj2, :z_star => z_star)
 
 	return m2
 end
