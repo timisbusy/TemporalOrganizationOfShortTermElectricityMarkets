@@ -28,7 +28,7 @@ agentConfig: validate_laura_agents.yaml
 
 # for optimization model customization
 optimizationModelConfig:
-  model: latest
+  model: storage_mip
   demand_adjust: true
   ex_post_transactions: false
   restrict_mtu1_trading: true
