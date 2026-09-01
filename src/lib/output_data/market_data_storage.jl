@@ -348,8 +348,8 @@ function AddStorageMipDecisions!(market_result_container, mr)
 
 	existing = something(market_result_container.StorageMipDecisions, DataFrame())
 
-	forced_zero = mr.StorageMipInfo[:forced_zero]
-	decisions = DataFrame(mtu=collect(keys(forced_zero)), ForcedZero=collect(values(forced_zero)))
+	z_star = mr.StorageMipInfo[:z_star]
+	decisions = DataFrame(mtu=collect(keys(z_star)), z_star=collect(values(z_star)))
 	sort!(decisions, :mtu)
 	decisions.ClearingMTU .= mr.TimeCleared
 	decisions.ObjectiveMip .= mr.StorageMipInfo[:objective_mip]
