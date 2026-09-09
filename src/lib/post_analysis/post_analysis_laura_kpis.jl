@@ -109,14 +109,21 @@ function PerformAnalysis()
 	)
 
 	time_range = 12:672 # based on institutional knowledge, start D0.5 end D28 - executed hours from LLD
-	
+
 	normalized_days = (time_range.stop - time_range.start + 1)/24 # 661 / 24
-	
+
 	println(normalized_days)
 
-
-
-	
+	# accumulators - one DataFrame per KPI section, filled in across both cases below and
+	# written out as sheets in a single xlsx at the end of PerformAnalysis
+	economic_indicators_all = DataFrame()
+	agent_indicators_all = DataFrame()
+	gross_traded_volume_all = DataFrame()
+	financial_revenue_all = DataFrame()
+	imbalance_all = DataFrame(Case=String[], ImbalanceEnergy=Float64[])
+	storage_summary_all = DataFrame()
+	storage_revenue_all = DataFrame()
+	storage_soc_losses_all = DataFrame(Case=String[], SOCEndOfHorizon=Float64[], TotalLosses=Float64[])
 
 	for case in cases
 
@@ -146,7 +153,11 @@ function PerformAnalysis()
 
 		println(daily_economic_indicators)
 
-
+		economic_indicators[!, :Case] .= case
+		economic_indicators[!, :Period] .= "Total"
+		daily_economic_indicators[!, :Case] .= case
+		daily_economic_indicators[!, :Period] .= "Per Day"
+		economic_indicators_all = vcat(economic_indicators_all, economic_indicators, daily_economic_indicators; cols=:union)
 
 	# Trading Volume
 	# Quantity Delivered
@@ -155,6 +166,9 @@ function PerformAnalysis()
 		println("agents")
 
 		println(agent_indicators)
+
+		agent_indicators[!, :Case] .= case
+		agent_indicators_all = vcat(agent_indicators_all, agent_indicators; cols=:union)
 
 		traded_volume_symbol = Symbol("Traded Volume (MWh)")
 
@@ -179,6 +193,9 @@ function PerformAnalysis()
 		println("Gross Traded Volume (all clearings $(time_range.start):$(time_range.stop), full look-ahead window):")
 		println(gross_traded_volume)
 
+		gross_traded_volume[!, :Case] .= case
+		gross_traded_volume_all = vcat(gross_traded_volume_all, gross_traded_volume; cols=:union)
+
 		# Total Financial Revenue, matching Laura's "TOTAL FINANCIAL REVENUE (incl financial
 		# repositions -> sum(q*price))" section: Net Revenue = sum(q*price) and Net Traded =
 		# sum(q), both signed (not sum of |q|), over the same transactions as Gross Traded Volume
@@ -192,6 +209,9 @@ function PerformAnalysis()
 		)
 		println("Total Financial Revenue (all clearings $(time_range.start):$(time_range.stop), full look-ahead window):")
 		println(financial_revenue)
+
+		financial_revenue[!, :Case] .= case
+		financial_revenue_all = vcat(financial_revenue_all, financial_revenue; cols=:union)
 	end
 
 	
@@ -226,6 +246,8 @@ function PerformAnalysis()
 		end
 
 		println("Imbalance for case $case : $imbalance_energy")
+
+		push!(imbalance_all, (Case=case, ImbalanceEnergy=imbalance_energy))
 	end
 
 	# Storage Charge/Discharge/Net/Throughput
@@ -247,6 +269,12 @@ function PerformAnalysis()
 		per_day_storage_df = storage_df ./ normalized_days
 		println("per day: ")
 		println(per_day_storage_df)
+
+		storage_df[!, :Case] .= case
+		storage_df[!, :Period] .= "Total"
+		per_day_storage_df[!, :Case] .= case
+		per_day_storage_df[!, :Period] .= "Per Day"
+		storage_summary_all = vcat(storage_summary_all, storage_df, per_day_storage_df; cols=:union)
 
 		# Storage revenue, matching Laura's calculate_storage_revenue (costs.jl): discharge_mw*price
 		# and charge_mw*price summed over EXECUTED hours only, using the price the clearing that
@@ -275,6 +303,9 @@ function PerformAnalysis()
 		)
 		println(revenue_df)
 
+		revenue_df[!, :Case] .= case
+		storage_revenue_all = vcat(storage_revenue_all, revenue_df; cols=:union)
+
 		# SOC end of horizon and total round-trip losses, matching Laura's own summary fields.
 		# Initial SOC is 0 for every case here (batteryStorage.initialSOC in the shared agent
 		# config), so total losses reduce to charge - discharge - SOC gained over the horizon.
@@ -285,7 +316,25 @@ function PerformAnalysis()
 
 		soc_df = DataFrame(SOCEndOfHorizon = [soc_end], TotalLosses = [total_losses])
 		println(soc_df)
+
+		push!(storage_soc_losses_all, (Case=case, SOCEndOfHorizon=soc_end, TotalLosses=total_losses))
 	end
+
+	# write every KPI section out as a sheet in one xlsx, alongside the fixed36h.png/rolling36h.png
+	# plots this module doesn't produce itself (see PostAnalysisSolverComparison for those)
+	kpi_path = "$analysis_dir_path/laura_kpi_validation.xlsx"
+	XLSX.writetable(kpi_path,
+		"economic_indicators" => economic_indicators_all,
+		"agent_indicators" => agent_indicators_all,
+		"gross_traded_volume" => gross_traded_volume_all,
+		"total_financial_revenue" => financial_revenue_all,
+		"imbalance" => imbalance_all,
+		"storage_summary" => storage_summary_all,
+		"storage_revenue" => storage_revenue_all,
+		"storage_soc_losses" => storage_soc_losses_all;
+		overwrite=true,
+	)
+	println("saved: $kpi_path")
 
 end
 
