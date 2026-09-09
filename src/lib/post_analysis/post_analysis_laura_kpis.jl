@@ -17,8 +17,8 @@ using .Helpers.HelperModelResults
 include("../output_data/market_data_storage.jl")
 
 
-fixed_path_base = "results/1788947191_laura_lastauction672_fixed_highs_simplex"
-rolling_path_base = "results/1788947439_laura_lastauction672_rolling_highs_simplex"
+fixed_path_base = "results/1788950433_laura_final_check_fixed"
+rolling_path_base = "results/1788950636_laura_final_check_rolling"
 results_path_base = "results/validation_results"
 
 
