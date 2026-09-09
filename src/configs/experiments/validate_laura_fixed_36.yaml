@@ -6,6 +6,7 @@ name: validate_laura_fixed_36 # descriptive name for experiment
 timePeriodsPerDay: 24 # number of time periods in a day
 clearForDays: 30 # number of days to clear market for
 skipEarlyAuctions: 12
+lastAuctionMTU: 672 # cap the last clearing to match Laura's comparable_delivery_hours_override (661 clearings, 12-672) - without this, clearForDays=30 runs clearings through mtu 684
 samplePeriodExcludeSpinUp: 0
 samplePeriodExcludeEnd: 0
 
