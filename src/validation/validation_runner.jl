@@ -22,10 +22,10 @@ function PerformAdjustmentValidation()
 end
 
 TimPathForCase = Dict{String,String}(
-	"Rolling36" => "results/1788773149_laura_deeper_validation_rolling_full/RAW/decisionvariables_validate_laura_rolling_36_",
+	"Rolling36" => "results/1788950636_laura_final_check_rolling/RAW/decisionvariables_validate_laura_rolling_36_",
 	"Rolling72" => "../DATA/1780504673_validate_laura_rolling_72/decisionvariables_validate_laura_rolling_72_",
 	"Rolling48" => "../DATA/1780401797_validate_laura_rolling_48/decisionvariables_validate_laura_rolling_48_",
-	"Fixed36" => "results/1788773615_laura_deeper_validation_fixed_full/RAW/decisionvariables_validate_laura_fixed_36_",
+	"Fixed36" => "results/1788950433_laura_final_check_fixed/RAW/decisionvariables_validate_laura_fixed_36_",
 	"HighStorageRolling36" => "../DATA/1780400275_validate_laura_rolling_high_storage_36/decisionvariables_validate_laura_rolling_high_storage_36_",
 	"HighStorageRolling48" => "../DATA/1780398907_validate_laura_rolling_high_storage_48/decisionvariables_validate_laura_rolling_high_storage_48_",
 	"HighStorageRolling72" => "../DATA/1780501951_validate_laura_rolling_high_storage_72/decisionvariables_validate_laura_rolling_high_storage_72_",
