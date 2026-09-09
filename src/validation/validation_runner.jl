@@ -22,10 +22,10 @@ function PerformAdjustmentValidation()
 end
 
 TimPathForCase = Dict{String,String}(
-	"Rolling36" => "results/1784816968_validate_laura_rolling_36/RAW/decisionvariables_validate_laura_rolling_36_",
+	"Rolling36" => "results/1788773149_laura_deeper_validation_rolling_full/RAW/decisionvariables_validate_laura_rolling_36_",
 	"Rolling72" => "../DATA/1780504673_validate_laura_rolling_72/decisionvariables_validate_laura_rolling_72_",
 	"Rolling48" => "../DATA/1780401797_validate_laura_rolling_48/decisionvariables_validate_laura_rolling_48_",
-	"Fixed36" => "results/1784818183_validate_laura_fixed_36/RAW/decisionvariables_validate_laura_fixed_36_",
+	"Fixed36" => "results/1788773615_laura_deeper_validation_fixed_full/RAW/decisionvariables_validate_laura_fixed_36_",
 	"HighStorageRolling36" => "../DATA/1780400275_validate_laura_rolling_high_storage_36/decisionvariables_validate_laura_rolling_high_storage_36_",
 	"HighStorageRolling48" => "../DATA/1780398907_validate_laura_rolling_high_storage_48/decisionvariables_validate_laura_rolling_high_storage_48_",
 	"HighStorageRolling72" => "../DATA/1780501951_validate_laura_rolling_high_storage_72/decisionvariables_validate_laura_rolling_high_storage_72_",
@@ -50,6 +50,11 @@ LauraPathForCase = Dict{String,String}(
 	"HighStorageRolling72" => "../DATA/_laura_data/decisionvariables_High-storageRolling72h_",
 	"NoStorageLowRamps" => "../DATA/_laura_data/decisionvariables_No-storageLowRampRates_",
 	"LowStorageLowRamps" => "../DATA/_laura_data/decisionvariables_Low-storageLowRampRates_",
+)
+
+LauraPathWithAdjustmentDataForCase = Dict{String,String}(
+	"Rolling36" => "../DATA/_laura_data_w_adj/decisionvariables_Rolling36h_",
+	"Fixed36" => "../DATA/_laura_data_w_adj/decisionvariables_Fixed36h_",
 )
 
 NoAdjustmentsCasePaths = Dict{String,String}(
@@ -82,7 +87,7 @@ WithPenaltyCasePaths = Dict{String,String}(
 	"Rolling36" => "results/1785335532_compare_lld_match_no_end_soc_cnst_pen/RAW/decisionvariables_Rolling_"
 )
 
-ALL_CASES = ["Fixed36", "Rolling36"] # ["D_Rolling"] # ["Fixed", "Rolling"] # ["Fixed36", "Rolling36", "Rolling48", "Rolling72", "HighStorageRolling36", "HighStorageRolling48", "HighStorageRolling72", "LowStorageLowRamps", "NoStorageLowRamps"]
+ALL_CASES = ["Rolling36","Fixed36"] # ["D_Rolling"] # ["Fixed", "Rolling"] # ["Fixed36", "Rolling36", "Rolling48", "Rolling72", "HighStorageRolling36", "HighStorageRolling48", "HighStorageRolling72", "LowStorageLowRamps", "NoStorageLowRamps"]
 SELECT_CASE = ["HighStorageRolling36"]
 _72_HR_CASES = ["Rolling72", "HighStorageRolling72"]
 
@@ -169,7 +174,7 @@ function DetectDifferences(case)
 	for mtu_cleared in 12:648
 		println("comparing prices cleared in MTU: $mtu_cleared")
 		try 
-			test_file = LoadFile(case, "tim_adj", mtu_cleared)
+			test_file = LoadFile(case, "tim", mtu_cleared)
 			comparison_file = LoadFile(case, "laura", mtu_cleared)
 			# DetectDifferencesInFiles(mtu_cleared,[laura_file,tim_file])
 			push!(test_files,test_file)
@@ -203,6 +208,8 @@ function GenerateFilepath(case, source, mtu_cleared)
 		return "$(TimPathWithDemandAdjustForCase[case])$mtu_cleared.xlsx"
 	elseif source == "laura"
 		return "$(LauraPathForCase[case])$mtu_cleared.xlsx"
+	elseif source == "laura_w_adj"
+		return "$(LauraPathWithAdjustmentDataForCase[case])$mtu_cleared.xlsx"
 	elseif source == "adjust"
 		return "$(AdjustmentsCasePaths[case])$mtu_cleared.xlsx"
 	elseif source == "no_adjust"
@@ -254,8 +261,10 @@ function calculateSEW(file)
 	end
 	if hasproperty(file,"1D_HighBid")
 		return sum(eachrow(file[!,"1D_HighBid"]*300) .+ eachrow(file[!,"2D_ModerateBid"]*50) .- eachrow(file[!,"3G_Base"]*30) .- eachrow(file[!,"4G_Shoulder"]*80) .- eachrow(file[!,"5G_Peak"]*150))[1]
-	else
+	elseif hasproperty(file,"Base_D")
 		return sum(eachrow(file[!,"Base_D"]*300) .+ eachrow(file[!,"Flex"]*50) .- eachrow(file[!,"Base"]*30) .- eachrow(file[!,"Shoulder"]*80) .- eachrow(file[!,"Peak"]*150))[1]
+	else
+		return sum(eachrow(file[!,"BaseD"]*300) .+ eachrow(file[!,"Flex"]*50) .- eachrow(file[!,"Base"]*30) .- eachrow(file[!,"Mid"]*80) .- eachrow(file[!,"Peak"]*150))[1]
 	end
 end
 
@@ -371,6 +380,43 @@ function CreateFinalDecisionVariablesForCase(src, case)
 
 	XLSX.writetable("../DATA/_laura_data/decisionvariables_$(src)_$(case).xlsx", "data" => finalDispatchDecisions)
 
+end
+
+function PrintTradingVolumeForFiles(case, files)
+	println("Trading volumes for: $case with $(length(files)) files")
+	volumeByGen = Dict{String,Float64}()
+	gen_list = ["Base", "Shoulder","Peak", "Wind", "Solar"]
+
+	for gen in gen_list
+		volumeByGen[gen] = 0.0
+	end
+
+	volumeByGen["total"] = 0.0
+
+	for file in files
+		for gen in gen_list
+			volume = combine(file, Symbol("$(gen)_adj") => (a -> sum(abs.(a))) )[1,1]
+			volumeByGen[gen] += volume
+		end
+	end
+
+	for gen in gen_list
+		volumeByGen["total"] += volumeByGen[gen]
+	end
+	println(volumeByGen)
+end
+
+function PrintTradeVolumesForGenerators()
+	src = "laura_w_adj"
+	for case in ["Rolling36","Fixed36"]
+		test_files = []
+		for mtu_cleared in 12:672
+			println("load file for MTU: $mtu_cleared")
+			test_file = LoadFile(case, src, mtu_cleared)
+			push!(test_files,test_file)
+		end
+		PrintTradingVolumeForFiles(case, test_files)
+	end
 end
 
 end;

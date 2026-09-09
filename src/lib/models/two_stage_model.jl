@@ -401,9 +401,9 @@ function build_market_clearing!(m::Model, time_period::Int, marketresults, initi
 
     if haskey(data, :optimizationModelConfig) && data[:optimizationModelConfig]["restrict_mtu1_trading"] == true && !market[:overrideMTU1Restriction]
         
-        # TAtoLLD Change 1: replicate Laura's limit on trading for base/shoulder in the first MTU 
+        # TAtoLLD Change 1: replicate Laura's limit on trading for base/shoulder/solar in the first MTU
         if length(marketresults.Results) != 0 && time_period == start_at_period
-            for g in ["3G_Base", "4G_Shoulder"]
+            for g in ["3G_Base", "4G_Shoulder", "7G_Solar"]
                 @constraint(m, Qg_adj[g,start_at_period] == 0)
             end
         end

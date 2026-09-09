@@ -387,6 +387,12 @@ function GetTransactionsForRange(market_result_container,time_range)
 end
 
 
+	quantity_symbol = Symbol("Quantity (MWh)")
+	price_symbol = Symbol("Price (€/MWh)")
+	payrev_symbol = Symbol("Payments/Revenues (€)")
+	mtu_symbol = Symbol("Market Time Unit")
+
+
 # snaps values within atol of zero to exactly 0.0, so downstream near-zero float noise doesn't get reported as a nonzero indicator
 function snap0(x, atol=1e-4)
 	return isapprox(x, 0.0; atol=atol) ? 0.0 : x
@@ -395,20 +401,21 @@ end
 # raw (unsnapped) quantity/utility/payments/revenue/fuel_cost/surplus for one agent, over
 # whatever (already time-range-filtered) finalDispatchDecisions/transactions subset is passed in -
 # shared by both the whole-range and per-mtu aggregations in GetEconomicIndicatorsForRange
-function AgentEconomicMetrics(finalDispatchDecisions, transactions, a_type, agent, payrev_symbol)
+function AgentEconomicMetrics(finalDispatchDecisions, transactions, a_type, agent)
 	quantity = combine(finalDispatchDecisions, Symbol(agent) => sum)[1,1]
 	load_utility = (a_type == HelperModelResults.AGENT_DEMAND) ? combine(finalDispatchDecisions, Symbol("utility_$agent") => sum)[1,1] : 0.0
 	payments = (a_type == HelperModelResults.AGENT_DEMAND) ? combine((transactions[transactions.Agent .== agent, :]), payrev_symbol => sum)[1,1] : 0.0
 	revenue = (a_type == HelperModelResults.AGENT_GENERATOR) ? combine((transactions[transactions.Agent .== agent, :]), payrev_symbol => sum)[1,1] : 0.0
+	traded_volume = combine((transactions[transactions.Agent .== agent, :]), quantity_symbol => (q -> sum(abs.(q)) ) )[1,1]
 	fuel_cost = (a_type == HelperModelResults.AGENT_GENERATOR) ? combine(finalDispatchDecisions, Symbol("fuelcost_$agent") => sum)[1,1] : 0.0
 	surplus = (load_utility - payments) + (revenue - fuel_cost)
-	return (quantity=quantity, load_utility=load_utility, payments=payments, revenue=revenue, fuel_cost=fuel_cost, surplus=surplus)
+	return (quantity=quantity, load_utility=load_utility, payments=payments, revenue=revenue, traded_volume=traded_volume, fuel_cost=fuel_cost, surplus=surplus)
 end
 
 function GetEconomicIndicatorsForRange(market_result_container,time_range)
 
 	economic_indicators = DataFrame(SEW=[], DemandUtility=[], ProductionCosts=[], ProducerSurplus=[],ConsumerSurplus=[],StorageRevenue=[])# , WeightedAveragePrice=[])
-	agent_indicators = DataFrame(Agent=[],Quantity=[],LoadUtility=[],Payments=[],Revenue=[],FuelCost=[],Surplus=[],SOCChange=[])
+	agent_indicators = DataFrame(Agent=[],Quantity=[],LoadUtility=[],Payments=[],Revenue=[],FuelCost=[],Surplus=[], TradedVolume=[], SOCChange=[])
 	mtu_economic_indicators = DataFrame(MTU=[], SEW=[], DemandUtility=[], ProductionCosts=[], ProducerSurplus=[],ConsumerSurplus=[],StorageRevenue=[])
 
 	# get data from market clearing
@@ -419,16 +426,30 @@ function GetEconomicIndicatorsForRange(market_result_container,time_range)
 		return (economic_indicators, agent_indicators, transactions, finalDispatchDecisions, mtu_economic_indicators)
 	end
 
-	# add calculated columns to transactions
-	quantity_symbol = Symbol("Quantity (MWh)")
-	price_symbol = Symbol("Price (€/MWh)")
-	payrev_symbol = Symbol("Payments/Revenues (€)")
-	mtu_symbol = Symbol("Market Time Unit")
-
-	transactions[!, payrev_symbol] = transactions[!, quantity_symbol] .* transactions[!, price_symbol]
-
 	# handle gens and demands
 	agentMap = market_result_container.Results[1].AgentMap
+
+	return CalculateEconomicIndicators(finalDispatchDecisions, transactions, agentMap, time_range)
+
+end
+
+function CalculateEconomicIndicators(finalDispatchDecisions, transactions, agentMap, time_range)
+	# scope both inputs to the requested delivery-MTU range ourselves - time_range is part of this
+	# function's signature, so its contract should not depend on the caller having already filtered
+	# to match. finalDispatchDecisions/transactions from a caller that filtered on its own filters
+	# again here as a no-op; a caller that (like some previously did) passed the full, unfiltered
+	# export now gets correctly-scoped results instead of silently-inflated ones.
+	finalDispatchDecisions = finalDispatchDecisions[(time_range.start .<= finalDispatchDecisions.mtu .<= time_range.stop), :]
+	transactions = transactions[(time_range.start .<= transactions[!, mtu_symbol] .<= time_range.stop), :]
+
+	economic_indicators = DataFrame(SEW=[], DemandUtility=[], ProductionCosts=[], ProducerSurplus=[],ConsumerSurplus=[],StorageRevenue=[])# , WeightedAveragePrice=[])
+	agent_indicators = DataFrame(Agent=[],Quantity=[],LoadUtility=[],Payments=[],Revenue=[],FuelCost=[],Surplus=[], TradedVolume=[], SOCChange=[])
+	mtu_economic_indicators = DataFrame(MTU=[], SEW=[], DemandUtility=[], ProductionCosts=[], ProducerSurplus=[],ConsumerSurplus=[],StorageRevenue=[])
+
+	# add calculated columns to transactions
+
+
+	transactions[!, payrev_symbol] = transactions[!, quantity_symbol] .* transactions[!, price_symbol]
 
 	display_order = [HelperModelResults.AGENT_DEMAND, HelperModelResults.AGENT_GENERATOR]
 
@@ -442,9 +463,10 @@ function GetEconomicIndicatorsForRange(market_result_container,time_range)
 			if (a_type == HelperModelResults.AGENT_GENERATOR)
 				finalDispatchDecisions[!, Symbol("fuelcost_$agent")] = finalDispatchDecisions[!, Symbol(agent)] .* finalDispatchDecisions[!, Symbol("P_$agent")]
 			end
-			metrics = AgentEconomicMetrics(finalDispatchDecisions, transactions, a_type, agent, payrev_symbol)
+			println("get metrics for agent: $agent $a_type")
+			metrics = AgentEconomicMetrics(finalDispatchDecisions, transactions, a_type, agent)
 
-			push!(agent_indicators, [agent, snap0(metrics.quantity), snap0(metrics.load_utility), snap0(metrics.payments), snap0(metrics.revenue), snap0(metrics.fuel_cost), snap0(metrics.surplus), 0.0])
+			push!(agent_indicators, [agent, snap0(metrics.quantity), snap0(metrics.load_utility), snap0(metrics.payments), snap0(metrics.revenue), snap0(metrics.fuel_cost), snap0(metrics.surplus), snap0(metrics.traded_volume), 0.0])
 
 		end
 	end
@@ -460,13 +482,25 @@ function GetEconomicIndicatorsForRange(market_result_container,time_range)
 	storage_revenue = combine((transactions[transactions.Agent .== "Storage", :]), payrev_symbol => sum)[1,1]
 	# like this we report out the sum quantity of energy charged and discharged - the difference is also interesting
 	storage_quantity = 	combine(finalDispatchDecisions, :StorageDischarge => sum)[1,1] # + combine(finalDispatchDecisions, :StorageCharge => sum)[1,1]
-	
 
+	# reworked so we don't rely on the market_result_container here
+	# (storage_soc_begin, has_soc_begin) = StorageSOCForTimePeriod(market_result_container, time_range.start - 1)
 
+	# (storage_soc_end, has_soc_end) = StorageSOCForTimePeriod(market_result_container, time_range.stop)
 
-	(storage_soc_begin, has_soc_begin) = StorageSOCForTimePeriod(market_result_container, time_range.start - 1)
+	storage_soc_begin_vec = finalDispatchDecisions[finalDispatchDecisions.mtu .== (time_range.start - 1), Symbol("SOC")]
+	storage_soc_end_vec = finalDispatchDecisions[finalDispatchDecisions.mtu .== (time_range.stop), Symbol("SOC")]
 
-	(storage_soc_end, has_soc_end) = StorageSOCForTimePeriod(market_result_container, time_range.stop)
+	has_soc_begin = has_soc_end = false
+	storage_soc_begin = storage_soc_end = 0.0
+	if length(storage_soc_begin_vec) > 0
+		has_soc_begin = true
+		storage_soc_begin = storage_soc_begin_vec[1]
+	end
+	if length(storage_soc_end_vec) > 0
+		has_soc_end = true
+		storage_soc_end = storage_soc_end_vec[1]
+	end
 
 	if !has_soc_begin || !has_soc_end
 		println("WARNING: SOC begin or end not found. change reported may be invalid.")
@@ -511,7 +545,7 @@ function GetEconomicIndicatorsForRange(market_result_container,time_range)
 	storage_quantity = snap0(storage_quantity)
 	
 	# note that revenue here is also reported as SEW, assuming no costs
-	push!(agent_indicators, ["Storage", storage_quantity, 0.0, 0.0, storage_revenue, 0.0, storage_revenue, storage_soc_change])
+	push!(agent_indicators, ["Storage", storage_quantity, 0.0, 0.0, storage_revenue, 0.0, storage_revenue, 0.0, storage_soc_change]) # note zero for traded quantity here as storage is not treated as economic agent
 	
 	demand_utility = combine((agent_indicators[ [a in agentMap[HelperModelResults.AGENT_DEMAND] for a in agent_indicators[!, :Agent]], :]), :LoadUtility => sum)[1,1]
 	production_costs = combine((agent_indicators[ [a in agentMap[HelperModelResults.AGENT_GENERATOR] for a in agent_indicators[!, :Agent]], :]), :FuelCost => sum)[1,1]
@@ -530,7 +564,7 @@ function GetEconomicIndicatorsForRange(market_result_container,time_range)
 		mtu_transactions = transactions[transactions[!, mtu_symbol] .== mtu, :]
 		for (a_type, agents) in agentMap
 			for agent in agents
-				metrics = AgentEconomicMetrics(mtu_finalDispatchDecisions, mtu_transactions, a_type, agent, payrev_symbol)
+				metrics = AgentEconomicMetrics(mtu_finalDispatchDecisions, mtu_transactions, a_type, agent)
 				mtu_load_utility = snap0(metrics.load_utility)
 				mtu_fuel_cost = snap0(metrics.fuel_cost)
 				mtu_surplus = snap0(metrics.surplus)

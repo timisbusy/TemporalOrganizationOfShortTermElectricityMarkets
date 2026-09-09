@@ -12,7 +12,7 @@ include("../../output_data/market_data_storage.jl")
 include("../../output_data/interpretations.jl")
 
 function plot(marketresult, config, test_range, test_id)
-    (indicators, agent_indicators, transactions, final_market_results) = MarketDataStorage.GetEconomicIndicatorsForRange(marketresult, test_range)
+    (indicators, agent_indicators, transactions, final_dispatch_decisions, mtu_economic_outcomes) = MarketDataStorage.GetEconomicIndicatorsForRange(marketresult, test_range)
 
     println(indicators)
     println(agent_indicators)
@@ -23,7 +23,9 @@ function plot(marketresult, config, test_range, test_id)
 
     XLSX.writetable("results/$(test_id)/transactions.xlsx", "data" => transactions, "interpretation" => Interpretations.TransactionsInterpretation)
 
-    XLSX.writetable("results/$(test_id)/final_market_results.xlsx", "data" => final_market_results, "interpretation" => Interpretations.DecisionVariablesInterpretation)
+    XLSX.writetable("results/$(test_id)/final_dispatch_decisions.xlsx", "data" => final_dispatch_decisions, "interpretation" => Interpretations.DecisionVariablesInterpretation)
+
+    XLSX.writetable("results/$(test_id)/mtu_economic_results.xlsx", "data" => mtu_economic_outcomes)
 
 end
 

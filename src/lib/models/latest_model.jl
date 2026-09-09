@@ -193,12 +193,16 @@ function process_parameters!(m::Model, time_period::Int, marketresults, initiali
     time_period_minutes = 24*60 / data[:timePeriodsPerDay] # minutes per day / mtu per day = minutes/mtu
     for (g, gen_config) in data[:dispatchableGenerators]
         # ramp rate in MWh per mtu
-        ramp_as_decimal = gen_config["rampRate"] *.01 # % of power capacity per minute to decimal portion
-        ramp_per_mtu = ramp_as_decimal * time_period_minutes # portion of power capacity per MTU
-        capacity_in_energy_per_time_unit = gen_config["capacity"] * m.ext[:sets][:power_to_energy_scale]
-        # println("ramps: ", g, float(min(ramp_per_mtu * capacity_in_energy_per_time_unit, capacity_in_energy_per_time_unit)))
-        m.ext[:parameters][:ramp_rate][g] = float(min(ramp_per_mtu * capacity_in_energy_per_time_unit, capacity_in_energy_per_time_unit))
-        
+        if haskey(gen_config, "rampRate")
+            ramp_as_decimal = gen_config["rampRate"] *.01 # % of power capacity per minute to decimal portion
+            ramp_per_mtu = ramp_as_decimal * time_period_minutes # portion of power capacity per MTU
+            capacity_in_energy_per_time_unit = gen_config["capacity"] * m.ext[:sets][:power_to_energy_scale]
+            # println("ramps: ", g, float(min(ramp_per_mtu * capacity_in_energy_per_time_unit, capacity_in_energy_per_time_unit)))
+            m.ext[:parameters][:ramp_rate][g] = float(min(ramp_per_mtu * capacity_in_energy_per_time_unit, capacity_in_energy_per_time_unit))
+        else
+            # laura style - assumes hourly MTU
+            m.ext[:parameters][:ramp_rate][g] = gen_config["rampRateLD"] * gen_config["capacity"]
+        end
         (prev_mtu_dispatch, has_prev_mtu_dispatch) = MarketDataStorage.DecisionVariableValueForTimePeriod(marketresults, g, m.ext[:sets][:OW][1] - 1) 
         prev_mtu_dispatch = has_prev_mtu_dispatch == true ? prev_mtu_dispatch : initialization[:Q_gen][g] * m.ext[:sets][:power_to_energy_scale]
         m.ext[:parameters][:previous_time_period_dispatch][g] = prev_mtu_dispatch
@@ -365,9 +369,9 @@ function build_market_clearing!(m::Model, time_period::Int, marketresults, initi
 
     if haskey(data, :optimizationModelConfig) && data[:optimizationModelConfig]["restrict_mtu1_trading"] == true && !market[:overrideMTU1Restriction]
         
-        # TAtoLLD Change 1: replicate Laura's limit on trading for base/shoulder in the first MTU 
+        # TAtoLLD Change 1: replicate Laura's limit on trading for base/shoulder/solar in the first MTU
         if length(marketresults.Results) != 0 && time_period == start_at_period
-            for g in ["3G_Base", "4G_Shoulder"]
+            for g in ["3G_Base", "4G_Shoulder", "7G_Solar"]
                 @constraint(m, Qg_adj[g,start_at_period] == 0)
             end
         end
@@ -393,11 +397,11 @@ end
 # market - defines when the window for which this market clears and the market name
 
 DEFAULT_SOLVER = "gurobi"
+DEFAULT_SOLVER_METHOD = "simplex"
 
 # solver is chosen via data[:optimizationModelConfig]["solver"] ("gurobi" or "highs"), defaulting to DEFAULT_SOLVER
-function select_optimizer(data::Dict{Symbol,Any})
-    solver = haskey(data, :optimizationModelConfig) && haskey(data[:optimizationModelConfig], "solver") ? lowercase(String(data[:optimizationModelConfig]["solver"])) : DEFAULT_SOLVER
-
+function select_optimizer(solver)
+    
     if solver == "gurobi"
         return () -> Gurobi.Optimizer(gurobi_env)
     elseif solver == "highs"
@@ -410,9 +414,34 @@ end
 function build(time_period, marketresults, initialization, data, market)
 
 	# create the optimisation model with the configured solver (default Gurobi)
+    solver = haskey(data, :optimizationModelConfig) && haskey(data[:optimizationModelConfig], "solver") ? lowercase(String(data[:optimizationModelConfig]["solver"])) : DEFAULT_SOLVER
+    solver_method = haskey(data, :optimizationModelConfig) && haskey(data[:optimizationModelConfig], "solver_method") ? lowercase(String(data[:optimizationModelConfig]["solver_method"])) : DEFAULT_SOLVER_METHOD
 
-    m = Model(select_optimizer(data))
+    m = Model(select_optimizer(solver))
+
     set_silent(m)
+
+    # probably would be best to configure and select optimizer together in case the configs differ per solver
+    if solver == "highs"
+        if solver_method == "ipm"
+            set_attribute(m, "solver", "ipm")
+        elseif solver_method == "simplex"
+            set_attribute(m, "solver", "simplex")
+        else
+            throw("unknown solver_method \"$solver_method\" in optimizationModelConfig - supported solver methods for highs are \"ipm\" and \"simplex\"")
+        end
+    elseif solver == "gurobi"
+        if solver_method == "ipm"
+            set_attribute(m, "Method", 2)
+        elseif solver_method == "simplex"
+            set_attribute(m, "Method", 0)
+        elseif solver_method == "dual_simplex"
+            set_attribute(m, "Method", 1)
+         else
+            throw("unknown solver_method \"$solver_method\" in optimizationModelConfig - supported solver methods for gurobi are \"ipm\" (2), \"simplex\" (0) and \"dual_simplex\" (1)")
+        end 
+    end
+
 	# build the sets, time series and parameters based on the inputs
 	define_sets!(m, time_period, marketresults, initialization, data, market)
 	process_time_series_data!(m, time_period, marketresults, initialization, data, market)
