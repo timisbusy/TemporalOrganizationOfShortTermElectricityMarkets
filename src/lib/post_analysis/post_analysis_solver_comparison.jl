@@ -45,7 +45,7 @@ generator_agent_names = Dict{String,String}(
 time_range = 12:672
 
 # x-axis ordering: Laura first, then HiGHS variants, then Gurobi variants
-category_order = ["Laura (reference)", "HiGHS + simplex", "HiGHS + IPM", "Gurobi + simplex", "Gurobi + dual_simplex", "Gurobi + IPM"]
+category_order = ["Reference (HiGHS + default)", "HiGHS + simplex", "HiGHS + IPM", "Gurobi + simplex", "Gurobi + dual_simplex", "Gurobi + IPM"]
 
 function CleanDirectory(path)
 	mkpath(path)
@@ -96,7 +96,7 @@ function TradingVolumeDataFrame(case, result_dirs)
 	all_volumes = Dict{String,Dict{String,Float64}}()
 
 	println("  loading: Laura (reference)")
-	all_volumes["Laura (reference)"] = GrossTradedVolumeForLaura(case)
+	all_volumes["Reference (HiGHS + default)"] = GrossTradedVolumeForLaura(case)
 
 	for (config_label, dir) in result_dirs
 		println("  loading: $config_label ($dir)")
