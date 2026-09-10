@@ -4,7 +4,14 @@ name: validate_laura_rolling_high_storage_72 # descriptive name for experiment
 
 # Set temporal parameters for experiment - granularity and duration
 timePeriodsPerDay: 24 # number of time periods in a day
-clearForDays: 30 # number of days to clear market for
+clearForDays: 31 # number of days to clear market for - 31, not 30: with a 72-MTU look-ahead
+# window, ClearSimple's own natural bound (clearForDays*24 - window) is 720-72=648 at 30 days,
+# which is LESS than lastAuctionMTU below and would silently win the min() in clear_market.jl,
+# capping the run 24 MTUs short of 672 with no error. 31 days pushes the natural bound to
+# 744-72=672, matching lastAuctionMTU exactly (the same relationship 36h/48h already have,
+# where the natural bound already exceeds/equals 672) - confirmed against Laura's own results,
+# which diverged from ours specifically at the tail (SOC end of horizon, last-few-MTU dispatch,
+# imbalance) before this fix, matching exactly a 24-MTU-short run.
 skipEarlyAuctions: 12
 lastAuctionMTU: 672 # cap the last clearing to match Laura's comparable_delivery_hours_override -
 # a single shared constant (661 clearings) she applies uniformly across her 36h/48h/72h scenarios
