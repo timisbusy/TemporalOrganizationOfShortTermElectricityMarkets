@@ -108,9 +108,11 @@ function PerformAnalysis()
 		AGENT_DEMAND => ["1D_HighBid","2D_ModerateBid"],
 	)
 
-	time_range = 12:672 # based on institutional knowledge, start D0.5 end D28 - executed hours from LLD
+	time_range = 12:672 # executed-hours range matching Laura's comparable_delivery_hours_override
+	# (661 clearings, 12:672) - MTU 12 = day 0.5, MTU 672 = day 28.0, inclusive of both endpoints
 
-	normalized_days = (time_range.stop - time_range.start + 1)/24 # 661 / 24
+	normalized_days = (time_range.stop - time_range.start + 1)/24 # 661 MTUs (inclusive) / 24 =
+	# 27.5417 days - matches Laura's own reported "27.542 normalized days" exactly
 
 	println(normalized_days)
 
