@@ -5,16 +5,33 @@ name: validate_laura_fixed_high_storage_36 # descriptive name for experiment
 # Set temporal parameters for experiment - granularity and duration
 timePeriodsPerDay: 24 # number of time periods in a day
 clearForDays: 30 # number of days to clear market for
+skipEarlyAuctions: 12
+lastAuctionMTU: 672 # cap the last clearing to match Laura's comparable_delivery_hours_override -
+# a single shared constant (661 clearings) she applies uniformly across her 36h/48h/72h scenarios
+# so every look-ahead horizon executes the same number of clearings, not a per-horizon natural
+# bound (see run_thesis_cases.jl/thesis_runner.jl in her codebase)
+samplePeriodExcludeSpinUp: 0
+samplePeriodExcludeEnd: 0
 
 # set a start date for data to be used from incoming agent profile data
 startDate: 2025-05-01
 
 # set the uncertainty in renewable generation
-noiseLevel: 0.0
+noiseLevel: 0.2
+windOffset: 11
 
 
 # choose a market configuration from the markets directory
 marketConfig: fixed_laura.yaml
 
 # choose an agent configuration from the agents directory
-agentConfig: validate_laura_agents.yaml
+agentConfig: validate_laura_agents_high_storage.yaml
+
+# for optimization model customization
+optimizationModelConfig:
+  model: latest
+  solver: highs
+  solver_method: simplex
+  demand_adjust: true
+  ex_post_transactions: false
+  restrict_mtu1_trading: true
