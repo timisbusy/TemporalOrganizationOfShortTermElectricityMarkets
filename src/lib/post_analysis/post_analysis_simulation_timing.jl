@@ -46,6 +46,15 @@ function SimulationTimingFor(config_path)
 	test_range_start = config[:timePeriodsPerDay] * config[:samplePeriodExcludeSpinUp]
 	test_range_stop = config[:timePeriodsPerDay] * (config[:clearForDays] - config[:samplePeriodExcludeEnd]) - 1
 
+	# the two ranges post_analysis_laura_kpis.jl actually analyzes: "executed hours" is the h=1
+	# leg of every auction (skip_early_auctions:last_mtu_simulation - identical to the auctions-run
+	# span itself, e.g. her hardcoded time_range = 12:672), while "all traded hours" additionally
+	# covers the speculative look-ahead tail of the LAST auction's own window (matching her Gross
+	# Traded Volume / Total Financial Revenue sections, which sum every leg of every clearing's
+	# full optimizationWindow+lookAheadDistance, not just the executed one)
+	executed_hours_stop = last_mtu_simulation
+	all_traded_hours_stop = last_mtu_simulation + longest_market_window - 1
+
 	return (
 		name = config[:name],
 		start_date = config[:startDate],
@@ -59,6 +68,8 @@ function SimulationTimingFor(config_path)
 		num_auctions = last_mtu_simulation - config[:skipEarlyAuctions] + 1,
 		test_range_start = test_range_start,
 		test_range_stop = test_range_stop,
+		executed_hours_stop = executed_hours_stop,
+		all_traded_hours_stop = all_traded_hours_stop,
 	)
 end
 
@@ -95,9 +106,10 @@ function PlotSimulationTiming(rows)
 
 	color_notauctioned = RGB(0.60, 0.60, 0.60) # before skipEarlyAuctions - never auctioned at all
 	color_auction = RGB(0.16, 0.47, 0.84)      # actual auctions that run
-	color_trimmed = RGB(0.92, 0.41, 0.20)      # explicitly cut short of what clearForDays alone would allow
-	color_lookahead = RGB(0.95, 0.80, 0.45)    # reserved so the last auction has a full look-ahead window
+	color_lookahead = RGB(0.95, 0.80, 0.45)    # not auctioned after the last actual auction (reserved for look-ahead, or trimmed by lastAuctionMTU)
 	color_testrange = RGB(0.45, 0.20, 0.60)    # samplePeriodExcludeSpinUp/End analysis window
+	color_executed = RGB(0.75, 0.15, 0.45)     # executed hours (h=1) - the KPI validation's time_range
+	color_alltraded = RGB(0.05, 0.55, 0.55)    # all traded hours - executed hours plus the last auction's look-ahead tail
 
 	p = Plots.plot(
 		size=(1300, 320 + 90*n),
@@ -107,7 +119,7 @@ function PlotSimulationTiming(rows)
 		xlabel="Date",
 		legend=:outerbottom,
 		legendcolumns=2,
-		title="Simulation timing: typical clearForDays range vs. explicit lastAuctionMTU cap",
+		title="Simulation and Data Analysis Timeline",
 		titlefontsize=12,
 		left_margin=32Plots.mm,
 		top_margin=4Plots.mm,
@@ -138,19 +150,22 @@ function PlotSimulationTiming(rows)
 
 		hbar!(p, x(0), x(t.skip_early_auctions), y, height, color_notauctioned; label = legend_label("not auctioned (before skipEarlyAuctions)"))
 		hbar!(p, x(t.skip_early_auctions), x(t.last_mtu_simulation), y, height, color_auction; label = legend_label("auctions run"))
-		if t.last_auction_mtu !== nothing && t.last_auction_mtu < t.natural_last_mtu
-			hbar!(p, x(t.last_mtu_simulation), x(t.natural_last_mtu), y, height, color_trimmed; label = legend_label("trimmed by lastAuctionMTU"))
-		end
-		hbar!(p, x(t.natural_last_mtu), x(t.last_mtu_full), y, height, color_lookahead; label = legend_label("reserved for look-ahead"))
+		# only the span actually reached by some run auction's own look-ahead window - not the
+		# full structural buffer up to last_mtu_full, which (when lastAuctionMTU trims the run
+		# short of natural_last_mtu) includes MTUs nothing ever touches at all
+		hbar!(p, x(t.last_mtu_simulation), x(t.all_traded_hours_stop + 1), y, height, color_lookahead; label = legend_label("reserved for look-ahead"))
 
-		test_range_bracket!(p, x(t.test_range_start), x(t.test_range_stop), y - height/2 - 0.16, color_testrange;
-			label = legend_label("test range (samplePeriodExcludeSpinUp/End)"))
+		if r.range_mode == :executed_vs_traded
+			test_range_bracket!(p, x(t.skip_early_auctions), x(t.executed_hours_stop), y - height/2 - 0.16, color_executed;
+				label = legend_label("executed hours"))
+			test_range_bracket!(p, x(t.skip_early_auctions), x(t.all_traded_hours_stop), y - height/2 - 0.32, color_alltraded;
+				label = legend_label("all traded hours"))
+		else
+			test_range_bracket!(p, x(t.test_range_start), x(t.test_range_stop), y - height/2 - 0.16, color_testrange;
+				label = legend_label("test range (samplePeriodExcludeSpinUp/End)"))
+		end
 
 		Plots.annotate!(p, (x(t.skip_early_auctions) + x(t.last_mtu_simulation))/2, y, Plots.text("$(t.num_auctions) auctions", 9, :white, :center))
-
-		if t.last_auction_mtu !== nothing && t.last_auction_mtu < t.natural_last_mtu
-			Plots.annotate!(p, x(t.last_mtu_simulation), y + height/2 + 0.14, Plots.text("lastAuctionMTU: $(t.last_auction_mtu)", 8, :right, RGB(0.7,0.25,0.05)))
-		end
 	end
 
 	return p
@@ -166,8 +181,8 @@ function PerformAnalysis()
 	println(validation_rolling)
 
 	rows = [
-		(label = "Before", timing = typical),
-		(label = "Validation", timing = validation_rolling),
+		(label = "Previous Case 1", timing = typical, range_mode = :samplePeriod),
+		(label = "Validation", timing = validation_rolling, range_mode = :executed_vs_traded),
 	]
 
 	p = PlotSimulationTiming(rows)
