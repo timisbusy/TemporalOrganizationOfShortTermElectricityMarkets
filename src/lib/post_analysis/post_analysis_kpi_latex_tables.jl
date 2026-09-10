@@ -49,33 +49,33 @@ function LoadLauraSummary(case)
 	sh = xf["Summary"]
 
 	vals = Dict{String,Float64}()
-	vals["Social Welfare (EUR)"] = sh[7, 2]
-	vals["Total Demand Value (EUR)"] = sh[5, 2]
-	vals["Total Generation Cost (EUR)"] = sh[6, 2]
+	vals["Social Welfare (€)"] = sh[7, 2]
+	vals["Total Demand Value (€)"] = sh[5, 2]
+	vals["Total Generation Cost (€)"] = sh[6, 2]
 	vals["Total Imbalance (MWh, +up/-down)"] = sh[6, 6]
 	vals["Total Wind Curtailed (MWh)"] = sh[5, 6]
 
 	generator_cost_row = Dict("Base" => 29, "Shoulder" => 30, "Peak" => 31, "Solar" => 32, "Wind" => 33)
 	for gen in generators
-		vals["Production Cost - $gen (EUR)"] = sh[generator_cost_row[gen], 2]
+		vals["Production Cost - $gen (€)"] = sh[generator_cost_row[gen], 2]
 	end
 
 	financial_revenue_row = Dict("Base" => 20, "Shoulder" => 21, "Peak" => 22, "Solar" => 23, "Wind" => 24)
 	for gen in generators
 		r = financial_revenue_row[gen]
-		vals["Total Financial Revenue - Net Revenue - $gen (EUR)"] = sh[r, 2]
+		vals["Total Financial Revenue - Net Revenue - $gen (€)"] = sh[r, 2]
 		vals["Total Financial Revenue - Net Traded - $gen (MWh)"] = sh[r, 3]
 		vals["Total Financial Revenue - Gross Traded - $gen (MWh)"] = sh[r, 4]
 	end
-	vals["Total Financial Revenue - Total Net Revenue (EUR)"] = sh[25, 2]
+	vals["Total Financial Revenue - Total Net Revenue (€)"] = sh[25, 2]
 
 	vals["Storage Energy Discharged (MWh)"] = sh[48, 2]
 	vals["Storage Energy Charged (MWh)"] = sh[49, 2]
-	vals["Storage Avg Discharge Price (EUR/MWh)"] = sh[50, 2]
-	vals["Storage Avg Charging Price (EUR/MWh)"] = sh[51, 2]
-	vals["Storage Discharge Revenue (EUR)"] = sh[52, 2]
-	vals["Storage Charging Cost (EUR)"] = sh[53, 2]
-	vals["Storage Net Revenue (EUR)"] = sh[54, 2]
+	vals["Storage Avg Discharge Price (€/MWh)"] = sh[50, 2]
+	vals["Storage Avg Charging Price (€/MWh)"] = sh[51, 2]
+	vals["Storage Discharge Revenue (€)"] = sh[52, 2]
+	vals["Storage Charging Cost (€)"] = sh[53, 2]
+	vals["Storage Net Revenue (€)"] = sh[54, 2]
 	vals["Storage Total Losses (MWh)"] = sh[55, 2]
 	vals["Storage SOC End of Horizon (MWh)"] = sh[56, 2]
 
@@ -90,9 +90,9 @@ function LoadOurKPIs(case)
 
 	econ = DataFrame(XLSX.readtable(our_kpi_path, "economic_indicators"))
 	econ_row = econ[(econ.Case .== label) .& (econ.Period .== "Total"), :][1, :]
-	vals["Social Welfare (EUR)"] = econ_row[Symbol("Socioeconomic Welfare (€)")]
-	vals["Total Demand Value (EUR)"] = econ_row[Symbol("Demand Utility (€)")]
-	vals["Total Generation Cost (EUR)"] = econ_row[Symbol("Production Costs (€)")]
+	vals["Social Welfare (€)"] = econ_row[Symbol("Socioeconomic Welfare (€)")]
+	vals["Total Demand Value (€)"] = econ_row[Symbol("Demand Utility (€)")]
+	vals["Total Generation Cost (€)"] = econ_row[Symbol("Production Costs (€)")]
 
 	imbalance = DataFrame(XLSX.readtable(our_kpi_path, "imbalance"))
 	vals["Total Imbalance (MWh, +up/-down)"] = imbalance[imbalance.Case .== label, :ImbalanceEnergy][1]
@@ -102,7 +102,7 @@ function LoadOurKPIs(case)
 	agents_case = agents[agents.Case .== label, :]
 	for gen in generators
 		row = agents_case[agents_case.Agent .== generator_agent_names[gen], :][1, :]
-		vals["Production Cost - $gen (EUR)"] = row[Symbol("Fuel Cost (€)")]
+		vals["Production Cost - $gen (€)"] = row[Symbol("Fuel Cost (€)")]
 	end
 
 	fin_rev = DataFrame(XLSX.readtable(our_kpi_path, "total_financial_revenue"))
@@ -110,7 +110,7 @@ function LoadOurKPIs(case)
 	total_net_revenue = 0.0
 	for gen in generators
 		row = fin_rev_case[fin_rev_case.Agent .== generator_agent_names[gen], :][1, :]
-		vals["Total Financial Revenue - Net Revenue - $gen (EUR)"] = row.NetRevenue
+		vals["Total Financial Revenue - Net Revenue - $gen (€)"] = row.NetRevenue
 		vals["Total Financial Revenue - Net Traded - $gen (MWh)"] = row.NetTraded
 		total_net_revenue += row.NetRevenue
 	end
@@ -121,7 +121,7 @@ function LoadOurKPIs(case)
 		row = gross_vol_case[gross_vol_case.Agent .== generator_agent_names[gen], :][1, :]
 		vals["Total Financial Revenue - Gross Traded - $gen (MWh)"] = row.GrossTradedVolume
 	end
-	vals["Total Financial Revenue - Total Net Revenue (EUR)"] = total_net_revenue
+	vals["Total Financial Revenue - Total Net Revenue (€)"] = total_net_revenue
 
 	storage_summary = DataFrame(XLSX.readtable(our_kpi_path, "storage_summary"))
 	storage_row = storage_summary[(storage_summary.Case .== label) .& (storage_summary.Period .== "Total"), :][1, :]
@@ -130,11 +130,11 @@ function LoadOurKPIs(case)
 
 	storage_revenue = DataFrame(XLSX.readtable(our_kpi_path, "storage_revenue"))
 	sr_row = storage_revenue[storage_revenue.Case .== label, :][1, :]
-	vals["Storage Avg Discharge Price (EUR/MWh)"] = sr_row.AvgDischargePrice
-	vals["Storage Avg Charging Price (EUR/MWh)"] = sr_row.AvgChargePrice
-	vals["Storage Discharge Revenue (EUR)"] = sr_row.DischargeRevenue
-	vals["Storage Charging Cost (EUR)"] = sr_row.ChargingCost
-	vals["Storage Net Revenue (EUR)"] = sr_row.NetStorageRevenue
+	vals["Storage Avg Discharge Price (€/MWh)"] = sr_row.AvgDischargePrice
+	vals["Storage Avg Charging Price (€/MWh)"] = sr_row.AvgChargePrice
+	vals["Storage Discharge Revenue (€)"] = sr_row.DischargeRevenue
+	vals["Storage Charging Cost (€)"] = sr_row.ChargingCost
+	vals["Storage Net Revenue (€)"] = sr_row.NetStorageRevenue
 
 	storage_soc = DataFrame(XLSX.readtable(our_kpi_path, "storage_soc_losses"))
 	soc_row = storage_soc[storage_soc.Case .== label, :][1, :]
@@ -149,25 +149,25 @@ end
 function KPIRowOrder()
 	rows = Tuple{String,Vector{String}}[]
 	push!(rows, ("System", [
-		"Social Welfare (EUR)",
-		"Total Demand Value (EUR)",
-		"Total Generation Cost (EUR)",
+		"Social Welfare (€)",
+		"Total Demand Value (€)",
+		"Total Generation Cost (€)",
 		"Total Imbalance (MWh, +up/-down)",
 		"Total Wind Curtailed (MWh)",
 	]))
-	push!(rows, ("Production Cost by Generator", ["Production Cost - $gen (EUR)" for gen in generators]))
-	push!(rows, ("Total Financial Revenue - Net Revenue", ["Total Financial Revenue - Net Revenue - $gen (EUR)" for gen in generators]))
+	push!(rows, ("Production Cost by Generator", ["Production Cost - $gen (€)" for gen in generators]))
+	push!(rows, ("Total Financial Revenue - Net Revenue", ["Total Financial Revenue - Net Revenue - $gen (€)" for gen in generators]))
 	push!(rows, ("Total Financial Revenue - Net Traded", ["Total Financial Revenue - Net Traded - $gen (MWh)" for gen in generators]))
 	push!(rows, ("Total Financial Revenue - Gross Traded", ["Total Financial Revenue - Gross Traded - $gen (MWh)" for gen in generators]))
-	push!(rows, ("Total Financial Revenue - Total", ["Total Financial Revenue - Total Net Revenue (EUR)"]))
+	push!(rows, ("Total Financial Revenue - Total", ["Total Financial Revenue - Total Net Revenue (€)"]))
 	push!(rows, ("Storage", [
 		"Storage Energy Discharged (MWh)",
 		"Storage Energy Charged (MWh)",
-		"Storage Avg Discharge Price (EUR/MWh)",
-		"Storage Avg Charging Price (EUR/MWh)",
-		"Storage Discharge Revenue (EUR)",
-		"Storage Charging Cost (EUR)",
-		"Storage Net Revenue (EUR)",
+		"Storage Avg Discharge Price (€/MWh)",
+		"Storage Avg Charging Price (€/MWh)",
+		"Storage Discharge Revenue (€)",
+		"Storage Charging Cost (€)",
+		"Storage Net Revenue (€)",
 		"Storage Total Losses (MWh)",
 		"Storage SOC End of Horizon (MWh)",
 	]))
