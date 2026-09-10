@@ -53,6 +53,7 @@ function LoadLauraSummary(case)
 	vals["Total Demand Value (EUR)"] = sh[5, 2]
 	vals["Total Generation Cost (EUR)"] = sh[6, 2]
 	vals["Total Imbalance (MWh, +up/-down)"] = sh[6, 6]
+	vals["Total Wind Curtailed (MWh)"] = sh[5, 6]
 
 	generator_cost_row = Dict("Base" => 29, "Shoulder" => 30, "Peak" => 31, "Solar" => 32, "Wind" => 33)
 	for gen in generators
@@ -95,6 +96,7 @@ function LoadOurKPIs(case)
 
 	imbalance = DataFrame(XLSX.readtable(our_kpi_path, "imbalance"))
 	vals["Total Imbalance (MWh, +up/-down)"] = imbalance[imbalance.Case .== label, :ImbalanceEnergy][1]
+	vals["Total Wind Curtailed (MWh)"] = econ_row[Symbol("Wind Curtailed (MWh)")]
 
 	agents = DataFrame(XLSX.readtable(our_kpi_path, "agent_indicators"))
 	agents_case = agents[agents.Case .== label, :]
@@ -151,6 +153,7 @@ function KPIRowOrder()
 		"Total Demand Value (EUR)",
 		"Total Generation Cost (EUR)",
 		"Total Imbalance (MWh, +up/-down)",
+		"Total Wind Curtailed (MWh)",
 	]))
 	push!(rows, ("Production Cost by Generator", ["Production Cost - $gen (EUR)" for gen in generators]))
 	push!(rows, ("Total Financial Revenue - Net Revenue", ["Total Financial Revenue - Net Revenue - $gen (EUR)" for gen in generators]))

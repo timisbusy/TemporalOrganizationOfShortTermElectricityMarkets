@@ -145,6 +145,14 @@ function PerformAnalysis()
 		# that touched a delivered MTU, not just the one that actually executed it - see the
 		# Executed-only Revenue/Payments block further down for the figures that do match her sheet.
 		(economic_indicators, agent_indicators, transactions, finalDispatchDecisions, mtu_economic_indicators) = MarketDataStorage.CalculateEconomicIndicators(final_dispatch_decision_files[case],transaction_files[case],agent_map,time_range)
+
+		# Wind Curtailment, matching Laura's "Total Wind Curtailed (MWh)": Q_6G_Wind is the
+		# model's available-capacity time series for wind (m.ext[:timeseries][:Q_gen], exported
+		# via helper_model_results.jl's "Q_$agent" column - NOT the dispatched quantity), so
+		# Q_6G_Wind - 6G_Wind is exactly how much available wind went undispatched each MTU.
+		# finalDispatchDecisions is already scoped to time_range by CalculateEconomicIndicators
+		# above - matches Laura's reference to ~1e-10 relative precision (floating-point noise).
+		economic_indicators[!, Symbol("Wind Curtailed (MWh)")] .= sum(finalDispatchDecisions[!, Symbol("Q_6G_Wind")] .- finalDispatchDecisions[!, Symbol("6G_Wind")])
 		println(economic_indicators)
 
 		println("per day")
