@@ -218,11 +218,11 @@ function BuildLatexTable(case, our_vals, laura_vals)
 	io = IOBuffer()
 	println(io, "\\begin{table}[htbp]")
 	println(io, "\\centering")
-	println(io, "\\caption{$case 36h: computed KPIs vs. Laura's reference}")
+	println(io, "\\caption{$case 36h: Model A vs. Model B}")
 	println(io, "\\label{tab:kpi_comparison_$(lowercase(case))}")
 	println(io, "\\begin{tabular}{lrrr}")
 	println(io, "\\toprule")
-	println(io, "KPI & Ours & Laura & Difference \\\\")
+	println(io, "KPI & Model A & Model B & Difference \\\\")
 	println(io, "\\midrule")
 
 	for (section, labels) in rows
