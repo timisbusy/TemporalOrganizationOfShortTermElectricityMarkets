@@ -23,14 +23,15 @@
 # is €0 they become mutually substitutable and solver tie-breaking has room to differ; at every
 # other price level the marginal agent is uniquely identified by price, leaving no room for a tie.
 #
-# Storage (battery charge/discharge) is included as a sixth series alongside the five generators,
-# using throughput (|charge| + |discharge|) as its Gross Volume analog, read from the RAW
-# per-clearing exports (it isn't a trading "Agent" in transactions.xlsx, so it has no equivalent
-# there). Storage shows the same signature as Wind/Solar: at a zero price, charging the battery
-# with curtailed renewable surplus is exactly as "free" as curtailing it directly, so which one a
-# solver picks is just as undetermined as the Wind/Solar split itself - empirically, storage
-# throughput in the always-zero bucket varies ~3.6x across solver/method permutations (fixed36h)
-# while the never-zero bucket varies by only ~4%.
+# Storage (battery charge/discharge) gets its own separate chart/sheet, using throughput
+# (|charge| + |discharge|) as its Gross Volume analog, read from the RAW per-clearing exports (it
+# isn't a trading "Agent" in transactions.xlsx, so it has no equivalent there) - kept out of the
+# generator totals/chart since it isn't "traded" in the same market-clearing sense. Storage shows
+# the same signature as Wind/Solar: at a zero price, charging the battery with curtailed renewable
+# surplus is exactly as "free" as curtailing it directly, so which one a solver picks is just as
+# undetermined as the Wind/Solar split itself - empirically, storage throughput in the always-zero
+# bucket varies ~3.6x across solver/method permutations (fixed36h) while the never-zero bucket
+# varies by only ~4%.
 
 module PostAnalysisPriceBucketComparison
 
@@ -228,13 +229,13 @@ function PriceBucketVolumesForLaura(case)
 	return volumes, length(always_zero_mtus), length(sometimes_zero_mtus), length(never_zero_mtus)
 end
 
-# Gathers per-series (5 generators + Storage) Gross Volume by price bucket for every category
-# (Laura + each solver/method permutation) for one case, as a DataFrame with one row per
-# (category, series) - this is both the plot's source data and what gets exported to xlsx.
-# Storage's "Gross Volume" is its throughput (|charge| + |discharge|, Gross Traded Volume has no
-# direct analog for a bidirectional asset) - see PriceBucketVolumesForRun/...ForLaura.
-function PriceBucketDataFrame(case, result_dirs)
-	println("computing price-bucket gross traded volume for case: $case")
+# Loads per-series (5 generators + Storage) Gross Volume by price bucket for every category
+# (Laura + each solver/method permutation) for one case - this is the expensive part (reads every
+# run's transactions.xlsx plus, for Storage, all 661 RAW per-clearing exports), done once per case
+# and then sliced into separate generator-only / Storage-only DataFrames by BuildBucketDataFrame,
+# so the two downstream charts don't each pay for their own copy of this I/O.
+function LoadAllVolumes(case, result_dirs)
+	println("computing price-bucket gross volume for case: $case")
 
 	all_volumes = Dict{String,Any}()
 	mtu_counts = Dict{String,Tuple{Int,Int,Int}}()
@@ -251,6 +252,15 @@ function PriceBucketDataFrame(case, result_dirs)
 		mtu_counts[config_label] = (naz, nsz, nnz)
 	end
 
+	return all_volumes, mtu_counts
+end
+
+# Builds a DataFrame with one row per (category, series) - for `series_list = generators` this is
+# the generator-only Gross Traded Volume breakdown; for `series_list = ["Storage"]` it's Storage's
+# Gross Volume (throughput = |charge| + |discharge|, Gross Traded Volume has no direct analog for
+# a bidirectional asset) on its own, kept out of the generator totals since it isn't "traded" in
+# the same market-clearing sense.
+function BuildBucketDataFrame(case, all_volumes, mtu_counts, series_list)
 	df = DataFrame(Case=String[], Configuration=String[], Generator=String[],
 		AlwaysZeroVolume=Float64[], SometimesZeroVolume=Float64[], NeverZeroVolume=Float64[], TotalVolume=Float64[],
 		AlwaysZeroMTUCount=Int[], SometimesZeroMTUCount=Int[], NeverZeroMTUCount=Int[])
@@ -259,7 +269,7 @@ function PriceBucketDataFrame(case, result_dirs)
 		haskey(all_volumes, cat) || continue
 		volumes = all_volumes[cat]
 		naz, nsz, nnz = mtu_counts[cat]
-		for gen in all_series
+		for gen in series_list
 			azv, szv, nzv = volumes[gen]
 			push!(df, (case, cat, gen, azv, szv, nzv, azv + szv + nzv, naz, nsz, nnz))
 		end
@@ -305,7 +315,7 @@ function PermutationSpreadByBucket(summary)
 	return spread
 end
 
-function PlotPriceBucketComparison(case, summary_case)
+function PlotPriceBucketComparison(title, ylabel, summary_case)
 	# groupedbar's :stack draws the first column on top, so feed [AlwaysZero, SometimesZero,
 	# NeverZero] to anchor Never-zero-price volume at the bottom of every bar (baseline 0) -
 	# since that segment's own height barely changes across configurations, anchoring it at a
@@ -325,8 +335,8 @@ function PlotPriceBucketComparison(case, summary_case)
 		color = [RGB(0.85, 0.55, 0.13) RGB(0.55, 0.35, 0.65) RGB(0.16, 0.47, 0.84)],
 		xticks = (1:nrow(summary_case), summary_case.Configuration),
 		xrotation = 20,
-		ylabel = "Gross Volume (million MWh)",
-		title = "$case 36h - Gross Volume (generators + storage) by price bucket, per solver / method",
+		ylabel = ylabel,
+		title = title,
 		titlefontsize = 11,
 		legend = :outertopright,
 		size = (950, 550),
@@ -340,33 +350,73 @@ end
 function PerformAnalysis()
 	CleanDirectory(results_path_base)
 
-	fixed_df = PriceBucketDataFrame("Fixed", fixed_result_dirs)
-	rolling_df = PriceBucketDataFrame("Rolling", rolling_result_dirs)
-	combined_df = vcat(fixed_df, rolling_df)
+	fixed_volumes, fixed_counts = LoadAllVolumes("Fixed", fixed_result_dirs)
+	rolling_volumes, rolling_counts = LoadAllVolumes("Rolling", rolling_result_dirs)
 
-	summary = PriceBucketSummary(combined_df)
-	println(summary)
+	# --- generators only (the headline chart) ---
+	gen_fixed_df = BuildBucketDataFrame("Fixed", fixed_volumes, fixed_counts, generators)
+	gen_rolling_df = BuildBucketDataFrame("Rolling", rolling_volumes, rolling_counts, generators)
+	gen_combined_df = vcat(gen_fixed_df, gen_rolling_df)
 
-	spread = PermutationSpreadByBucket(summary)
-	println(spread)
+	gen_summary = PriceBucketSummary(gen_combined_df)
+	println(gen_summary)
+	gen_spread = PermutationSpreadByBucket(gen_summary)
+	println(gen_spread)
 
-	p_fixed = PlotPriceBucketComparison("Fixed", summary[summary.Case .== "Fixed", :])
+	p_fixed = PlotPriceBucketComparison(
+		"Fixed 36h - Gross Traded Volume by price bucket, per solver / method",
+		"Gross Traded Volume (million MWh)",
+		gen_summary[gen_summary.Case .== "Fixed", :],
+	)
 	savefig(p_fixed, "$results_path_base/trading_volume_price_bucket_fixed36h.png")
 	println("saved: $results_path_base/trading_volume_price_bucket_fixed36h.png")
 
-	p_rolling = PlotPriceBucketComparison("Rolling", summary[summary.Case .== "Rolling", :])
+	p_rolling = PlotPriceBucketComparison(
+		"Rolling 36h - Gross Traded Volume by price bucket, per solver / method",
+		"Gross Traded Volume (million MWh)",
+		gen_summary[gen_summary.Case .== "Rolling", :],
+	)
 	savefig(p_rolling, "$results_path_base/trading_volume_price_bucket_rolling36h.png")
 	println("saved: $results_path_base/trading_volume_price_bucket_rolling36h.png")
 
+	# --- storage only (separate chart, not folded into the generator totals) ---
+	storage_fixed_df = BuildBucketDataFrame("Fixed", fixed_volumes, fixed_counts, ["Storage"])
+	storage_rolling_df = BuildBucketDataFrame("Rolling", rolling_volumes, rolling_counts, ["Storage"])
+	storage_combined_df = vcat(storage_fixed_df, storage_rolling_df)
+
+	storage_summary = PriceBucketSummary(storage_combined_df)
+	println(storage_summary)
+	storage_spread = PermutationSpreadByBucket(storage_summary)
+	println(storage_spread)
+
+	p_storage_fixed = PlotPriceBucketComparison(
+		"Fixed 36h - Storage Gross Throughput by price bucket, per solver / method",
+		"Storage Gross Throughput (million MWh)",
+		storage_summary[storage_summary.Case .== "Fixed", :],
+	)
+	savefig(p_storage_fixed, "$results_path_base/storage_throughput_price_bucket_fixed36h.png")
+	println("saved: $results_path_base/storage_throughput_price_bucket_fixed36h.png")
+
+	p_storage_rolling = PlotPriceBucketComparison(
+		"Rolling 36h - Storage Gross Throughput by price bucket, per solver / method",
+		"Storage Gross Throughput (million MWh)",
+		storage_summary[storage_summary.Case .== "Rolling", :],
+	)
+	savefig(p_storage_rolling, "$results_path_base/storage_throughput_price_bucket_rolling36h.png")
+	println("saved: $results_path_base/storage_throughput_price_bucket_rolling36h.png")
+
 	XLSX.writetable("$results_path_base/price_bucket_trading_volume_details.xlsx",
-		"by_generator" => combined_df,
-		"summary" => summary,
-		"permutation_spread" => spread;
+		"by_generator" => gen_combined_df,
+		"summary" => gen_summary,
+		"permutation_spread" => gen_spread,
+		"storage" => storage_combined_df,
+		"storage_summary" => storage_summary,
+		"storage_spread" => storage_spread;
 		overwrite=true,
 	)
 	println("saved: $results_path_base/price_bucket_trading_volume_details.xlsx")
 
-	return (p_fixed, p_rolling, combined_df, summary, spread)
+	return (p_fixed, p_rolling, p_storage_fixed, p_storage_rolling, gen_combined_df, gen_summary, gen_spread, storage_combined_df, storage_summary, storage_spread)
 end
 
 end;
