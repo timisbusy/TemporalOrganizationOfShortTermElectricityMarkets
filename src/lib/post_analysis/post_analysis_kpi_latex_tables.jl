@@ -155,11 +155,11 @@ function KPIRowOrder()
 		"Total Imbalance (MWh, +up/-down)",
 		"Total Wind Curtailed (MWh)",
 	]))
-	push!(rows, ("Production Cost by Generator", ["Production Cost - $gen (€)" for gen in generators]))
-	push!(rows, ("Total Financial Revenue - Net Revenue", ["Total Financial Revenue - Net Revenue - $gen (€)" for gen in generators]))
-	push!(rows, ("Total Financial Revenue - Net Traded", ["Total Financial Revenue - Net Traded - $gen (MWh)" for gen in generators]))
-	push!(rows, ("Total Financial Revenue - Gross Traded", ["Total Financial Revenue - Gross Traded - $gen (MWh)" for gen in generators]))
-	push!(rows, ("Total Financial Revenue - Total", ["Total Financial Revenue - Total Net Revenue (€)"]))
+	push!(rows, ("Production Cost by Generator (€)", ["Production Cost - $gen (€)" for gen in generators]))
+	push!(rows, ("Total Financial Revenue - Net Revenue (€)", ["Total Financial Revenue - Net Revenue - $gen (€)" for gen in generators]))
+	push!(rows, ("Total Financial Revenue - Net Traded (MWh)", ["Total Financial Revenue - Net Traded - $gen (MWh)" for gen in generators]))
+	push!(rows, ("Total Financial Revenue - Gross Traded (MWh)", ["Total Financial Revenue - Gross Traded - $gen (MWh)" for gen in generators]))
+	push!(rows, ("Total Financial Revenue - Total (€)", ["Total Financial Revenue - Total Net Revenue (€)"]))
 	push!(rows, ("Storage", [
 		"Storage Energy Discharged (MWh)",
 		"Storage Energy Charged (MWh)",
