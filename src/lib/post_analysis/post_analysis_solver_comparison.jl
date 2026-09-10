@@ -15,19 +15,19 @@ results_path_base = "results/analysis"
 
 # result directories for each solver/method permutation, keyed by config label
 fixed_result_dirs = Dict{String,String}(
-	"HiGHS + simplex" => "results/1788868302_laura_solar_mtu1_lock_fixed",
-	"HiGHS + IPM" => "results/1788869518_laura_solar_mtu1_lock_fixed_highs_ipm",
-	"Gurobi + simplex" => "results/1788869144_laura_solar_mtu1_lock_fixed_gurobi_simplex",
-	"Gurobi + dual_simplex" => "results/1788869609_laura_solar_mtu1_lock_fixed_gurobi_dualsimplex",
-	"Gurobi + IPM" => "results/1788868826_laura_solar_mtu1_lock_fixed_gurobi_ipm",
+	"HiGHS + simplex" => "results/1789039031_solvercmp_fixed_highs_simplex",
+	"HiGHS + IPM" => "results/1789039064_solvercmp_fixed_highs_ipm",
+	"Gurobi + simplex" => "results/1789039101_solvercmp_fixed_gurobi_simplex",
+	"Gurobi + dual_simplex" => "results/1789039129_solvercmp_fixed_gurobi_dualsimplex",
+	"Gurobi + IPM" => "results/1789039159_solvercmp_fixed_gurobi_ipm",
 )
 
 rolling_result_dirs = Dict{String,String}(
-	"HiGHS + simplex" => "results/1788873621_laura_noexpost_rolling_highs_simplex",
-	"HiGHS + IPM" => "results/1788873807_laura_noexpost_rolling_highs_ipm",
-	"Gurobi + simplex" => "results/1788874020_laura_noexpost_rolling_gurobi_simplex",
-	"Gurobi + dual_simplex" => "results/1788874132_laura_noexpost_rolling_gurobi_dualsimplex",
-	"Gurobi + IPM" => "results/1788873913_laura_noexpost_rolling_gurobi_ipm",
+	"HiGHS + simplex" => "results/1789038789_solvercmp_rolling_highs_simplex",
+	"HiGHS + IPM" => "results/1789038858_solvercmp_rolling_highs_ipm",
+	"Gurobi + simplex" => "results/1789038907_solvercmp_rolling_gurobi_simplex",
+	"Gurobi + dual_simplex" => "results/1789038954_solvercmp_rolling_gurobi_dualsimplex",
+	"Gurobi + IPM" => "results/1789038992_solvercmp_rolling_gurobi_ipm",
 )
 
 laura_data_dir = "../DATA/_laura_data_w_adj"
