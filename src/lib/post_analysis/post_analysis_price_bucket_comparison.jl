@@ -202,19 +202,21 @@ function PermutationSpreadByBucket(summary)
 end
 
 function PlotPriceBucketComparison(case, summary_case)
-	# groupedbar's :stack draws the first column on top, so feed [NonZero, Zero] to get
-	# Zero-price volume drawn as the bottom segment
+	# groupedbar's :stack draws the first column on top, so feed [Zero, NonZero] to anchor
+	# Non-zero-price volume at the bottom of every bar (baseline 0) - since that segment's own
+	# height barely changes across configurations, anchoring it at a fixed baseline makes its
+	# stability plainly visible, rather than having it float on top of the growing zero-price base
 	data = zeros(nrow(summary_case), 2) # MWh -> million MWh
 	for (i, row) in enumerate(eachrow(summary_case))
-		data[i, 1] = row.NonZeroPriceVolume / 1e6
-		data[i, 2] = row.ZeroPriceVolume / 1e6
+		data[i, 1] = row.ZeroPriceVolume / 1e6
+		data[i, 2] = row.NonZeroPriceVolume / 1e6
 	end
 
 	p = groupedbar(
 		data,
 		bar_position = :stack,
-		label = ["Non-zero-price MTUs" "Zero-price MTUs"],
-		color = [RGB(0.16, 0.47, 0.84) RGB(0.85, 0.55, 0.13)],
+		label = ["Zero-price MTUs" "Non-zero-price MTUs"],
+		color = [RGB(0.85, 0.55, 0.13) RGB(0.16, 0.47, 0.84)],
 		xticks = (1:nrow(summary_case), summary_case.Configuration),
 		xrotation = 20,
 		ylabel = "Gross Traded Volume (million MWh)",
