@@ -2,17 +2,26 @@
 #
 # Extends post_analysis_solver_comparison.jl's Gross Traded Volume (Clearing-MTU-capped 12:672,
 # summed over every clearing's full look-ahead window) with a second dimension: for every
-# delivery/target MTU touched by that gross volume, classify it as "zero-price" only if EVERY
-# clearing that ever touched it recorded a price of (near) zero there - any disagreement between
-# clearings puts the MTU in the "non-zero-price" bucket. This is a strict-unanimity definition
-# (agreed with the user), not "the executed price is zero" and not "this one leg's own price is
-# zero" - a given MTU keeps one classification, and every leg touching it (from every clearing)
-# is bucketed the same way, so the split partitions the full Gross Traded Volume total exactly.
+# delivery/target MTU touched by that gross volume, classify it by how many of the clearings that
+# ever touched it recorded a price of (near) zero there - "always-zero" (every clearing agreed),
+# "never-zero" (no clearing ever recorded zero there), or "sometimes-zero" (a mix - some clearings
+# recorded zero, others didn't, typically because an earlier speculative clearing still expected
+# renewable surplus that a later, firmer forecast resolved away). A given MTU keeps one
+# classification, and every leg touching it (from every clearing) is bucketed the same way, so the
+# three buckets partition the full Gross Traded Volume total exactly. always-zero/never-zero keep
+# their original strict-unanimity definitions from the first version of this analysis; the
+# sometimes-zero bucket is new, carved out of what used to be a single "non-zero-price" bucket -
+# see the git history of this file for the empirical finding that motivated splitting it out:
+# most of the residual cross-solver spread inside the old "non-zero" bucket turned out to be
+# individual price=0 legs that just weren't unanimous at the MTU level.
 #
 # The point is to see whether the trading-volume differences between solver/method permutations
 # (LP degeneracy - see post_analysis_solver_comparison.jl) concentrate in zero-price periods
-# (where many dispatch vertices are equally optimal, so the solver's tie-breaking matters more)
-# or are spread evenly across zero- and non-zero-price hours.
+# (where many dispatch vertices are equally optimal, so the solver's tie-breaking matters more).
+# Wind and Solar are the only two agents that share a bid price (both bid €0/MWh - see
+# validate_laura_agents.yaml; Base=€30, Shoulder=€80, Peak=€150), so whenever the clearing price
+# is €0 they become mutually substitutable and solver tie-breaking has room to differ; at every
+# other price level the marginal agent is uniquely identified by price, leaving no room for a tie.
 
 module PostAnalysisPriceBucketComparison
 
@@ -65,34 +74,51 @@ function CleanDirectory(path)
 	mkpath(path)
 end
 
-# strict-unanimity classification: a target MTU is "zero-price" only if every price recorded
-# for it (across every clearing that ever touched it) is within atol of zero
+# three-way classification of every target MTU by how many of the clearings touching it recorded
+# a price of (near) zero there: always-zero (every price ~0), never-zero (no price ~0), or
+# sometimes-zero (a mix of both - the MTU's own price disagreement across clearings, not touched
+# by the strict-unanimity always/never split at all)
 function ClassifyMTUsByPrice(target_mtus, prices)
 	price_lists = Dict{Int,Vector{Float64}}()
 	for (m, p) in zip(target_mtus, prices)
 		push!(get!(price_lists, Int(round(m)), Float64[]), Float64(p))
 	end
-	zero_mtus = Set{Int}(m for (m, ps) in price_lists if all(abs.(ps) .< atol))
-	nonzero_mtus = Set{Int}(m for (m, ps) in price_lists if !all(abs.(ps) .< atol))
-	return zero_mtus, nonzero_mtus
+	always_zero_mtus = Set{Int}()
+	sometimes_zero_mtus = Set{Int}()
+	never_zero_mtus = Set{Int}()
+	for (m, ps) in price_lists
+		any_zero = any(abs.(ps) .< atol)
+		all_zero = all(abs.(ps) .< atol)
+		if all_zero
+			push!(always_zero_mtus, m)
+		elseif any_zero
+			push!(sometimes_zero_mtus, m)
+		else
+			push!(never_zero_mtus, m)
+		end
+	end
+	return always_zero_mtus, sometimes_zero_mtus, never_zero_mtus
 end
 
 # Gross Traded Volume, split by price bucket, for one of our own runs - same Clearing-MTU-capped
 # transactions.xlsx source as GrossTradedVolumeForRun in post_analysis_solver_comparison.jl.
+BucketVolumes = NamedTuple{(:always_zero, :sometimes_zero, :never_zero),Tuple{Float64,Float64,Float64}}
+
 function PriceBucketVolumesForRun(result_dir)
 	tx = DataFrame(XLSX.readtable(joinpath(result_dir, "transactions.xlsx"), "data"))
 	tx_capped = tx[(time_range.start .<= tx[!, clearing_mtu_symbol] .<= time_range.stop), :]
 
-	zero_mtus, nonzero_mtus = ClassifyMTUsByPrice(tx_capped[!, mtu_symbol], tx_capped[!, price_symbol])
+	always_zero_mtus, sometimes_zero_mtus, never_zero_mtus = ClassifyMTUsByPrice(tx_capped[!, mtu_symbol], tx_capped[!, price_symbol])
 
-	volumes = Dict{String,NamedTuple{(:zero, :nonzero),Tuple{Float64,Float64}}}()
+	volumes = Dict{String,BucketVolumes}()
 	for gen in generators
 		rows = tx_capped[tx_capped.Agent .== generator_agent_names[gen], :]
-		zero_vol = sum(abs.(rows[in.(rows[!, mtu_symbol], Ref(zero_mtus)), quantity_symbol]); init=0.0)
-		nonzero_vol = sum(abs.(rows[in.(rows[!, mtu_symbol], Ref(nonzero_mtus)), quantity_symbol]); init=0.0)
-		volumes[gen] = (zero=zero_vol, nonzero=nonzero_vol)
+		az_vol = sum(abs.(rows[in.(rows[!, mtu_symbol], Ref(always_zero_mtus)), quantity_symbol]); init=0.0)
+		sz_vol = sum(abs.(rows[in.(rows[!, mtu_symbol], Ref(sometimes_zero_mtus)), quantity_symbol]); init=0.0)
+		nz_vol = sum(abs.(rows[in.(rows[!, mtu_symbol], Ref(never_zero_mtus)), quantity_symbol]); init=0.0)
+		volumes[gen] = (always_zero=az_vol, sometimes_zero=sz_vol, never_zero=nz_vol)
 	end
-	return volumes, length(zero_mtus), length(nonzero_mtus)
+	return volumes, length(always_zero_mtus), length(sometimes_zero_mtus), length(never_zero_mtus)
 end
 
 # Gross Traded Volume, split by price bucket, for Laura's raw per-clearing reference data - same
@@ -118,17 +144,30 @@ function PriceBucketVolumesForLaura(case)
 		end
 	end
 
-	zero_mtus = Set{Int}(m for (m, ps) in price_lists if all(abs.(ps) .< atol))
-	nonzero_mtus = Set{Int}(m for (m, ps) in price_lists if !all(abs.(ps) .< atol))
+	always_zero_mtus = Set{Int}()
+	sometimes_zero_mtus = Set{Int}()
+	never_zero_mtus = Set{Int}()
+	for (m, ps) in price_lists
+		any_zero = any(abs.(ps) .< atol)
+		all_zero = all(abs.(ps) .< atol)
+		if all_zero
+			push!(always_zero_mtus, m)
+		elseif any_zero
+			push!(sometimes_zero_mtus, m)
+		else
+			push!(never_zero_mtus, m)
+		end
+	end
 
-	volumes = Dict{String,NamedTuple{(:zero, :nonzero),Tuple{Float64,Float64}}}()
+	volumes = Dict{String,BucketVolumes}()
 	for gen in generators
 		d = volume_by_mtu[gen]
-		zero_vol = sum((v for (m, v) in d if m in zero_mtus); init=0.0)
-		nonzero_vol = sum((v for (m, v) in d if m in nonzero_mtus); init=0.0)
-		volumes[gen] = (zero=zero_vol, nonzero=nonzero_vol)
+		az_vol = sum((v for (m, v) in d if m in always_zero_mtus); init=0.0)
+		sz_vol = sum((v for (m, v) in d if m in sometimes_zero_mtus); init=0.0)
+		nz_vol = sum((v for (m, v) in d if m in never_zero_mtus); init=0.0)
+		volumes[gen] = (always_zero=az_vol, sometimes_zero=sz_vol, never_zero=nz_vol)
 	end
-	return volumes, length(zero_mtus), length(nonzero_mtus)
+	return volumes, length(always_zero_mtus), length(sometimes_zero_mtus), length(never_zero_mtus)
 end
 
 # Gathers per-generator zero/non-zero Gross Traded Volume for every category (Laura + each
@@ -138,31 +177,31 @@ function PriceBucketDataFrame(case, result_dirs)
 	println("computing price-bucket gross traded volume for case: $case")
 
 	all_volumes = Dict{String,Any}()
-	mtu_counts = Dict{String,Tuple{Int,Int}}()
+	mtu_counts = Dict{String,Tuple{Int,Int,Int}}()
 
 	println("  loading: Laura (reference)")
-	v, nz, nnz = PriceBucketVolumesForLaura(case)
+	v, naz, nsz, nnz = PriceBucketVolumesForLaura(case)
 	all_volumes["Reference (HiGHS + default)"] = v
-	mtu_counts["Reference (HiGHS + default)"] = (nz, nnz)
+	mtu_counts["Reference (HiGHS + default)"] = (naz, nsz, nnz)
 
 	for (config_label, dir) in result_dirs
 		println("  loading: $config_label ($dir)")
-		v, nz, nnz = PriceBucketVolumesForRun(dir)
+		v, naz, nsz, nnz = PriceBucketVolumesForRun(dir)
 		all_volumes[config_label] = v
-		mtu_counts[config_label] = (nz, nnz)
+		mtu_counts[config_label] = (naz, nsz, nnz)
 	end
 
 	df = DataFrame(Case=String[], Configuration=String[], Generator=String[],
-		ZeroPriceVolume=Float64[], NonZeroPriceVolume=Float64[], TotalVolume=Float64[],
-		ZeroPriceMTUCount=Int[], NonZeroPriceMTUCount=Int[])
+		AlwaysZeroVolume=Float64[], SometimesZeroVolume=Float64[], NeverZeroVolume=Float64[], TotalVolume=Float64[],
+		AlwaysZeroMTUCount=Int[], SometimesZeroMTUCount=Int[], NeverZeroMTUCount=Int[])
 
 	for cat in category_order
 		haskey(all_volumes, cat) || continue
 		volumes = all_volumes[cat]
-		nz, nnz = mtu_counts[cat]
+		naz, nsz, nnz = mtu_counts[cat]
 		for gen in generators
-			zv, nzv = volumes[gen]
-			push!(df, (case, cat, gen, zv, nzv, zv + nzv, nz, nnz))
+			azv, szv, nzv = volumes[gen]
+			push!(df, (case, cat, gen, azv, szv, nzv, azv + szv + nzv, naz, nsz, nnz))
 		end
 	end
 
@@ -174,13 +213,15 @@ end
 # solver/method differences concentrate in zero-price periods?"
 function PriceBucketSummary(df)
 	summary = combine(groupby(df, [:Case, :Configuration]),
-		:ZeroPriceVolume => sum => :ZeroPriceVolume,
-		:NonZeroPriceVolume => sum => :NonZeroPriceVolume,
+		:AlwaysZeroVolume => sum => :AlwaysZeroVolume,
+		:SometimesZeroVolume => sum => :SometimesZeroVolume,
+		:NeverZeroVolume => sum => :NeverZeroVolume,
 		:TotalVolume => sum => :TotalVolume,
-		:ZeroPriceMTUCount => first => :ZeroPriceMTUCount,
-		:NonZeroPriceMTUCount => first => :NonZeroPriceMTUCount,
+		:AlwaysZeroMTUCount => first => :AlwaysZeroMTUCount,
+		:SometimesZeroMTUCount => first => :SometimesZeroMTUCount,
+		:NeverZeroMTUCount => first => :NeverZeroMTUCount,
 	)
-	summary[!, :ZeroPriceShare] = summary.ZeroPriceVolume ./ summary.TotalVolume
+	summary[!, :AlwaysZeroShare] = summary.AlwaysZeroVolume ./ summary.TotalVolume
 	return summary
 end
 
@@ -191,39 +232,45 @@ end
 function PermutationSpreadByBucket(summary)
 	ours = summary[summary.Configuration .!= "Reference (HiGHS + default)", :]
 	spread = combine(groupby(ours, :Case),
-		:ZeroPriceVolume => (v -> maximum(v) - minimum(v)) => :ZeroPriceVolumeSpread,
-		:ZeroPriceVolume => (v -> Statistics.mean(v)) => :ZeroPriceVolumeMean,
-		:NonZeroPriceVolume => (v -> maximum(v) - minimum(v)) => :NonZeroPriceVolumeSpread,
-		:NonZeroPriceVolume => (v -> Statistics.mean(v)) => :NonZeroPriceVolumeMean,
+		:AlwaysZeroVolume => (v -> maximum(v) - minimum(v)) => :AlwaysZeroVolumeSpread,
+		:AlwaysZeroVolume => (v -> Statistics.mean(v)) => :AlwaysZeroVolumeMean,
+		:SometimesZeroVolume => (v -> maximum(v) - minimum(v)) => :SometimesZeroVolumeSpread,
+		:SometimesZeroVolume => (v -> Statistics.mean(v)) => :SometimesZeroVolumeMean,
+		:NeverZeroVolume => (v -> maximum(v) - minimum(v)) => :NeverZeroVolumeSpread,
+		:NeverZeroVolume => (v -> Statistics.mean(v)) => :NeverZeroVolumeMean,
 	)
-	spread[!, :ZeroPriceSpreadPct] = spread.ZeroPriceVolumeSpread ./ spread.ZeroPriceVolumeMean
-	spread[!, :NonZeroPriceSpreadPct] = spread.NonZeroPriceVolumeSpread ./ spread.NonZeroPriceVolumeMean
+	spread[!, :AlwaysZeroSpreadPct] = spread.AlwaysZeroVolumeSpread ./ spread.AlwaysZeroVolumeMean
+	spread[!, :SometimesZeroSpreadPct] = spread.SometimesZeroVolumeSpread ./ spread.SometimesZeroVolumeMean
+	spread[!, :NeverZeroSpreadPct] = spread.NeverZeroVolumeSpread ./ spread.NeverZeroVolumeMean
 	return spread
 end
 
 function PlotPriceBucketComparison(case, summary_case)
-	# groupedbar's :stack draws the first column on top, so feed [Zero, NonZero] to anchor
-	# Non-zero-price volume at the bottom of every bar (baseline 0) - since that segment's own
-	# height barely changes across configurations, anchoring it at a fixed baseline makes its
-	# stability plainly visible, rather than having it float on top of the growing zero-price base
-	data = zeros(nrow(summary_case), 2) # MWh -> million MWh
+	# groupedbar's :stack draws the first column on top, so feed [AlwaysZero, SometimesZero,
+	# NeverZero] to anchor Never-zero-price volume at the bottom of every bar (baseline 0) -
+	# since that segment's own height barely changes across configurations, anchoring it at a
+	# fixed baseline makes its stability plainly visible, rather than having it float on top of
+	# the growing always-zero/sometimes-zero segments above it
+	data = zeros(nrow(summary_case), 3) # MWh -> million MWh
 	for (i, row) in enumerate(eachrow(summary_case))
-		data[i, 1] = row.ZeroPriceVolume / 1e6
-		data[i, 2] = row.NonZeroPriceVolume / 1e6
+		data[i, 1] = row.AlwaysZeroVolume / 1e6
+		data[i, 2] = row.SometimesZeroVolume / 1e6
+		data[i, 3] = row.NeverZeroVolume / 1e6
 	end
 
 	p = groupedbar(
 		data,
 		bar_position = :stack,
-		label = ["Zero-price MTUs" "Non-zero-price MTUs"],
-		color = [RGB(0.85, 0.55, 0.13) RGB(0.16, 0.47, 0.84)],
+		label = ["Always-zero-price MTUs" "Sometimes-zero-price MTUs" "Never-zero-price MTUs"],
+		color = [RGB(0.85, 0.55, 0.13) RGB(0.55, 0.35, 0.65) RGB(0.16, 0.47, 0.84)],
 		xticks = (1:nrow(summary_case), summary_case.Configuration),
 		xrotation = 20,
 		ylabel = "Gross Traded Volume (million MWh)",
 		title = "$case 36h - Gross Traded Volume by price bucket, per solver / method",
+		titlefontsize = 11,
 		legend = :outertopright,
-		size = (900, 550),
-		left_margin = 10Plots.mm,
+		size = (950, 550),
+		left_margin = 14Plots.mm,
 		bottom_margin = 20Plots.mm,
 	)
 
