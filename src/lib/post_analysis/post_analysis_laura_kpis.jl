@@ -62,11 +62,11 @@ function LoadFile(filepath)
     return df
 end
 
-# executed price per real MTU, read directly from each clearing's own RAW export (the first row
-# of its "data" sheet is always the hour it executed). Price is a property of the clearing
-# itself, not of any one transaction, so this stays complete even for MTUs where every agent's
-# adjustment happened to be zero - unlike pulling price from transactions.xlsx (see
-# raw_dispatch_prefix above).
+# executed price per real MTU, read directly from each clearing's own RAW export (the row where
+# mtu == mtu_cleared is the hour it executed). Price is a property of the clearing itself, not
+# of any one transaction, so this stays complete even for MTUs where every agent's adjustment
+# happened to be zero - unlike pulling price from transactions.xlsx (see raw_dispatch_prefix
+# above).
 function ExecutedPriceByMTU(case)
 	prefix = raw_dispatch_prefix[case]
 	mtu = Int[]
@@ -75,8 +75,8 @@ function ExecutedPriceByMTU(case)
 		path = "$prefix$mtu_cleared.xlsx"
 		isfile(path) || continue
 		df = DataFrame(XLSX.readtable(path, "data"))
-		push!(mtu, df[1, :mtu])
-		push!(price, df[1, :price])
+		push!(mtu, mtu_cleared)
+		push!(price, df[df.mtu .== mtu_cleared, :price][1])
 	end
 	return DataFrame(mtu=mtu, price=price)
 end
