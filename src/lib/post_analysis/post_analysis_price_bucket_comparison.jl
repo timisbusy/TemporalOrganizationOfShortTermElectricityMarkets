@@ -22,6 +22,15 @@
 # validate_laura_agents.yaml; Base=€30, Shoulder=€80, Peak=€150), so whenever the clearing price
 # is €0 they become mutually substitutable and solver tie-breaking has room to differ; at every
 # other price level the marginal agent is uniquely identified by price, leaving no room for a tie.
+#
+# Storage (battery charge/discharge) is included as a sixth series alongside the five generators,
+# using throughput (|charge| + |discharge|) as its Gross Volume analog, read from the RAW
+# per-clearing exports (it isn't a trading "Agent" in transactions.xlsx, so it has no equivalent
+# there). Storage shows the same signature as Wind/Solar: at a zero price, charging the battery
+# with curtailed renewable surplus is exactly as "free" as curtailing it directly, so which one a
+# solver picks is just as undetermined as the Wind/Solar split itself - empirically, storage
+# throughput in the always-zero bucket varies ~3.6x across solver/method permutations (fixed36h)
+# while the never-zero bucket varies by only ~4%.
 
 module PostAnalysisPriceBucketComparison
 
@@ -54,11 +63,29 @@ laura_file_prefix = Dict{String,String}(
 	"Rolling" => "decisionvariables_Rolling36h_",
 )
 
+# per-clearing RAW export prefix for our own runs, used to compute Storage's Gross Throughput
+# the same way Gross Traded Volume is computed for generators (summed across every clearing's
+# full look-ahead window, not just the executed leg) - storage isn't a trading "Agent" in
+# transactions.xlsx, so it has no equivalent there and has to be read from the RAW per-clearing
+# exports instead, same as Laura's reference data already is. The prefix comes from the
+# experiment config's own `name:` field (validate_laura_fixed_36 / validate_laura_rolling_36),
+# not from the result directory's name, since every solver/method permutation shares the same
+# underlying experiment config and therefore the same RAW filename prefix.
+raw_dispatch_prefix = Dict{String,String}(
+	"Fixed" => "decisionvariables_validate_laura_fixed_36_",
+	"Rolling" => "decisionvariables_validate_laura_rolling_36_",
+)
+
 generators = ["Base", "Shoulder", "Peak", "Wind", "Solar"]
 generator_agent_names = Dict{String,String}(
 	"Base" => "3G_Base", "Shoulder" => "4G_Shoulder", "Peak" => "5G_Peak",
 	"Wind" => "6G_Wind", "Solar" => "7G_Solar",
 )
+
+# Storage is included alongside the five generators in the by-series breakdown, using
+# StorageCharge + StorageDischarge ("throughput") as its Gross Volume analog - see
+# PriceBucketVolumesForRun/PriceBucketVolumesForLaura for how it's computed
+all_series = vcat(generators, ["Storage"])
 
 time_range = 12:672
 atol = 1e-6
@@ -104,7 +131,7 @@ end
 # transactions.xlsx source as GrossTradedVolumeForRun in post_analysis_solver_comparison.jl.
 BucketVolumes = NamedTuple{(:always_zero, :sometimes_zero, :never_zero),Tuple{Float64,Float64,Float64}}
 
-function PriceBucketVolumesForRun(result_dir)
+function PriceBucketVolumesForRun(result_dir, case)
 	tx = DataFrame(XLSX.readtable(joinpath(result_dir, "transactions.xlsx"), "data"))
 	tx_capped = tx[(time_range.start .<= tx[!, clearing_mtu_symbol] .<= time_range.stop), :]
 
@@ -118,6 +145,34 @@ function PriceBucketVolumesForRun(result_dir)
 		nz_vol = sum(abs.(rows[in.(rows[!, mtu_symbol], Ref(never_zero_mtus)), quantity_symbol]); init=0.0)
 		volumes[gen] = (always_zero=az_vol, sometimes_zero=sz_vol, never_zero=nz_vol)
 	end
+
+	# Storage's Gross Throughput, bucketed using the SAME always/sometimes/never-zero MTU sets
+	# computed above from the generators' own transactions - price is a single per-clearing
+	# settlement value shared by every agent (and storage) transacting in that clearing, so
+	# storage's own per-leg prices would classify every MTU identically; reusing the sets here
+	# avoids recomputing them from the RAW files' own price column
+	prefix = raw_dispatch_prefix[case]
+	az_storage = 0.0
+	sz_storage = 0.0
+	nz_storage = 0.0
+	for mtu_cleared in time_range
+		path = joinpath(result_dir, "RAW", "$(prefix)$(mtu_cleared).xlsx")
+		isfile(path) || continue
+		df = DataFrame(XLSX.readtable(path, "data"))
+		for row in eachrow(df)
+			m = Int(row.mtu)
+			throughput = abs(row.StorageCharge) + abs(row.StorageDischarge)
+			if m in always_zero_mtus
+				az_storage += throughput
+			elseif m in sometimes_zero_mtus
+				sz_storage += throughput
+			elseif m in never_zero_mtus
+				nz_storage += throughput
+			end
+		end
+	end
+	volumes["Storage"] = (always_zero=az_storage, sometimes_zero=sz_storage, never_zero=nz_storage)
+
 	return volumes, length(always_zero_mtus), length(sometimes_zero_mtus), length(never_zero_mtus)
 end
 
@@ -129,6 +184,7 @@ function PriceBucketVolumesForLaura(case)
 
 	price_lists = Dict{Int,Vector{Float64}}()
 	volume_by_mtu = Dict{String,Dict{Int,Float64}}(gen => Dict{Int,Float64}() for gen in generators)
+	volume_by_mtu["Storage"] = Dict{Int,Float64}()
 
 	for mtu_cleared in time_range
 		path = joinpath(laura_data_dir, "$(prefix)$(mtu_cleared).xlsx")
@@ -141,6 +197,8 @@ function PriceBucketVolumesForLaura(case)
 				d = volume_by_mtu[gen]
 				d[m] = get(d, m, 0.0) + abs(row[Symbol("$(gen)_adj")])
 			end
+			ds = volume_by_mtu["Storage"]
+			ds[m] = get(ds, m, 0.0) + abs(row.StorageCharge) + abs(row.StorageDischarge)
 		end
 	end
 
@@ -160,7 +218,7 @@ function PriceBucketVolumesForLaura(case)
 	end
 
 	volumes = Dict{String,BucketVolumes}()
-	for gen in generators
+	for gen in all_series
 		d = volume_by_mtu[gen]
 		az_vol = sum((v for (m, v) in d if m in always_zero_mtus); init=0.0)
 		sz_vol = sum((v for (m, v) in d if m in sometimes_zero_mtus); init=0.0)
@@ -170,9 +228,11 @@ function PriceBucketVolumesForLaura(case)
 	return volumes, length(always_zero_mtus), length(sometimes_zero_mtus), length(never_zero_mtus)
 end
 
-# Gathers per-generator zero/non-zero Gross Traded Volume for every category (Laura + each
-# solver/method permutation) for one case, as a DataFrame with one row per (category, generator)
-# - this is both the plot's source data and what gets exported to xlsx.
+# Gathers per-series (5 generators + Storage) Gross Volume by price bucket for every category
+# (Laura + each solver/method permutation) for one case, as a DataFrame with one row per
+# (category, series) - this is both the plot's source data and what gets exported to xlsx.
+# Storage's "Gross Volume" is its throughput (|charge| + |discharge|, Gross Traded Volume has no
+# direct analog for a bidirectional asset) - see PriceBucketVolumesForRun/...ForLaura.
 function PriceBucketDataFrame(case, result_dirs)
 	println("computing price-bucket gross traded volume for case: $case")
 
@@ -186,7 +246,7 @@ function PriceBucketDataFrame(case, result_dirs)
 
 	for (config_label, dir) in result_dirs
 		println("  loading: $config_label ($dir)")
-		v, naz, nsz, nnz = PriceBucketVolumesForRun(dir)
+		v, naz, nsz, nnz = PriceBucketVolumesForRun(dir, case)
 		all_volumes[config_label] = v
 		mtu_counts[config_label] = (naz, nsz, nnz)
 	end
@@ -199,7 +259,7 @@ function PriceBucketDataFrame(case, result_dirs)
 		haskey(all_volumes, cat) || continue
 		volumes = all_volumes[cat]
 		naz, nsz, nnz = mtu_counts[cat]
-		for gen in generators
+		for gen in all_series
 			azv, szv, nzv = volumes[gen]
 			push!(df, (case, cat, gen, azv, szv, nzv, azv + szv + nzv, naz, nsz, nnz))
 		end
@@ -208,9 +268,9 @@ function PriceBucketDataFrame(case, result_dirs)
 	return df
 end
 
-# One row per (Case, Configuration): totals across generators, plus each configuration's zero-
-# price share of its own total Gross Traded Volume - the figure that directly answers "do the
-# solver/method differences concentrate in zero-price periods?"
+# One row per (Case, Configuration): totals across generators AND storage, plus each
+# configuration's always-zero share of its own grand total - the figure that directly answers
+# "do the solver/method differences concentrate in zero-price periods?"
 function PriceBucketSummary(df)
 	summary = combine(groupby(df, [:Case, :Configuration]),
 		:AlwaysZeroVolume => sum => :AlwaysZeroVolume,
@@ -265,8 +325,8 @@ function PlotPriceBucketComparison(case, summary_case)
 		color = [RGB(0.85, 0.55, 0.13) RGB(0.55, 0.35, 0.65) RGB(0.16, 0.47, 0.84)],
 		xticks = (1:nrow(summary_case), summary_case.Configuration),
 		xrotation = 20,
-		ylabel = "Gross Traded Volume (million MWh)",
-		title = "$case 36h - Gross Traded Volume by price bucket, per solver / method",
+		ylabel = "Gross Volume (million MWh)",
+		title = "$case 36h - Gross Volume (generators + storage) by price bucket, per solver / method",
 		titlefontsize = 11,
 		legend = :outertopright,
 		size = (950, 550),
