@@ -70,14 +70,12 @@ function LoadLauraSummary(case)
 		vals["Production Cost - $gen (€)"] = sh[generator_cost_row[gen], 2]
 	end
 
-	financial_revenue_row = Dict("Base" => 20, "Shoulder" => 21, "Peak" => 22, "Solar" => 23, "Wind" => 24)
+	# "TOTAL FINANCIAL REVENUE" section - Gross Traded column only (col 4); Net Revenue/Net Traded
+	# (cols 2-3) and the Total Net Revenue row (25, col 2) were dropped from the table.
+	gross_traded_row = Dict("Base" => 20, "Shoulder" => 21, "Peak" => 22, "Solar" => 23, "Wind" => 24)
 	for gen in generators
-		r = financial_revenue_row[gen]
-		vals["Total Financial Revenue - Net Revenue - $gen (€)"] = sh[r, 2]
-		vals["Total Financial Revenue - Net Traded - $gen (MWh)"] = sh[r, 3]
-		vals["Total Financial Revenue - Gross Traded - $gen (MWh)"] = sh[r, 4]
+		vals["Gross Traded Volume - $gen (MWh)"] = sh[gross_traded_row[gen], 4]
 	end
-	vals["Total Financial Revenue - Total Net Revenue (€)"] = sh[25, 2]
 
 	vals["Storage Energy Discharged (MWh)"] = sh[48, 2]
 	vals["Storage Energy Charged (MWh)"] = sh[49, 2]
@@ -119,23 +117,12 @@ function LoadOurKPIs(case)
 	end
 	vals["Dispatch Quantity - Total (MWh)"] = total_dispatch_quantity
 
-	fin_rev = DataFrame(XLSX.readtable(our_kpi_path, "total_financial_revenue"))
-	fin_rev_case = fin_rev[fin_rev.Case .== label, :]
-	total_net_revenue = 0.0
-	for gen in generators
-		row = fin_rev_case[fin_rev_case.Agent .== generator_agent_names[gen], :][1, :]
-		vals["Total Financial Revenue - Net Revenue - $gen (€)"] = row.NetRevenue
-		vals["Total Financial Revenue - Net Traded - $gen (MWh)"] = row.NetTraded
-		total_net_revenue += row.NetRevenue
-	end
-
 	gross_vol = DataFrame(XLSX.readtable(our_kpi_path, "gross_traded_volume"))
 	gross_vol_case = gross_vol[gross_vol.Case .== label, :]
 	for gen in generators
 		row = gross_vol_case[gross_vol_case.Agent .== generator_agent_names[gen], :][1, :]
-		vals["Total Financial Revenue - Gross Traded - $gen (MWh)"] = row.GrossTradedVolume
+		vals["Gross Traded Volume - $gen (MWh)"] = row.GrossTradedVolume
 	end
-	vals["Total Financial Revenue - Total Net Revenue (€)"] = total_net_revenue
 
 	storage_summary = DataFrame(XLSX.readtable(our_kpi_path, "storage_summary"))
 	storage_row = storage_summary[(storage_summary.Case .== label) .& (storage_summary.Period .== "Total"), :][1, :]
@@ -172,10 +159,7 @@ function KPIRowOrder()
 	push!(rows, ("Dispatch Quantity by Generator (MWh)", ["Dispatch Quantity - $gen (MWh)" for gen in generators]))
 	push!(rows, ("Dispatch Quantity - Total (MWh)", ["Dispatch Quantity - Total (MWh)"]))
 	push!(rows, ("Production Cost by Generator (€)", ["Production Cost - $gen (€)" for gen in generators]))
-	push!(rows, ("Total Financial Revenue - Net Revenue (€)", ["Total Financial Revenue - Net Revenue - $gen (€)" for gen in generators]))
-	push!(rows, ("Total Financial Revenue - Net Traded (MWh)", ["Total Financial Revenue - Net Traded - $gen (MWh)" for gen in generators]))
-	push!(rows, ("Total Financial Revenue - Gross Traded (MWh)", ["Total Financial Revenue - Gross Traded - $gen (MWh)" for gen in generators]))
-	push!(rows, ("Total Financial Revenue - Total (€)", ["Total Financial Revenue - Total Net Revenue (€)"]))
+	push!(rows, ("Gross Traded Volume (MWh)", ["Gross Traded Volume - $gen (MWh)" for gen in generators]))
 	push!(rows, ("Storage", [
 		"Storage Energy Discharged (MWh)",
 		"Storage Energy Charged (MWh)",
