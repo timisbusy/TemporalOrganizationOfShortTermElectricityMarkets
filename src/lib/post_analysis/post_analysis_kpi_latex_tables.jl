@@ -55,6 +55,16 @@ function LoadLauraSummary(case)
 	vals["Total Imbalance (MWh, +up/-down)"] = sh[6, 6]
 	vals["Total Wind Curtailed (MWh)"] = sh[5, 6]
 
+	# "PRODUCER REVENUES (Executed-only)" section - Energy (MWh) column, rows 11-15 per generator
+	# plus row 16's Total - the executed-only physical dispatch quantity, distinct from the
+	# Net/Gross Traded columns in "TOTAL FINANCIAL REVENUE" below (those sum adjustment legs
+	# across every clearing that touched an MTU, not just the one that executed it).
+	dispatch_quantity_row = Dict("Base" => 11, "Shoulder" => 12, "Peak" => 13, "Solar" => 14, "Wind" => 15)
+	for gen in generators
+		vals["Dispatch Quantity - $gen (MWh)"] = sh[dispatch_quantity_row[gen], 2]
+	end
+	vals["Dispatch Quantity - Total (MWh)"] = sh[16, 2]
+
 	generator_cost_row = Dict("Base" => 29, "Shoulder" => 30, "Peak" => 31, "Solar" => 32, "Wind" => 33)
 	for gen in generators
 		vals["Production Cost - $gen (€)"] = sh[generator_cost_row[gen], 2]
@@ -100,10 +110,14 @@ function LoadOurKPIs(case)
 
 	agents = DataFrame(XLSX.readtable(our_kpi_path, "agent_indicators"))
 	agents_case = agents[agents.Case .== label, :]
+	total_dispatch_quantity = 0.0
 	for gen in generators
 		row = agents_case[agents_case.Agent .== generator_agent_names[gen], :][1, :]
 		vals["Production Cost - $gen (€)"] = row[Symbol("Fuel Cost (€)")]
+		vals["Dispatch Quantity - $gen (MWh)"] = row[Symbol("Quantity (MWh)")]
+		total_dispatch_quantity += row[Symbol("Quantity (MWh)")]
 	end
+	vals["Dispatch Quantity - Total (MWh)"] = total_dispatch_quantity
 
 	fin_rev = DataFrame(XLSX.readtable(our_kpi_path, "total_financial_revenue"))
 	fin_rev_case = fin_rev[fin_rev.Case .== label, :]
@@ -155,6 +169,8 @@ function KPIRowOrder()
 		"Total Imbalance (MWh, +up/-down)",
 		"Total Wind Curtailed (MWh)",
 	]))
+	push!(rows, ("Dispatch Quantity by Generator (MWh)", ["Dispatch Quantity - $gen (MWh)" for gen in generators]))
+	push!(rows, ("Dispatch Quantity - Total (MWh)", ["Dispatch Quantity - Total (MWh)"]))
 	push!(rows, ("Production Cost by Generator (€)", ["Production Cost - $gen (€)" for gen in generators]))
 	push!(rows, ("Total Financial Revenue - Net Revenue (€)", ["Total Financial Revenue - Net Revenue - $gen (€)" for gen in generators]))
 	push!(rows, ("Total Financial Revenue - Net Traded (MWh)", ["Total Financial Revenue - Net Traded - $gen (MWh)" for gen in generators]))
