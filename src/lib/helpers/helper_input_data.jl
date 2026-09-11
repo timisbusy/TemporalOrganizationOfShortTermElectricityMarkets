@@ -248,9 +248,11 @@ function load_or_create_wind_forecast_error_scenario!(cfg::Dict, max_noise_std::
             error("Wind forecast error scenario file is too small for this run. Increase wind_noise_total_hours or wind_noise_max_look_ahead and regenerate: $scenario_path")
         end
         validate_wind_forecast_error_coverage(forecast_errors, scenario_total_hours, scenario_max_window_length)
+        println("loaded wind noise scenario from: $scenario_path")
         return forecast_errors
     end
 
+    println("generating wind noise scenario")
     
     forecast_errors, rows = generate_wind_forecast_error_scenario(scenario_total_hours, scenario_max_window_length, max_noise_std; seed=noise_seed)
     endswith(lowercase(scenario_path), ".csv") || error("Predefined wind forecast error scenario must be a CSV file: $scenario_path")

@@ -78,6 +78,11 @@ function load_input_data(path::String)
     data[:endDate] = data[:startDate] + Dates.Day(data[:clearForDays])
 
     data[:skipEarlyAuctions] = haskey(cfg,"skipEarlyAuctions") ? Int(cfg["skipEarlyAuctions"]) : 0
+    # optional cap on the last MTU a market is allowed to clear for, applied on top of the
+    # clearForDays-derived bound - lets an experiment stop short of its full clearForDays range
+    # (e.g. to match a reference simulation's exact clearing count) without needing clearForDays
+    # itself to land on a non-integer number of days
+    data[:lastAuctionMTU] = haskey(cfg,"lastAuctionMTU") ? Int(cfg["lastAuctionMTU"]) : nothing
     data[:windOffset] = haskey(cfg,"windOffset") ? Int(cfg["windOffset"]) : 0
     data[:samplePeriodExcludeSpinUp] = haskey(cfg,"samplePeriodExcludeSpinUp") ? Int(cfg["samplePeriodExcludeSpinUp"]) : 2
     data[:samplePeriodExcludeEnd] = haskey(cfg,"samplePeriodExcludeEnd") ? Int(cfg["samplePeriodExcludeEnd"]) : 2
@@ -127,6 +132,7 @@ function load_input_data_xlsx(path::String)
 
     data[:clearForDays] = Int(cfg_df[!,"Clear for Days"][1])
     data[:timePeriodsPerDay] = Int(cfg_df[!,"MTU per Day"][1]) # number of MTU in each day
+    data[:lastAuctionMTU] = hasproperty(cfg_df,"Last Auction MTU") && cfg_df[!,"Last Auction MTU"][1] != "" ? Int(cfg_df[!,"Last Auction MTU"][1]) : nothing
     data[:noiseLevel] = float(cfg_df[!,"Noise Level"][1])
     data[:startDate] = hasproperty(cfg_df,"Start Date") && cfg_df[!,"Start Date"][1] != "" ? cfg_df[!,"Start Date"][1] : Date(2026,1,1) 
     data[:endDate] = data[:startDate] + Dates.Day(data[:clearForDays])

@@ -77,6 +77,9 @@ function ClearSimple(config_file, test_id)
 	config = DataImporter.load_input_data(config_file)
 	longest_market_window = max.([m[:optimizationWindow] + m[:lookAheadDistance] for m in config[:marketSequence]])[1]
 	last_mtu_simulation = config[:clearForDays]*config[:timePeriodsPerDay] - longest_market_window
+	if config[:lastAuctionMTU] !== nothing
+		last_mtu_simulation = min(last_mtu_simulation, config[:lastAuctionMTU])
+	end
 	last_mtu_full = config[:clearForDays]*config[:timePeriodsPerDay]
 	time_period_range = range(0,last_mtu_simulation) # go from time_period 0 to the last mtp for which we have a full data set
     full_time_period_range = range(0,last_mtu_full) # go from time_period 0 to the last mtp - this is for getting forecast data, for example
@@ -140,7 +143,7 @@ function ClearSimple(config_file, test_id)
 	MarketDataStorage.WriteStorageMipDecisions(marketresult, config[:name], test_id)
 
 	PlotBaselineOutcomes.plot(marketresult, config, test_range, test_id)
-	PlotGenerationStack.plot(marketresult, config, test_range, test_id)
+	# PlotGenerationStack.plot(marketresult, config, test_range, test_id)
 
 	return marketresult
 end
@@ -181,6 +184,9 @@ function ClearMarketComparisonForConfig(config, test_id)
 	longest_market_window = max.(allWindows)[1]
 	last_mtu_full = config[:clearForDays]*config[:timePeriodsPerDay]
 	last_mtu_simulation = config[:clearForDays]*config[:timePeriodsPerDay] - longest_market_window
+	if config[:lastAuctionMTU] !== nothing
+		last_mtu_simulation = min(last_mtu_simulation, config[:lastAuctionMTU])
+	end
 	time_period_range = range(0,last_mtu_simulation) # go from time_period 0 to the last mtp for which we have a full data set
     full_time_period_range = range(0,last_mtu_full) # go from time_period 0 to the last mtp - this is for getting forecast data, for example
     

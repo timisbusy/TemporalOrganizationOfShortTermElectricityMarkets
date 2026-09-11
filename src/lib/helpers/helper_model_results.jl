@@ -38,9 +38,8 @@ function DecisionVariables(optimization_window::UnitRange{Int}, agent_map::Dict{
 			agent_type_data = a_type == AGENT_DEMAND ? m.ext[:variables][:Qd] : a_type == AGENT_GENERATOR ? m.ext[:variables][:Qg] : throw("unknown agent type: $a_type")
 			agent_adj_type_data = a_type == AGENT_DEMAND ? m.ext[:variables][:Qd_adj] : a_type == AGENT_GENERATOR ? m.ext[:variables][:Qg_adj] : throw("unknown agent type: $a_type")
 			df[!,agent] = [value(agent_type_data[agent,t]) for t in optimization_window]
-			if !m.ext[:data_storage][:ex_post_transactions]
-				df[!,"$(agent)_adj"] = [value(agent_adj_type_data[agent,t]) for t in optimization_window]
-			end
+			df[!,"$(agent)_adj"] = [value(agent_adj_type_data[agent,t]) for t in optimization_window]
+			
 			#= if haskey(ramp_limit_up_duals, agent)
 				df[!,"$(agent)_ramp_up_dual"] = ramp_limit_up_duals[agent]
 				df[!,"$(agent)_ramp_down_dual"] = ramp_limit_down_duals[agent]

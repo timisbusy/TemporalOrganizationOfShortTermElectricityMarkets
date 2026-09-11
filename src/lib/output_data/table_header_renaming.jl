@@ -4,8 +4,8 @@ using DataFrames
 
 header_renaming = Dict{String,Any}(
 	"agent_indicators" => Dict{String,Any}(
-		"short_names" => ["Quantity", "LoadUtility", "Payments", "Revenue", "FuelCost", "Surplus", "SOCChange"],
-		"long_names" => ["Quantity (MWh)", "Load Utility (€)", "Payments (€)", "Revenue (€)", "Fuel Cost (€)", "Surplus (€)", "SOC Change (MWh)"],
+		"short_names" => ["Quantity", "LoadUtility", "Payments", "Revenue", "FuelCost", "Surplus", "TradedVolume", "SOCChange"],
+		"long_names" => ["Quantity (MWh)", "Load Utility (€)", "Payments (€)", "Revenue (€)", "Fuel Cost (€)", "Surplus (€)", "Traded Volume (MWh)", "SOC Change (MWh)"],
 	),
 	"economic_indicators" => Dict{String,Any}(
 		"short_names" => ["SEW", "DemandUtility", "ProductionCosts", "ProducerSurplus", "ConsumerSurplus", "StorageRevenue"],
