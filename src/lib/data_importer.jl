@@ -87,18 +87,28 @@ function load_input_data(path::String)
     data[:samplePeriodExcludeSpinUp] = haskey(cfg,"samplePeriodExcludeSpinUp") ? Int(cfg["samplePeriodExcludeSpinUp"]) : 2
     data[:samplePeriodExcludeEnd] = haskey(cfg,"samplePeriodExcludeEnd") ? Int(cfg["samplePeriodExcludeEnd"]) : 2
 
+    # track the resolved config file paths (experiment/market/agent) so a caller can copy them
+    # alongside a run's results for later reference - see ClearMarket.CopyConfigFiles!
+    data[:configFile] = path
+    data[:marketConfigFiles] = String[]
+
     if haskey(cfg, "compare") && cfg["compare"] == "market"
         data[:marketSequences] = Dict{String,Any}()
         for (marketName, marketConfigFilepath) in cfg["marketConfigs"]
-            data[:marketSequences][String(marketName)] = load_market_configuration("$(CONFIG_PATH)/markets/$(marketConfigFilepath)", data[:timePeriodsPerDay])
+            market_config_path = "$(CONFIG_PATH)/markets/$(marketConfigFilepath)"
+            data[:marketSequences][String(marketName)] = load_market_configuration(market_config_path, data[:timePeriodsPerDay])
+            push!(data[:marketConfigFiles], market_config_path)
         end
 
     else
         # if we're not comparing markets, add the single market config
-        data[:marketSequence] = load_market_configuration("$(CONFIG_PATH)/markets/$(cfg["marketConfig"])", data[:timePeriodsPerDay])
+        market_config_path = "$(CONFIG_PATH)/markets/$(cfg["marketConfig"])"
+        data[:marketSequence] = load_market_configuration(market_config_path, data[:timePeriodsPerDay])
+        push!(data[:marketConfigFiles], market_config_path)
     end
 
-    agentCfg = YAML.load_file("$(CONFIG_PATH)/agents/$(cfg["agentConfig"])")
+    data[:agentConfigFile] = "$(CONFIG_PATH)/agents/$(cfg["agentConfig"])"
+    agentCfg = YAML.load_file(data[:agentConfigFile])
 
     # generators: separate blocks for dispatchable and variable generators
     data[:dispatchableGenerators] = agentCfg["dispatchableGenerators"]
@@ -137,21 +147,30 @@ function load_input_data_xlsx(path::String)
     data[:startDate] = hasproperty(cfg_df,"Start Date") && cfg_df[!,"Start Date"][1] != "" ? cfg_df[!,"Start Date"][1] : Date(2026,1,1) 
     data[:endDate] = data[:startDate] + Dates.Day(data[:clearForDays])
 
+    # track the resolved config file paths (experiment/market/agent) so a caller can copy them
+    # alongside a run's results for later reference - see ClearMarket.CopyConfigFiles!
+    data[:configFile] = path
+    data[:marketConfigFiles] = String[]
+
     if hasproperty(cfg_df,"Compare") && cfg_df[!,"Compare"][1] == "market"
         data[:marketSequences] = Dict{String,Any}()
         for (marketName, marketConfigFilepath) in cfg_df[!,"Market Configs"][1]
-            data[:marketSequences][String(marketName)] = load_market_configuration("$(CONFIG_PATH)/xlsx/markets/$(marketConfigFilepath)", data[:timePeriodsPerDay])
+            market_config_path = "$(CONFIG_PATH)/xlsx/markets/$(marketConfigFilepath)"
+            data[:marketSequences][String(marketName)] = load_market_configuration(market_config_path, data[:timePeriodsPerDay])
+            push!(data[:marketConfigFiles], market_config_path)
         end
 
     else
         # if we're not comparing markets, add the single market config
-        data[:marketSequence] = load_market_configuration_xlsx("$(CONFIG_PATH)/xlsx/markets/$(cfg_df[!,"Market Configuration"][1])", data[:timePeriodsPerDay])
+        market_config_path = "$(CONFIG_PATH)/xlsx/markets/$(cfg_df[!,"Market Configuration"][1])"
+        data[:marketSequence] = load_market_configuration_xlsx(market_config_path, data[:timePeriodsPerDay])
+        push!(data[:marketConfigFiles], market_config_path)
     end
 
-
-    genCfg = DataFrame(XLSX.readtable("$(CONFIG_PATH)/xlsx/agents/$(cfg_df[!,"Agent Configuration"][1])", "Generators"))
-    demandCfg = DataFrame(XLSX.readtable("$(CONFIG_PATH)/xlsx/agents/$(cfg_df[!,"Agent Configuration"][1])", "Demands"))
-    storageCfg = DataFrame(XLSX.readtable("$(CONFIG_PATH)/xlsx/agents/$(cfg_df[!,"Agent Configuration"][1])", "Storage"))
+    data[:agentConfigFile] = "$(CONFIG_PATH)/xlsx/agents/$(cfg_df[!,"Agent Configuration"][1])"
+    genCfg = DataFrame(XLSX.readtable(data[:agentConfigFile], "Generators"))
+    demandCfg = DataFrame(XLSX.readtable(data[:agentConfigFile], "Demands"))
+    storageCfg = DataFrame(XLSX.readtable(data[:agentConfigFile], "Storage"))
 
     dispatchableGenCfg = genCfg[genCfg[!,"Type"] .== "Dispatchable",:]
     variableGenCfg = genCfg[genCfg[!,"Type"] .== "Variable",:]

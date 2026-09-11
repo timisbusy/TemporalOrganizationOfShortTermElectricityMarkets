@@ -64,6 +64,19 @@ USE_LAURA_MINIMUM_MATCH_MODEL = false
 FAST_MODE = false
 
 
+# copies the resolved experiment/market/agent config files used for a run into
+# results/{test_id}/Config/, alongside the existing RAW/ export - so the exact configuration a
+# run used stays available even if the referenced markets/agents config in src/configs/ is later
+# edited or the experiment config lived somewhere ephemeral (e.g. a scratchpad copy)
+function CopyConfigFiles!(config, test_id)
+	config_dir = "results/$(test_id)/Config"
+	mkpath(config_dir)
+	files = vcat([config[:configFile]], config[:marketConfigFiles], [config[:agentConfigFile]])
+	for file in files
+		cp(file, joinpath(config_dir, basename(file)); force=true)
+	end
+end
+
 function GetModel(config)
 	if haskey(config, :optimizationModelConfig)
 		return config[:optimizationModelConfig]["model"] == "latest" ? LatestMarketModel : config[:optimizationModelConfig]["model"] == "two_stage" ? TwoStageMarketModel : config[:optimizationModelConfig]["model"] == "storage_mip" ? StorageMipMarketModel : ExplicitAdjustmentMarketModel # todo: make this more complete
@@ -75,6 +88,7 @@ end
 function ClearSimple(config_file, test_id)
 
 	config = DataImporter.load_input_data(config_file)
+	CopyConfigFiles!(config, test_id)
 	longest_market_window = max.([m[:optimizationWindow] + m[:lookAheadDistance] for m in config[:marketSequence]])[1]
 	last_mtu_simulation = config[:clearForDays]*config[:timePeriodsPerDay] - longest_market_window
 	if config[:lastAuctionMTU] !== nothing
@@ -179,6 +193,7 @@ function addTimeseriesProfiles!(variableGeneratorProfiles, config, test_id)
 end
 
 function ClearMarketComparisonForConfig(config, test_id)
+	CopyConfigFiles!(config, test_id)
 	allWindows = ([m[:optimizationWindow] + m[:lookAheadDistance] for (n, ms) in config[:marketSequences] for m in ms])
 	println(allWindows)
 	longest_market_window = max.(allWindows)[1]
