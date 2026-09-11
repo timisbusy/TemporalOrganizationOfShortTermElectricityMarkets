@@ -116,7 +116,7 @@ function PlotSimulationTiming(rows)
 		xlims=(min_x - (max_x-min_x)*0.02, max_x + (max_x-min_x)*0.02),
 		ylims=(0.1, n + 0.7),
 		yticks=(1:n, reverse([r.label for r in rows])),
-		xlabel="Date",
+		xlabel="Date\n\n",
 		legend=:outerbottom,
 		legendcolumns=2,
 		title="Simulation and Data Analysis Timeline",
@@ -148,7 +148,7 @@ function PlotSimulationTiming(rows)
 		t = r.timing
 		x(mtu) = mtu_to_x(t, mtu, reference_date)
 
-		hbar!(p, x(0), x(t.skip_early_auctions), y, height, color_notauctioned; label = legend_label("not auctioned (before skipEarlyAuctions)"))
+		hbar!(p, x(0), x(t.skip_early_auctions), y, height, color_notauctioned; label = legend_label("not auctioned"))
 		hbar!(p, x(t.skip_early_auctions), x(t.last_mtu_simulation), y, height, color_auction; label = legend_label("auctions run"))
 		# only the span actually reached by some run auction's own look-ahead window - not the
 		# full structural buffer up to last_mtu_full, which (when lastAuctionMTU trims the run
@@ -162,7 +162,7 @@ function PlotSimulationTiming(rows)
 				label = legend_label("all traded hours"))
 		else
 			test_range_bracket!(p, x(t.test_range_start), x(t.test_range_stop), y - height/2 - 0.16, color_testrange;
-				label = legend_label("test range (samplePeriodExcludeSpinUp/End)"))
+				label = legend_label("test range"))
 		end
 
 		Plots.annotate!(p, (x(t.skip_early_auctions) + x(t.last_mtu_simulation))/2, y, Plots.text("$(t.num_auctions) auctions", 9, :white, :center))
