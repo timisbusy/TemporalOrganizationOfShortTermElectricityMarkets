@@ -52,7 +52,7 @@ function LoadLauraSummary(case)
 	vals["Socioeconomic Welfare (€)"] = sh[7, 2]
 	vals["Demand Utility (€)"] = sh[5, 2]
 	vals["Production Costs (€)"] = sh[6, 2]
-	vals["Total Imbalance (MWh, +up/-down)"] = sh[6, 6]
+	vals["Imbalance (MWh)"] = sh[6, 6]
 	vals["Total Wind Curtailed (MWh)"] = sh[5, 6]
 
 	# "PRODUCER REVENUES (Executed-only)" section - Energy (MWh) column, rows 11-15 per generator
@@ -77,15 +77,15 @@ function LoadLauraSummary(case)
 		vals["Gross Traded Volume - $gen (MWh)"] = sh[gross_traded_row[gen], 4]
 	end
 
-	vals["Storage Energy Discharged (MWh)"] = sh[48, 2]
-	vals["Storage Energy Charged (MWh)"] = sh[49, 2]
-	vals["Storage Avg Discharge Price (€/MWh)"] = sh[50, 2]
-	vals["Storage Avg Charging Price (€/MWh)"] = sh[51, 2]
-	vals["Storage Discharge Revenue (€)"] = sh[52, 2]
-	vals["Storage Charging Cost (€)"] = sh[53, 2]
-	vals["Storage Net Revenue (€)"] = sh[54, 2]
-	vals["Storage Total Losses (MWh)"] = sh[55, 2]
-	vals["Storage SOC End of Horizon (MWh)"] = sh[56, 2]
+	vals["Energy Discharged (MWh)"] = sh[48, 2]
+	vals["Energy Charged (MWh)"] = sh[49, 2]
+	vals["Avg Discharge Price (€/MWh)"] = sh[50, 2]
+	vals["Avg Charging Price (€/MWh)"] = sh[51, 2]
+	vals["Discharge Revenue (€)"] = sh[52, 2]
+	vals["Charging Cost (€)"] = sh[53, 2]
+	vals["Net Revenue (€)"] = sh[54, 2]
+	vals["Total Losses (MWh)"] = sh[55, 2]
+	vals["SOC End of Horizon (MWh)"] = sh[56, 2]
 
 	return vals
 end
@@ -103,7 +103,7 @@ function LoadOurKPIs(case)
 	vals["Production Costs (€)"] = econ_row[Symbol("Production Costs (€)")]
 
 	imbalance = DataFrame(XLSX.readtable(our_kpi_path, "imbalance"))
-	vals["Total Imbalance (MWh, +up/-down)"] = imbalance[imbalance.Case .== label, :ImbalanceEnergy][1]
+	vals["Imbalance (MWh)"] = imbalance[imbalance.Case .== label, :ImbalanceEnergy][1]
 	vals["Total Wind Curtailed (MWh)"] = econ_row[Symbol("Wind Curtailed (MWh)")]
 
 	agents = DataFrame(XLSX.readtable(our_kpi_path, "agent_indicators"))
@@ -126,21 +126,21 @@ function LoadOurKPIs(case)
 
 	storage_summary = DataFrame(XLSX.readtable(our_kpi_path, "storage_summary"))
 	storage_row = storage_summary[(storage_summary.Case .== label) .& (storage_summary.Period .== "Total"), :][1, :]
-	vals["Storage Energy Discharged (MWh)"] = storage_row.DischargeTotal
-	vals["Storage Energy Charged (MWh)"] = storage_row.ChargeTotal
+	vals["Energy Discharged (MWh)"] = storage_row.DischargeTotal
+	vals["Energy Charged (MWh)"] = storage_row.ChargeTotal
 
 	storage_revenue = DataFrame(XLSX.readtable(our_kpi_path, "storage_revenue"))
 	sr_row = storage_revenue[storage_revenue.Case .== label, :][1, :]
-	vals["Storage Avg Discharge Price (€/MWh)"] = sr_row.AvgDischargePrice
-	vals["Storage Avg Charging Price (€/MWh)"] = sr_row.AvgChargePrice
-	vals["Storage Discharge Revenue (€)"] = sr_row.DischargeRevenue
-	vals["Storage Charging Cost (€)"] = sr_row.ChargingCost
-	vals["Storage Net Revenue (€)"] = sr_row.NetStorageRevenue
+	vals["Avg Discharge Price (€/MWh)"] = sr_row.AvgDischargePrice
+	vals["Avg Charging Price (€/MWh)"] = sr_row.AvgChargePrice
+	vals["Discharge Revenue (€)"] = sr_row.DischargeRevenue
+	vals["Charging Cost (€)"] = sr_row.ChargingCost
+	vals["Net Revenue (€)"] = sr_row.NetStorageRevenue
 
 	storage_soc = DataFrame(XLSX.readtable(our_kpi_path, "storage_soc_losses"))
 	soc_row = storage_soc[storage_soc.Case .== label, :][1, :]
-	vals["Storage Total Losses (MWh)"] = soc_row.TotalLosses
-	vals["Storage SOC End of Horizon (MWh)"] = soc_row.SOCEndOfHorizon
+	vals["Total Losses (MWh)"] = soc_row.TotalLosses
+	vals["SOC End of Horizon (MWh)"] = soc_row.SOCEndOfHorizon
 
 	return vals
 end
@@ -153,7 +153,7 @@ function KPIRowOrder()
 		"Socioeconomic Welfare (€)",
 		"Demand Utility (€)",
 		"Production Costs (€)",
-		"Total Imbalance (MWh, +up/-down)",
+		"Imbalance (MWh)",
 		"Total Wind Curtailed (MWh)",
 	]))
 	push!(rows, ("Dispatch Quantity by Generator (MWh)", ["Dispatch Quantity - $gen (MWh)" for gen in generators]))
@@ -161,15 +161,15 @@ function KPIRowOrder()
 	push!(rows, ("Production Cost by Generator (€)", ["Production Cost - $gen (€)" for gen in generators]))
 	push!(rows, ("Gross Traded Volume (MWh)", ["Gross Traded Volume - $gen (MWh)" for gen in generators]))
 	push!(rows, ("Storage", [
-		"Storage Energy Discharged (MWh)",
-		"Storage Energy Charged (MWh)",
-		"Storage Avg Discharge Price (€/MWh)",
-		"Storage Avg Charging Price (€/MWh)",
-		"Storage Discharge Revenue (€)",
-		"Storage Charging Cost (€)",
-		"Storage Net Revenue (€)",
-		"Storage Total Losses (MWh)",
-		"Storage SOC End of Horizon (MWh)",
+		"Energy Discharged (MWh)",
+		"Energy Charged (MWh)",
+		"Avg Discharge Price (€/MWh)",
+		"Avg Charging Price (€/MWh)",
+		"Discharge Revenue (€)",
+		"Charging Cost (€)",
+		"Net Revenue (€)",
+		"Total Losses (MWh)",
+		"SOC End of Horizon (MWh)",
 	]))
 	return rows
 end
