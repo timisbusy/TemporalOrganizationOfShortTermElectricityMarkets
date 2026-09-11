@@ -7,7 +7,7 @@
 # section it's paired with - e.g. generator revenue compares against her "TOTAL FINANCIAL
 # REVENUE" section, not "PRODUCER REVENUES (Executed-only)", per the divergence investigated
 # earlier this session). Skips KPIs we don't independently compute (Average Executed Price,
-# Total Wind Curtailed, Generator Profits, the Delivery-Hour Audit section).
+# Generator Profits, the Delivery-Hour Audit section).
 #
 # Laura's reference file layout (economic_summary.xlsx, "Summary" sheet) is read by fixed
 # (row, col) position - established by dumping both fixed_36h/economic_summary.xlsx and
@@ -53,7 +53,7 @@ function LoadLauraSummary(case)
 	vals["Demand Utility (€)"] = sh[5, 2]
 	vals["Production Costs (€)"] = sh[6, 2]
 	vals["Imbalance (MWh)"] = sh[6, 6]
-	vals["Total Wind Curtailed (MWh)"] = sh[5, 6]
+	vals["Wind Curtailment (MWh)"] = sh[5, 6]
 
 	# "PRODUCER REVENUES (Executed-only)" section - Energy (MWh) column, rows 11-15 per generator
 	# plus row 16's Total - the executed-only physical dispatch quantity, distinct from the
@@ -104,7 +104,7 @@ function LoadOurKPIs(case)
 
 	imbalance = DataFrame(XLSX.readtable(our_kpi_path, "imbalance"))
 	vals["Imbalance (MWh)"] = imbalance[imbalance.Case .== label, :ImbalanceEnergy][1]
-	vals["Total Wind Curtailed (MWh)"] = econ_row[Symbol("Wind Curtailed (MWh)")]
+	vals["Wind Curtailment (MWh)"] = econ_row[Symbol("Wind Curtailed (MWh)")]
 
 	agents = DataFrame(XLSX.readtable(our_kpi_path, "agent_indicators"))
 	agents_case = agents[agents.Case .== label, :]
@@ -154,7 +154,7 @@ function KPIRowOrder()
 		"Demand Utility (€)",
 		"Production Costs (€)",
 		"Imbalance (MWh)",
-		"Total Wind Curtailed (MWh)",
+		"Wind Curtailment (MWh)",
 	]))
 	push!(rows, ("Dispatch Quantity by Generator (MWh)", ["Dispatch Quantity - $gen (MWh)" for gen in generators]))
 	push!(rows, ("Dispatch Quantity - Total (MWh)", ["Dispatch Quantity - Total (MWh)"]))
