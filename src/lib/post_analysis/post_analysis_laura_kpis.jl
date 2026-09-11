@@ -17,7 +17,7 @@ using .Helpers.HelperModelResults
 include("../output_data/market_data_storage.jl")
 
 
-fixed_path_base = "results/1788950433_laura_final_check_fixed"
+fixed_path_base = "results/1789125981_laura_final_check_fixed_v2" # rerun with demand_adjust=false, matching rolling_36's default
 rolling_path_base = "results/1788950636_laura_final_check_rolling"
 results_path_base = "results/validation_results"
 

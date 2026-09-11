@@ -29,6 +29,6 @@ optimizationModelConfig:
   model: latest
   solver: highs
   solver_method: simplex
-  demand_adjust: true
+  demand_adjust: false
   ex_post_transactions: false
   restrict_mtu1_trading: true
