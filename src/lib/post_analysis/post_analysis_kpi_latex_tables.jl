@@ -49,9 +49,9 @@ function LoadLauraSummary(case)
 	sh = xf["Summary"]
 
 	vals = Dict{String,Float64}()
-	vals["Social Welfare (€)"] = sh[7, 2]
-	vals["Total Demand Value (€)"] = sh[5, 2]
-	vals["Total Generation Cost (€)"] = sh[6, 2]
+	vals["Socioeconomic Welfare (€)"] = sh[7, 2]
+	vals["Demand Utility (€)"] = sh[5, 2]
+	vals["Production Costs (€)"] = sh[6, 2]
 	vals["Total Imbalance (MWh, +up/-down)"] = sh[6, 6]
 	vals["Total Wind Curtailed (MWh)"] = sh[5, 6]
 
@@ -98,9 +98,9 @@ function LoadOurKPIs(case)
 
 	econ = DataFrame(XLSX.readtable(our_kpi_path, "economic_indicators"))
 	econ_row = econ[(econ.Case .== label) .& (econ.Period .== "Total"), :][1, :]
-	vals["Social Welfare (€)"] = econ_row[Symbol("Socioeconomic Welfare (€)")]
-	vals["Total Demand Value (€)"] = econ_row[Symbol("Demand Utility (€)")]
-	vals["Total Generation Cost (€)"] = econ_row[Symbol("Production Costs (€)")]
+	vals["Socioeconomic Welfare (€)"] = econ_row[Symbol("Socioeconomic Welfare (€)")]
+	vals["Demand Utility (€)"] = econ_row[Symbol("Demand Utility (€)")]
+	vals["Production Costs (€)"] = econ_row[Symbol("Production Costs (€)")]
 
 	imbalance = DataFrame(XLSX.readtable(our_kpi_path, "imbalance"))
 	vals["Total Imbalance (MWh, +up/-down)"] = imbalance[imbalance.Case .== label, :ImbalanceEnergy][1]
@@ -150,9 +150,9 @@ end
 function KPIRowOrder()
 	rows = Tuple{String,Vector{String}}[]
 	push!(rows, ("System", [
-		"Social Welfare (€)",
-		"Total Demand Value (€)",
-		"Total Generation Cost (€)",
+		"Socioeconomic Welfare (€)",
+		"Demand Utility (€)",
+		"Production Costs (€)",
 		"Total Imbalance (MWh, +up/-down)",
 		"Total Wind Curtailed (MWh)",
 	]))
