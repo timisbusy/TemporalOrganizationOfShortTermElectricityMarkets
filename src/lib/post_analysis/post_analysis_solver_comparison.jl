@@ -6,6 +6,11 @@
 # definition validated against her economic_summary.xlsx (Clearing MTU capped to 12:672,
 # matching calculate_generator_revenues_full in her costs.jl) - see post_analysis_laura_kpis.jl
 # and the Clearing-MTU fix in MarketDataStorage.CalculateEconomicIndicators for the full story.
+#
+# Also produces a standing "demand_adjust=true" companion chart for the Fixed case, so the
+# effect of that flag (fixed_36's config default until it was changed to false to match
+# rolling_36 - see the demand_adjust/ex_post_transactions isolation investigation) stays visible
+# as a chart rather than only living in a one-off comparison.
 
 module PostAnalysisSolverComparison
 
@@ -32,6 +37,17 @@ rolling_result_dirs = Dict{String,String}(
 	"Gurobi + simplex" => "results/1789038907_solvercmp_rolling_gurobi_simplex",
 	"Gurobi + dual_simplex" => "results/1789038954_solvercmp_rolling_gurobi_dualsimplex",
 	"Gurobi + IPM" => "results/1789038992_solvercmp_rolling_gurobi_ipm",
+)
+
+# same Fixed permutation, but with demand_adjust=true (fixed_36's old default, before it was
+# changed to false to match rolling_36) - kept as a standing companion chart so the effect of
+# that flag flip stays visible, rather than only living in a one-off investigation writeup.
+fixed_result_dirs_demand_adjust_true = Dict{String,String}(
+	"HiGHS + simplex" => "results/1789039031_solvercmp_fixed_highs_simplex",
+	"HiGHS + IPM" => "results/1789039064_solvercmp_fixed_highs_ipm",
+	"Gurobi + simplex" => "results/1789039101_solvercmp_fixed_gurobi_simplex",
+	"Gurobi + dual_simplex" => "results/1789039129_solvercmp_fixed_gurobi_dualsimplex",
+	"Gurobi + IPM" => "results/1789039159_solvercmp_fixed_gurobi_ipm",
 )
 
 laura_data_dir = "../DATA/_laura_data_w_adj"
@@ -94,13 +110,13 @@ end
 # solver/method permutation) for one case, as a DataFrame with one row per category and
 # one column per generator plus a Total - this is both the plot's source data and what
 # gets exported to xlsx.
-function TradingVolumeDataFrame(case, result_dirs)
+function TradingVolumeDataFrame(case, result_dirs; laura_case=case)
 	println("computing gross traded volume for case: $case")
 
 	all_volumes = Dict{String,Dict{String,Float64}}()
 
 	println("  loading: Laura (reference)")
-	all_volumes["Reference (HiGHS + default)"] = GrossTradedVolumeForLaura(case)
+	all_volumes["Reference (HiGHS + default)"] = GrossTradedVolumeForLaura(laura_case)
 
 	for (config_label, dir) in result_dirs
 		println("  loading: $config_label ($dir)")
@@ -126,7 +142,7 @@ function TradingVolumeDataFrame(case, result_dirs)
 	return df
 end
 
-function PlotTradingVolumeComparison(case, df)
+function PlotTradingVolumeComparison(case, df; title="$case 36h - generator trading volume by solver / method")
 	# groupedbar's :stack draws the first column on top and the last column at the bottom,
 	# so feed columns in reverse of the desired bottom-to-top order (Base, Shoulder, Peak,
 	# Wind, Solar - matching the 3G/4G/5G/6G/7G generator numbering) to get that stacking.
@@ -147,7 +163,7 @@ function PlotTradingVolumeComparison(case, df)
 		xticks = (1:nrow(df), df.Configuration),
 		xrotation = 20,
 		ylabel = "Gross Traded Volume (million MWh)",
-		title = "$case 36h - generator trading volume by solver / method",
+		title = title,
 		legend = :outertopright,
 		size = (900, 550),
 		left_margin = 10Plots.mm,
@@ -170,11 +186,19 @@ function PerformAnalysis()
 	savefig(p_rolling, "$results_path_base/trading_volume_rolling36h.png")
 	println("saved: $results_path_base/trading_volume_rolling36h.png")
 
-	combined_df = vcat(fixed_df, rolling_df)
+	fixed_da_true_df = TradingVolumeDataFrame("Fixed (demand_adjust=true)", fixed_result_dirs_demand_adjust_true; laura_case="Fixed")
+	p_fixed_da_true = PlotTradingVolumeComparison(
+		"Fixed (demand_adjust=true)", fixed_da_true_df;
+		title = "Fixed 36h with demand adjustments - generator trading volume by solver / method",
+	)
+	savefig(p_fixed_da_true, "$results_path_base/trading_volume_fixed36h_demand_adjust_true.png")
+	println("saved: $results_path_base/trading_volume_fixed36h_demand_adjust_true.png")
+
+	combined_df = vcat(fixed_df, rolling_df, fixed_da_true_df)
 	XLSX.writetable("$results_path_base/trading_volume_details.xlsx", "data" => combined_df; overwrite=true)
 	println("saved: $results_path_base/trading_volume_details.xlsx")
 
-	return (p_fixed, p_rolling, combined_df)
+	return (p_fixed, p_rolling, p_fixed_da_true, combined_df)
 end
 
 end;
