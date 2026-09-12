@@ -351,6 +351,39 @@ function PlotPriceBucketComparison(title, ylabel, summary_case)
 	return p
 end
 
+# Same three price buckets as PlotPriceBucketComparison, but normalized by each bucket's own MTU
+# count (average Gross Traded Volume per bucketed MTU, summed across every clearing that touched
+# it) and drawn as side-by-side (dodged) bars instead of stacked - stacking hides bucket-to-bucket
+# intensity differences behind each other's height, since always-zero/sometimes-zero/never-zero
+# buckets don't contain the same number of MTUs to begin with (e.g. Fixed: ~170 always-zero vs.
+# ~422 never-zero) so raw totals aren't a fair per-MTU comparison across buckets or permutations.
+function PlotPriceBucketAveragePerMTU(title, ylabel, summary_case)
+	data = zeros(nrow(summary_case), 3)
+	for (i, row) in enumerate(eachrow(summary_case))
+		data[i, 1] = row.AlwaysZeroMTUCount > 0 ? row.AlwaysZeroVolume / row.AlwaysZeroMTUCount : 0.0
+		data[i, 2] = row.SometimesZeroMTUCount > 0 ? row.SometimesZeroVolume / row.SometimesZeroMTUCount : 0.0
+		data[i, 3] = row.NeverZeroMTUCount > 0 ? row.NeverZeroVolume / row.NeverZeroMTUCount : 0.0
+	end
+
+	p = groupedbar(
+		data,
+		bar_position = :dodge,
+		label = ["Always-zero-price MTUs" "Sometimes-zero-price MTUs" "Never-zero-price MTUs"],
+		color = [RGB(0.85, 0.55, 0.13) RGB(0.55, 0.35, 0.65) RGB(0.16, 0.47, 0.84)],
+		xticks = (1:nrow(summary_case), summary_case.Configuration),
+		xrotation = 20,
+		ylabel = ylabel,
+		title = title,
+		titlefontsize = 11,
+		legend = :outertopright,
+		size = (950, 550),
+		left_margin = 14Plots.mm,
+		bottom_margin = 20Plots.mm,
+	)
+
+	return p
+end
+
 function PerformAnalysis()
 	CleanDirectory(results_path_base)
 
@@ -382,6 +415,23 @@ function PerformAnalysis()
 	)
 	savefig(p_rolling, "$results_path_base/trading_volume_price_bucket_rolling36h.png")
 	println("saved: $results_path_base/trading_volume_price_bucket_rolling36h.png")
+
+	# --- same generator data, but average-per-bucketed-MTU and side-by-side instead of stacked ---
+	p_fixed_avg = PlotPriceBucketAveragePerMTU(
+		"Fixed 36h - avg Gross Traded Volume per MTU by price bucket, per solver / method",
+		"Avg Gross Traded Volume per MTU (MWh)",
+		gen_summary[gen_summary.Case .== "Fixed", :],
+	)
+	savefig(p_fixed_avg, "$results_path_base/trading_volume_price_bucket_avg_per_mtu_fixed36h.png")
+	println("saved: $results_path_base/trading_volume_price_bucket_avg_per_mtu_fixed36h.png")
+
+	p_rolling_avg = PlotPriceBucketAveragePerMTU(
+		"Rolling 36h - avg Gross Traded Volume per MTU by price bucket, per solver / method",
+		"Avg Gross Traded Volume per MTU (MWh)",
+		gen_summary[gen_summary.Case .== "Rolling", :],
+	)
+	savefig(p_rolling_avg, "$results_path_base/trading_volume_price_bucket_avg_per_mtu_rolling36h.png")
+	println("saved: $results_path_base/trading_volume_price_bucket_avg_per_mtu_rolling36h.png")
 
 	# --- storage only (separate chart, not folded into the generator totals) ---
 	storage_fixed_df = BuildBucketDataFrame("Fixed", fixed_volumes, fixed_counts, ["Storage"])
@@ -420,7 +470,7 @@ function PerformAnalysis()
 	)
 	println("saved: $results_path_base/price_bucket_trading_volume_details.xlsx")
 
-	return (p_fixed, p_rolling, p_storage_fixed, p_storage_rolling, gen_combined_df, gen_summary, gen_spread, storage_combined_df, storage_summary, storage_spread)
+	return (p_fixed, p_rolling, p_fixed_avg, p_rolling_avg, p_storage_fixed, p_storage_rolling, gen_combined_df, gen_summary, gen_spread, storage_combined_df, storage_summary, storage_spread)
 end
 
 end;
