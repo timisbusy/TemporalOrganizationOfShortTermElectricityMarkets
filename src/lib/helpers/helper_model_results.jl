@@ -264,6 +264,12 @@ function Transactions(marketresult, previous_dispatch, market_name, resultset, m
 				push!(adjustment_anomalies, (market_name, d, AGENT_DEMAND, row["mtu"], transaction_mtu, adjustment_q, expected_adjustment_q))
 			end
 
+			# round before storing so this leg's contribution to Qg_prev/Qd_prev in every future
+			# clearing isn't sensitive to ~1e-12-scale floating-point noise between the two
+			# adjustment_q accounting paths above (checked, not erased, by the anomaly comparison
+			# just above) - see the demand_adjust/ex_post_transactions investigation for how that
+			# noise gets amplified by LP degeneracy under Gurobi.
+			adjustment_q = round(adjustment_q, digits=9)
 
 			if adjustment_q != 0.0
 				transaction = Transaction()
@@ -295,6 +301,8 @@ function Transactions(marketresult, previous_dispatch, market_name, resultset, m
 				push!(adjustment_anomalies, (market_name, g, AGENT_GENERATOR, row["mtu"], transaction_mtu, adjustment_q, expected_adjustment_q))
 			end
 
+			# round before storing - see the matching comment in the demand loop above
+			adjustment_q = round(adjustment_q, digits=9)
 
 			if adjustment_q != 0.0
 				transaction = Transaction()
@@ -319,7 +327,9 @@ function Transactions(marketresult, previous_dispatch, market_name, resultset, m
 
 		# Discharge - Charge because positive means we're contributing energy to the system - acting more like a generator
 		adjustment_q = (row["StorageDischarge"] - row["StorageCharge"]) - (adjust_from_q_storage_discharge - adjust_from_q_storage_charge)
-		
+		# round before storing - see the matching comment in the demand loop above
+		adjustment_q = round(adjustment_q, digits=9)
+
 		if adjustment_q != 0.0
 			times_cleared = has_last_result ? mtu_times_cleared(resultset, row["mtu"]) : 1
 			transaction = Transaction()
