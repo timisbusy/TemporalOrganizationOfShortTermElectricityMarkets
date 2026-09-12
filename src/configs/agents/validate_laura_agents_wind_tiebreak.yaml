@@ -1,0 +1,62 @@
+
+# Generator parameters
+dispatchableGenerators:
+ 3G_Base:
+  bidPrice: 30 # EUR/MWh
+  capacity: 6000 # MW
+  rampRateLD: 0.2 # fraction of nominal power per hour
+  initialQuantity: 4800
+  emissionFactor: 980 # kgCO2e/MWh
+
+ 4G_Shoulder:
+  bidPrice: 80 # EUR/MWh
+  capacity: 4000 # MW
+  rampRateLD: 0.5 # fraction of nominal power per hour
+  initialQuantity: 2000
+  emissionFactor: 420 # kgCO2e/MWh
+
+ 5G_Peak:
+  bidPrice: 150 # EUR/MWh
+  capacity: 5000 # MW
+  rampRateLD: 1.0 # fraction of nominal power per hour
+  initialQuantity: 0
+  emissionFactor: 420 # kgCO2e/MWh
+
+variableGenerators:
+  6G_Wind:
+    bidPrice: 0.01      # EUR/MWh - nudged above Solar's 0 to break the exact zero-price tie
+                        # between them and test whether that eliminates one root cause of
+                        # cross-solver LP degeneracy (see the Gurobi Presolve/Crossover
+                        # investigation and post_analysis_price_bucket_comparison.jl)
+    capacity: 12000        # MW
+    profile_files: ["input_data/laura/windon_data_2025_ned.csv", "input_data/laura/windoff_data_2025_ned.csv"] # note, laura combines wind on and off by addition
+    profile_type: quantity
+    conversionFactor: 0.00095  # Convert kW to MW and scale renewables to 95%
+  7G_Solar:
+    bidPrice: 0         # EUR/MWh
+    capacity: 29000        # MW
+    profile_file: input_data/laura/solar_data_2025_ned.csv
+    profile_type: quantity 
+    conversionFactor: 0.00095  # Convert kW to MW and scale renewables to 95%
+
+# Storage parameters
+batteryStorage:
+  energyCapacity: 6000 # MWh
+  powerCapacity: 2000 # MW
+  efficiency: 0.9
+  initialSOC: 0.0 # as fraction of energyCapacity
+  endSOC: 0.0 # as fraction of energyCapacity
+  
+# Demand parameters
+demand:
+  segments:
+    1D_HighBid:
+      bidPrice: 300   # EUR/MWh (high willingness to pay)
+      profile_file: input_data/laura/demand_data_2025_ned2.csv
+      profile_type: demand_quantity
+      conversionFactor: 0.0009  # Convert kW to MW, 90% 0.001*.9 = .0009
+    2D_ModerateBid:
+      bidPrice: 50   # EUR/MWh (elastic, only if price low)
+      profile_file: input_data/laura/demand_data_2025_ned2.csv
+      profile_type: demand_quantity
+      conversionFactor: 0.0001  # Convert kW to MW, 10%
