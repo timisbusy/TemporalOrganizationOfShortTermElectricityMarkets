@@ -11,7 +11,8 @@ module PostAnalysisSolverComparison
 
 using XLSX, DataFrames, Plots, StatsPlots
 
-results_path_base = "results/analysis"
+include("./analysis_output.jl")
+using .AnalysisOutput
 
 # result directories for each solver/method permutation, keyed by config label.
 # Fixed is pinned to demand_adjust=false, ex_post_transactions=false, same as Rolling's own
@@ -50,10 +51,6 @@ time_range = 12:672
 
 # x-axis ordering: Laura first, then HiGHS variants, then Gurobi variants
 category_order = ["Reference (HiGHS + default)", "HiGHS + simplex", "HiGHS + IPM", "Gurobi + simplex", "Gurobi + dual_simplex", "Gurobi + IPM"]
-
-function CleanDirectory(path)
-	mkpath(path)
-end
 
 # Gross Traded Volume for one of our own runs: sum(|adjustment|) across every clearing in
 # time_range (by Clearing MTU, not delivery MTU), for every generator - matches Laura's
@@ -158,21 +155,28 @@ function PlotTradingVolumeComparison(case, df)
 end
 
 function PerformAnalysis()
-	CleanDirectory(results_path_base)
+	output_dir = AnalysisOutput.NewOutputDir("solver_comparison")
 
 	fixed_df = TradingVolumeDataFrame("Fixed", fixed_result_dirs)
 	p_fixed = PlotTradingVolumeComparison("Fixed", fixed_df)
-	savefig(p_fixed, "$results_path_base/trading_volume_fixed36h.png")
-	println("saved: $results_path_base/trading_volume_fixed36h.png")
+	savefig(p_fixed, "$output_dir/trading_volume_fixed36h.png")
+	println("saved: $output_dir/trading_volume_fixed36h.png")
 
 	rolling_df = TradingVolumeDataFrame("Rolling", rolling_result_dirs)
 	p_rolling = PlotTradingVolumeComparison("Rolling", rolling_df)
-	savefig(p_rolling, "$results_path_base/trading_volume_rolling36h.png")
-	println("saved: $results_path_base/trading_volume_rolling36h.png")
+	savefig(p_rolling, "$output_dir/trading_volume_rolling36h.png")
+	println("saved: $output_dir/trading_volume_rolling36h.png")
 
 	combined_df = vcat(fixed_df, rolling_df)
-	XLSX.writetable("$results_path_base/trading_volume_details.xlsx", "data" => combined_df; overwrite=true)
-	println("saved: $results_path_base/trading_volume_details.xlsx")
+	XLSX.writetable("$output_dir/trading_volume_details.xlsx", "data" => combined_df; overwrite=true)
+	println("saved: $output_dir/trading_volume_details.xlsx")
+
+	sources = merge(
+		Dict("Fixed: $k" => v for (k, v) in fixed_result_dirs),
+		Dict("Rolling: $k" => v for (k, v) in rolling_result_dirs),
+	)
+	AnalysisOutput.WriteManifest(output_dir, sources)
+	AnalysisOutput.UpdateLatestIndex("solver_comparison", output_dir)
 
 	return (p_fixed, p_rolling, combined_df)
 end

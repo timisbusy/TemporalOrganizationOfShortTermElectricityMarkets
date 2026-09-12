@@ -27,7 +27,8 @@ module PostAnalysisGurobiTuningComparison
 
 using XLSX, DataFrames, Plots, StatsPlots
 
-results_path_base = "results/analysis"
+include("./analysis_output.jl")
+using .AnalysisOutput
 
 # result directories per case, keyed by config label. All runs: demand_adjust=false,
 # ex_post_transactions=false (matching post_analysis_solver_comparison.jl's baseline), with the
@@ -75,10 +76,6 @@ category_order = [
 	"Gurobi + dual_simplex", "Gurobi + dual_simplex, Presolve=0",
 	"Gurobi + IPM", "Gurobi + IPM, Presolve=0", "Gurobi + IPM, Crossover=0", "Gurobi + IPM, Crossover=0+Presolve=0",
 ]
-
-function CleanDirectory(path)
-	mkpath(path)
-end
 
 # Gross Traded Volume: sum(|adjustment|) across every clearing in time_range (by Clearing MTU,
 # not delivery MTU), for every generator - same definition as post_analysis_solver_comparison.jl.
@@ -171,21 +168,28 @@ function PlotTradingVolumeComparison(case, df)
 end
 
 function PerformAnalysis()
-	CleanDirectory(results_path_base)
+	output_dir = AnalysisOutput.NewOutputDir("gurobi_tuning_comparison")
 
 	fixed_df = TradingVolumeDataFrame("Fixed", fixed_result_dirs)
 	p_fixed = PlotTradingVolumeComparison("Fixed", fixed_df)
-	savefig(p_fixed, "$results_path_base/gurobi_tuning_comparison_fixed36h.png")
-	println("saved: $results_path_base/gurobi_tuning_comparison_fixed36h.png")
+	savefig(p_fixed, "$output_dir/gurobi_tuning_comparison_fixed36h.png")
+	println("saved: $output_dir/gurobi_tuning_comparison_fixed36h.png")
 
 	rolling_df = TradingVolumeDataFrame("Rolling", rolling_result_dirs)
 	p_rolling = PlotTradingVolumeComparison("Rolling", rolling_df)
-	savefig(p_rolling, "$results_path_base/gurobi_tuning_comparison_rolling36h.png")
-	println("saved: $results_path_base/gurobi_tuning_comparison_rolling36h.png")
+	savefig(p_rolling, "$output_dir/gurobi_tuning_comparison_rolling36h.png")
+	println("saved: $output_dir/gurobi_tuning_comparison_rolling36h.png")
 
 	combined_df = vcat(fixed_df, rolling_df)
-	XLSX.writetable("$results_path_base/gurobi_tuning_comparison_details.xlsx", "data" => combined_df; overwrite=true)
-	println("saved: $results_path_base/gurobi_tuning_comparison_details.xlsx")
+	XLSX.writetable("$output_dir/gurobi_tuning_comparison_details.xlsx", "data" => combined_df; overwrite=true)
+	println("saved: $output_dir/gurobi_tuning_comparison_details.xlsx")
+
+	sources = merge(
+		Dict("Fixed: $k" => v for (k, v) in fixed_result_dirs),
+		Dict("Rolling: $k" => v for (k, v) in rolling_result_dirs),
+	)
+	AnalysisOutput.WriteManifest(output_dir, sources)
+	AnalysisOutput.UpdateLatestIndex("gurobi_tuning_comparison", output_dir)
 
 	return (p_fixed, p_rolling, combined_df)
 end

@@ -37,7 +37,8 @@ module PostAnalysisPriceBucketComparison
 
 using XLSX, DataFrames, Plots, StatsPlots, Statistics
 
-results_path_base = "results/analysis"
+include("./analysis_output.jl")
+using .AnalysisOutput
 
 # result directories for each solver/method permutation - same runs as
 # post_analysis_solver_comparison.jl (kept in sync by hand; see solver_permutation_dirs.jl,
@@ -101,10 +102,6 @@ quantity_symbol = Symbol("Quantity (MWh)")
 price_symbol = Symbol("Price (€/MWh)")
 mtu_symbol = Symbol("Market Time Unit")
 clearing_mtu_symbol = Symbol("Clearing MTU")
-
-function CleanDirectory(path)
-	mkpath(path)
-end
 
 # three-way classification of every target MTU by how many of the clearings touching it recorded
 # a price of (near) zero there: always-zero (every price ~0), never-zero (no price ~0), or
@@ -385,7 +382,7 @@ function PlotPriceBucketAveragePerMTU(title, ylabel, summary_case)
 end
 
 function PerformAnalysis()
-	CleanDirectory(results_path_base)
+	output_dir = AnalysisOutput.NewOutputDir("price_bucket_comparison")
 
 	fixed_volumes, fixed_counts = LoadAllVolumes("Fixed", fixed_result_dirs)
 	rolling_volumes, rolling_counts = LoadAllVolumes("Rolling", rolling_result_dirs)
@@ -405,16 +402,16 @@ function PerformAnalysis()
 		"Gross Traded Volume (million MWh)",
 		gen_summary[gen_summary.Case .== "Fixed", :],
 	)
-	savefig(p_fixed, "$results_path_base/trading_volume_price_bucket_fixed36h.png")
-	println("saved: $results_path_base/trading_volume_price_bucket_fixed36h.png")
+	savefig(p_fixed, "$output_dir/trading_volume_price_bucket_fixed36h.png")
+	println("saved: $output_dir/trading_volume_price_bucket_fixed36h.png")
 
 	p_rolling = PlotPriceBucketComparison(
 		"Rolling 36h - Gross Traded Volume by price bucket, per solver / method",
 		"Gross Traded Volume (million MWh)",
 		gen_summary[gen_summary.Case .== "Rolling", :],
 	)
-	savefig(p_rolling, "$results_path_base/trading_volume_price_bucket_rolling36h.png")
-	println("saved: $results_path_base/trading_volume_price_bucket_rolling36h.png")
+	savefig(p_rolling, "$output_dir/trading_volume_price_bucket_rolling36h.png")
+	println("saved: $output_dir/trading_volume_price_bucket_rolling36h.png")
 
 	# --- same generator data, but average-per-bucketed-MTU and side-by-side instead of stacked ---
 	p_fixed_avg = PlotPriceBucketAveragePerMTU(
@@ -422,16 +419,16 @@ function PerformAnalysis()
 		"Avg Gross Traded Volume per MTU (MWh)",
 		gen_summary[gen_summary.Case .== "Fixed", :],
 	)
-	savefig(p_fixed_avg, "$results_path_base/trading_volume_price_bucket_avg_per_mtu_fixed36h.png")
-	println("saved: $results_path_base/trading_volume_price_bucket_avg_per_mtu_fixed36h.png")
+	savefig(p_fixed_avg, "$output_dir/trading_volume_price_bucket_avg_per_mtu_fixed36h.png")
+	println("saved: $output_dir/trading_volume_price_bucket_avg_per_mtu_fixed36h.png")
 
 	p_rolling_avg = PlotPriceBucketAveragePerMTU(
 		"Rolling 36h - avg Gross Traded Volume per MTU by price bucket, per solver / method",
 		"Avg Gross Traded Volume per MTU (MWh)",
 		gen_summary[gen_summary.Case .== "Rolling", :],
 	)
-	savefig(p_rolling_avg, "$results_path_base/trading_volume_price_bucket_avg_per_mtu_rolling36h.png")
-	println("saved: $results_path_base/trading_volume_price_bucket_avg_per_mtu_rolling36h.png")
+	savefig(p_rolling_avg, "$output_dir/trading_volume_price_bucket_avg_per_mtu_rolling36h.png")
+	println("saved: $output_dir/trading_volume_price_bucket_avg_per_mtu_rolling36h.png")
 
 	# --- storage only (separate chart, not folded into the generator totals) ---
 	storage_fixed_df = BuildBucketDataFrame("Fixed", fixed_volumes, fixed_counts, ["Storage"])
@@ -448,18 +445,18 @@ function PerformAnalysis()
 		"Storage Gross Throughput (million MWh)",
 		storage_summary[storage_summary.Case .== "Fixed", :],
 	)
-	savefig(p_storage_fixed, "$results_path_base/storage_throughput_price_bucket_fixed36h.png")
-	println("saved: $results_path_base/storage_throughput_price_bucket_fixed36h.png")
+	savefig(p_storage_fixed, "$output_dir/storage_throughput_price_bucket_fixed36h.png")
+	println("saved: $output_dir/storage_throughput_price_bucket_fixed36h.png")
 
 	p_storage_rolling = PlotPriceBucketComparison(
 		"Rolling 36h - Storage Gross Throughput by price bucket, per solver / method",
 		"Storage Gross Throughput (million MWh)",
 		storage_summary[storage_summary.Case .== "Rolling", :],
 	)
-	savefig(p_storage_rolling, "$results_path_base/storage_throughput_price_bucket_rolling36h.png")
-	println("saved: $results_path_base/storage_throughput_price_bucket_rolling36h.png")
+	savefig(p_storage_rolling, "$output_dir/storage_throughput_price_bucket_rolling36h.png")
+	println("saved: $output_dir/storage_throughput_price_bucket_rolling36h.png")
 
-	XLSX.writetable("$results_path_base/price_bucket_trading_volume_details.xlsx",
+	XLSX.writetable("$output_dir/price_bucket_trading_volume_details.xlsx",
 		"by_generator" => gen_combined_df,
 		"summary" => gen_summary,
 		"permutation_spread" => gen_spread,
@@ -468,7 +465,15 @@ function PerformAnalysis()
 		"storage_spread" => storage_spread;
 		overwrite=true,
 	)
-	println("saved: $results_path_base/price_bucket_trading_volume_details.xlsx")
+	println("saved: $output_dir/price_bucket_trading_volume_details.xlsx")
+
+	sources = merge(
+		Dict("Fixed: $k" => v for (k, v) in fixed_result_dirs),
+		Dict("Rolling: $k" => v for (k, v) in rolling_result_dirs),
+		Dict("Reference (Laura) data dir" => laura_data_dir),
+	)
+	AnalysisOutput.WriteManifest(output_dir, sources)
+	AnalysisOutput.UpdateLatestIndex("price_bucket_comparison", output_dir)
 
 	return (p_fixed, p_rolling, p_fixed_avg, p_rolling_avg, p_storage_fixed, p_storage_rolling, gen_combined_df, gen_summary, gen_spread, storage_combined_df, storage_summary, storage_spread)
 end
