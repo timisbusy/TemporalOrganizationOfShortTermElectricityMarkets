@@ -439,7 +439,19 @@ function build(time_period, marketresults, initialization, data, market)
             set_attribute(m, "Method", 1)
          else
             throw("unknown solver_method \"$solver_method\" in optimizationModelConfig - supported solver methods for gurobi are \"ipm\" (2), \"simplex\" (0) and \"dual_simplex\" (1)")
-        end 
+        end
+
+        # optional experimental knobs for the LP-degeneracy investigation (round-adjustment-
+        # precision branch) - Crossover=0 skips pushing the barrier method's interior solution to
+        # an arbitrary vertex, Presolve=0 disables Gurobi's own problem restructuring, both tested
+        # as candidate mitigations for cross-solver trading-volume divergence among tied
+        # (zero-marginal-cost) generators
+        if haskey(data, :optimizationModelConfig) && haskey(data[:optimizationModelConfig], "gurobi_crossover")
+            set_attribute(m, "Crossover", Int(data[:optimizationModelConfig]["gurobi_crossover"]))
+        end
+        if haskey(data, :optimizationModelConfig) && haskey(data[:optimizationModelConfig], "gurobi_presolve")
+            set_attribute(m, "Presolve", Int(data[:optimizationModelConfig]["gurobi_presolve"]))
+        end
     end
 
 	# build the sets, time series and parameters based on the inputs
