@@ -441,11 +441,25 @@ function AgentEconomicMetrics(finalDispatchDecisions, transactions, a_type, agen
 	return (quantity=quantity, load_utility=load_utility, payments=payments, revenue=revenue, traded_volume=traded_volume, fuel_cost=fuel_cost, surplus=surplus)
 end
 
-function GetEconomicIndicatorsForRange(market_result_container,time_range)
+# Counterbalanced imbalance energy for one MTU, matching the validated definition: when the
+# variable generator's adjustment and the balancing generator's adjustment are both nonzero and
+# opposite in sign - i.e. the balancing generator absorbed a shortfall/surplus in the variable
+# generator's delivered output - the imbalance is however much of that shortfall/surplus got
+# absorbed, signed by the balancing generator's own adjustment direction. Zero otherwise (no
+# counterbalancing happened, or one/both adjustments were exactly zero).
+function CounterbalancedImbalance(variable_delta, balancing_delta; atol=1e-6)
+	if abs(variable_delta) > atol && abs(balancing_delta) > atol && sign(variable_delta) == -sign(balancing_delta)
+		return sign(balancing_delta) * min(abs(balancing_delta), abs(variable_delta))
+	else
+		return 0.0
+	end
+end
 
-	economic_indicators = DataFrame(SEW=[], DemandUtility=[], ProductionCosts=[], ProducerSurplus=[],ConsumerSurplus=[],StorageRevenue=[])# , WeightedAveragePrice=[])
+function GetEconomicIndicatorsForRange(market_result_container,time_range; imbalance_agents::Union{Nothing,Tuple{String,String}}=nothing)
+
+	economic_indicators = DataFrame(SEW=[], DemandUtility=[], ProductionCosts=[], ProducerSurplus=[],ConsumerSurplus=[],StorageRevenue=[],ImbalanceEnergy=[])# , WeightedAveragePrice=[])
 	agent_indicators = DataFrame(Agent=[],Quantity=[],LoadUtility=[],Payments=[],Revenue=[],FuelCost=[],Surplus=[], TradedVolume=[], SOCChange=[])
-	mtu_economic_indicators = DataFrame(MTU=[], SEW=[], DemandUtility=[], ProductionCosts=[], ProducerSurplus=[],ConsumerSurplus=[],StorageRevenue=[])
+	mtu_economic_indicators = DataFrame(MTU=[], SEW=[], DemandUtility=[], ProductionCosts=[], ProducerSurplus=[],ConsumerSurplus=[],StorageRevenue=[],ImbalanceEnergy=[])
 
 	# get data from market clearing
 	finalDispatchDecisions = GetFinalDispatchDecisionsForRange(market_result_container,time_range)
@@ -458,11 +472,11 @@ function GetEconomicIndicatorsForRange(market_result_container,time_range)
 	# handle gens and demands
 	agentMap = market_result_container.Results[1].AgentMap
 
-	return CalculateEconomicIndicators(finalDispatchDecisions, transactions, agentMap, time_range)
+	return CalculateEconomicIndicators(finalDispatchDecisions, transactions, agentMap, time_range; imbalance_agents=imbalance_agents)
 
 end
 
-function CalculateEconomicIndicators(finalDispatchDecisions, transactions, agentMap, time_range)
+function CalculateEconomicIndicators(finalDispatchDecisions, transactions, agentMap, time_range; imbalance_agents::Union{Nothing,Tuple{String,String}}=nothing)
 	# scope both inputs to the requested delivery-MTU range ourselves - time_range is part of this
 	# function's signature, so its contract should not depend on the caller having already filtered
 	# to match. finalDispatchDecisions/transactions from a caller that filtered on its own filters
@@ -471,9 +485,9 @@ function CalculateEconomicIndicators(finalDispatchDecisions, transactions, agent
 	finalDispatchDecisions = finalDispatchDecisions[(time_range.start .<= finalDispatchDecisions.mtu .<= time_range.stop), :]
 	transactions = transactions[(time_range.start .<= transactions[!, mtu_symbol] .<= time_range.stop), :]
 
-	economic_indicators = DataFrame(SEW=[], DemandUtility=[], ProductionCosts=[], ProducerSurplus=[],ConsumerSurplus=[],StorageRevenue=[])# , WeightedAveragePrice=[])
+	economic_indicators = DataFrame(SEW=[], DemandUtility=[], ProductionCosts=[], ProducerSurplus=[],ConsumerSurplus=[],StorageRevenue=[],ImbalanceEnergy=[])# , WeightedAveragePrice=[])
 	agent_indicators = DataFrame(Agent=[],Quantity=[],LoadUtility=[],Payments=[],Revenue=[],FuelCost=[],Surplus=[], TradedVolume=[], SOCChange=[])
-	mtu_economic_indicators = DataFrame(MTU=[], SEW=[], DemandUtility=[], ProductionCosts=[], ProducerSurplus=[],ConsumerSurplus=[],StorageRevenue=[])
+	mtu_economic_indicators = DataFrame(MTU=[], SEW=[], DemandUtility=[], ProductionCosts=[], ProducerSurplus=[],ConsumerSurplus=[],StorageRevenue=[],ImbalanceEnergy=[])
 
 	# add calculated columns to transactions
 
@@ -577,16 +591,27 @@ function CalculateEconomicIndicators(finalDispatchDecisions, transactions, agent
 
 	storage_revenue = snap0(storage_revenue)
 	storage_quantity = snap0(storage_quantity)
-	
+
 	# note that revenue here is also reported as SEW, assuming no costs
 	push!(agent_indicators, ["Storage", storage_quantity, 0.0, 0.0, storage_revenue, 0.0, storage_revenue, 0.0, storage_soc_change]) # note zero for traded quantity here as storage is not treated as economic agent
-	
+
 	demand_utility = combine((agent_indicators[ [a in agentMap[HelperModelResults.AGENT_DEMAND] for a in agent_indicators[!, :Agent]], :]), :LoadUtility => sum)[1,1]
 	production_costs = combine((agent_indicators[ [a in agentMap[HelperModelResults.AGENT_GENERATOR] for a in agent_indicators[!, :Agent]], :]), :FuelCost => sum)[1,1]
-	consumer_surplus = combine((agent_indicators[ [a in agentMap[HelperModelResults.AGENT_DEMAND] for a in agent_indicators[!, :Agent]], :]), :Surplus => sum)[1,1] 
-	producer_surplus = combine((agent_indicators[ [a in agentMap[HelperModelResults.AGENT_GENERATOR] for a in agent_indicators[!, :Agent]], :]), :Surplus => sum)[1,1] 
+	consumer_surplus = combine((agent_indicators[ [a in agentMap[HelperModelResults.AGENT_DEMAND] for a in agent_indicators[!, :Agent]], :]), :Surplus => sum)[1,1]
+	producer_surplus = combine((agent_indicators[ [a in agentMap[HelperModelResults.AGENT_GENERATOR] for a in agent_indicators[!, :Agent]], :]), :Surplus => sum)[1,1]
 	sew = demand_utility - production_costs
-	push!(economic_indicators,[sew, demand_utility, production_costs, producer_surplus,consumer_surplus,storage_revenue]) #,weighted_average_price])
+
+	# imbalance_agents is opt-in (nothing by default) - CalculateEconomicIndicators otherwise
+	# knows nothing about which generator is "the uncertain one" vs "the one absorbing its
+	# forecast error", that distinction lives in the experiment's own agent config, not agentMap.
+	imbalance_energy = if imbalance_agents !== nothing
+		(variable_agent, balancing_agent) = imbalance_agents
+		snap0(sum(CounterbalancedImbalance.(finalDispatchDecisions[!, Symbol("$(variable_agent)_adj")], finalDispatchDecisions[!, Symbol("$(balancing_agent)_adj")])))
+	else
+		0.0
+	end
+
+	push!(economic_indicators,[sew, demand_utility, production_costs, producer_surplus,consumer_surplus,storage_revenue,imbalance_energy]) #,weighted_average_price])
 
 	for mtu in time_range
 		mtu_consumer_surplus = 0.0
@@ -604,6 +629,12 @@ function CalculateEconomicIndicators(finalDispatchDecisions, transactions, agent
 		mtu_storage_revenue = if nrow(mtu_finalDispatchDecisions) > 0
 			mtu_price = coalesce(mtu_finalDispatchDecisions.FinalAuctionPrice[1], 0.0)
 			snap0((mtu_finalDispatchDecisions.StorageDischarge[1] - mtu_finalDispatchDecisions.StorageCharge[1]) * mtu_price)
+		else
+			0.0
+		end
+		mtu_imbalance_energy = if imbalance_agents !== nothing && nrow(mtu_finalDispatchDecisions) > 0
+			(variable_agent, balancing_agent) = imbalance_agents
+			snap0(CounterbalancedImbalance(mtu_finalDispatchDecisions[1, Symbol("$(variable_agent)_adj")], mtu_finalDispatchDecisions[1, Symbol("$(balancing_agent)_adj")]))
 		else
 			0.0
 		end
@@ -628,7 +659,7 @@ function CalculateEconomicIndicators(finalDispatchDecisions, transactions, agent
 
 
 		mtu_sew = mtu_demand_utility - mtu_production_costs
-		push!(mtu_economic_indicators,[mtu, mtu_sew, mtu_demand_utility, mtu_production_costs,  mtu_producer_surplus,mtu_consumer_surplus,mtu_storage_revenue]) #,weighted_average_price])
+		push!(mtu_economic_indicators,[mtu, mtu_sew, mtu_demand_utility, mtu_production_costs,  mtu_producer_surplus,mtu_consumer_surplus,mtu_storage_revenue,mtu_imbalance_energy]) #,weighted_average_price])
 
 	end
 
