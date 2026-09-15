@@ -17,8 +17,8 @@ using .Helpers.HelperModelResults
 include("../output_data/market_data_storage.jl")
 
 
-fixed_path_base = "results/1789125981_laura_final_check_fixed_v2" # rerun with demand_adjust=false, matching rolling_36's default
-rolling_path_base = "results/1788950636_laura_final_check_rolling"
+fixed_path_base = "results/1789484690_fresh_validate_fixed_36" # exports FinalAuctionPrice natively - no RAW backfill needed
+rolling_path_base = "results/1789484741_fresh_validate_rolling_36"
 results_path_base = "results/validation_results"
 
 
@@ -40,10 +40,10 @@ transaction_paths = Dict{String,String}(
 	"Rolling Horizon" => "$rolling_path_base/transactions.xlsx",
 )
 
-# per-clearing RAW export prefix, used to read the executed price for each real MTU directly
-# (see ExecutedPriceByMTU) rather than via transactions.xlsx, which only records a leg when an
-# agent's adjustment is nonzero - a meaningful fraction of MTUs have zero adjustment from every
-# agent, so a transactions.xlsx-based price lookup silently drops those MTUs.
+# per-clearing RAW export prefix - only used as a fallback to backfill FinalAuctionPrice for
+# exports written before GetFinalDispatchDecisions carried it through (see
+# MarketDataStorage.AddFinalAuctionPriceFromRAW! below); the fixed_path_base/rolling_path_base
+# runs above already have the column natively, so this fallback is skipped for them.
 raw_dispatch_prefix = Dict{String,String}(
 	"Fixed Horizon" => "$fixed_path_base/RAW/decisionvariables_validate_laura_fixed_36_",
 	"Rolling Horizon" => "$rolling_path_base/RAW/decisionvariables_validate_laura_rolling_36_",
@@ -60,25 +60,6 @@ end
 function LoadFile(filepath)
     df = DataFrame(XLSX.readtable(filepath, "data"))
     return df
-end
-
-# executed price per real MTU, read directly from each clearing's own RAW export (the first row
-# of its "data" sheet is always the hour it executed). Price is a property of the clearing
-# itself, not of any one transaction, so this stays complete even for MTUs where every agent's
-# adjustment happened to be zero - unlike pulling price from transactions.xlsx (see
-# raw_dispatch_prefix above).
-function ExecutedPriceByMTU(case)
-	prefix = raw_dispatch_prefix[case]
-	mtu = Int[]
-	price = Float64[]
-	for mtu_cleared in 12:672
-		path = "$prefix$mtu_cleared.xlsx"
-		isfile(path) || continue
-		df = DataFrame(XLSX.readtable(path, "data"))
-		push!(mtu, df[1, :mtu])
-		push!(price, df[1, :price])
-	end
-	return DataFrame(mtu=mtu, price=price)
 end
 
 function LoadFiles(type)
@@ -102,6 +83,14 @@ function PerformAnalysis()
 	println("got transactions: $(keys(transaction_files))")
 	final_dispatch_decision_files = LoadFiles("dispatch_decisions")
 	println("got dispatch_decisions: $(keys(final_dispatch_decision_files))")
+
+	# these exports predate GetFinalDispatchDecisions carrying FinalAuctionPrice through, so
+	# backfill it from each MTU's own per-clearing RAW export (see storage revenue below for why
+	# it's needed) - skipped entirely for a fresh run's export, which already has the column.
+	for case in cases
+		hasproperty(final_dispatch_decision_files[case], :FinalAuctionPrice) && continue
+		MarketDataStorage.AddFinalAuctionPriceFromRAW!(final_dispatch_decision_files[case], raw_dispatch_prefix[case])
+	end
 
 	agent_map = Dict{HelperModelResults.AgentTypeEnum, Vector{String}}(
 		AGENT_GENERATOR => ["3G_Base","4G_Shoulder","5G_Peak","6G_Wind","7G_Solar"],
@@ -289,17 +278,12 @@ function PerformAnalysis()
 		# executed each MTU actually settled at - not the "Storage Revenue (€)" figure from
 		# CalculateEconomicIndicators above, which nets quantity*price across every adjustment leg
 		# from every clearing that ever touched an MTU (the same executed-vs-gross distinction as
-		# generator Traded Volume). final_dispatch_decisions.xlsx doesn't carry price (it's dropped
-		# in GetFinalDispatchDecisions); pulling it from transactions.xlsx instead was tried first
-		# but silently drops any MTU where every agent's adjustment happened to be exactly zero
-		# (~17% of MTUs in the rolling case) - so read it straight from each clearing's own RAW
-		# export instead, where price is always present regardless of what actually traded.
-		executed_price = ExecutedPriceByMTU(case)
-
-		priced = innerjoin(mtu1_dvs[!, [:mtu, :StorageCharge, :StorageDischarge]], executed_price, on = :mtu)
-
-		discharge_revenue = sum(priced.StorageDischarge .* priced.price)
-		charging_cost = sum(priced.StorageCharge .* priced.price)
+		# generator Traded Volume). mtu1_dvs.FinalAuctionPrice (backfilled above) already carries
+		# this price for every MTU regardless of whether any agent's adjustment was nonzero -
+		# unlike pulling price from transactions.xlsx, which only records a leg when an agent's
+		# adjustment is nonzero and so silently drops ~17% of MTUs in the rolling case.
+		discharge_revenue = sum(mtu1_dvs.StorageDischarge .* mtu1_dvs.FinalAuctionPrice)
+		charging_cost = sum(mtu1_dvs.StorageCharge .* mtu1_dvs.FinalAuctionPrice)
 		net_storage_revenue = discharge_revenue - charging_cost
 		avg_discharge_price = discharge_total > 0 ? discharge_revenue / discharge_total : 0.0
 		avg_charge_price = charge_total > 0 ? charging_cost / charge_total : 0.0

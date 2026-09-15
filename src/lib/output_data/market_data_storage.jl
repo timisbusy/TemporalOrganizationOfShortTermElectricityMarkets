@@ -213,7 +213,13 @@ function GetFinalDispatchDecisions(market_result_container)
 
 	finalDispatchDecisions = unique!(finalDispatchDecisions, "mtu"; keep=:last)
 
-	select!(finalDispatchDecisions,Not(["price"]))
+	# "mtu"-deduplication keeps the LAST clearing to have touched each MTU - since Results are
+	# appended in increasing TimeCleared order, that's the clearing whose own TimeCleared equals
+	# the MTU itself, i.e. the final auction that actually included/delivered it. Its price is
+	# therefore the realized settlement price for that MTU, not just "some clearing's price" - see
+	# CalculateEconomicIndicators' storage revenue calculation below for why that distinction
+	# matters (kept, renamed, rather than dropped as before).
+	rename!(finalDispatchDecisions, :price => :FinalAuctionPrice)
 	market_result_container.DecisionVariablesCache = finalDispatchDecisions
 	market_result_container.DecisionVariablesCacheBust = false
 	return finalDispatchDecisions
@@ -225,13 +231,34 @@ end
 function AddDecisionVariablesToCache!(market_result_container, mr)
 	finalDispatchDecisions = something(market_result_container.DecisionVariablesCache, DataFrame())
 
-	dvs = mr.DecisionVariables
-	dvNoPrice = select(dvs,Not(["price"]))
-	finalDispatchDecisions = vcat(finalDispatchDecisions, dvNoPrice)
+	# rename (not select-out) into a copy - mr.DecisionVariables itself (and its RAW export) keeps
+	# its own "price" column untouched; see the rename!/comment in GetFinalDispatchDecisions above
+	# for why finalDispatchDecisions' copy becomes FinalAuctionPrice once deduplicated by mtu.
+	dvs = rename(mr.DecisionVariables, :price => :FinalAuctionPrice)
+	finalDispatchDecisions = vcat(finalDispatchDecisions, dvs)
 	finalDispatchDecisions = unique!(finalDispatchDecisions, "mtu"; keep=:last)
 
 	market_result_container.DecisionVariablesCache = finalDispatchDecisions
 	market_result_container.DecisionVariablesCacheBust = false
+end
+
+# Backfills a FinalAuctionPrice column onto a finalDispatchDecisions DataFrame that was exported
+# (final_dispatch_decisions.xlsx) before GetFinalDispatchDecisions started carrying it through -
+# only needed for those older, already-written exports; a finalDispatchDecisions freshly built
+# in-memory from a MarketResultContainer already has it. Reads each MTU's own price from its own
+# per-clearing RAW export (decisionvariables_<raw_dispatch_prefix><mtu>.xlsx) - the same clearing
+# GetFinalDispatchDecisions' own "mtu"-dedup (keep=:last) would itself have kept for that MTU, so
+# this reproduces exactly the value a fresh run would have produced.
+function AddFinalAuctionPriceFromRAW!(finalDispatchDecisions, raw_dispatch_prefix)
+	prices = Vector{Union{Float64,Missing}}(missing, nrow(finalDispatchDecisions))
+	for (i, mtu) in enumerate(finalDispatchDecisions.mtu)
+		path = "$raw_dispatch_prefix$mtu.xlsx"
+		isfile(path) || continue
+		df = DataFrame(XLSX.readtable(path, "data"))
+		prices[i] = df[1, :price]
+	end
+	finalDispatchDecisions[!, :FinalAuctionPrice] = prices
+	return finalDispatchDecisions
 end
 
 # this function gets all transactions and merges them into a single dataframe (or uses a cached version)
@@ -479,7 +506,12 @@ function CalculateEconomicIndicators(finalDispatchDecisions, transactions, agent
 	=#
 	# plus special handling for storage
 
-	storage_revenue = combine((transactions[transactions.Agent .== "Storage", :]), payrev_symbol => sum)[1,1]
+	# storage revenue = final dispatched (discharge - charge) for each MTU, priced at that MTU's own
+	# FinalAuctionPrice - matching the validation definition (the settlement price of the auction
+	# that actually delivered the MTU), NOT the transactions-based sum(quantity*price) across every
+	# speculative adjustment leg from every clearing that ever touched an MTU (that "gross across
+	# the full look-ahead window" quantity is what Gross Traded Volume reports for generators).
+	storage_revenue = sum(skipmissing((finalDispatchDecisions.StorageDischarge .- finalDispatchDecisions.StorageCharge) .* finalDispatchDecisions.FinalAuctionPrice))
 	# like this we report out the sum quantity of energy charged and discharged - the difference is also interesting
 	storage_quantity = 	combine(finalDispatchDecisions, :StorageDischarge => sum)[1,1] # + combine(finalDispatchDecisions, :StorageCharge => sum)[1,1]
 
@@ -555,13 +587,24 @@ function CalculateEconomicIndicators(finalDispatchDecisions, transactions, agent
 	push!(economic_indicators,[sew, demand_utility, production_costs, producer_surplus,consumer_surplus,storage_revenue]) #,weighted_average_price])
 
 	for mtu in time_range
-		mtu_storage_revenue = snap0(combine((transactions[transactions.Agent .== "Storage" .&& transactions[!, mtu_symbol] .== mtu, :]), payrev_symbol => sum)[1,1])
 		mtu_consumer_surplus = 0.0
 		mtu_producer_surplus = 0.0
 		mtu_demand_utility = 0.0
 		mtu_production_costs = 0.0
 		mtu_finalDispatchDecisions = finalDispatchDecisions[finalDispatchDecisions.mtu .== mtu, :]
 		mtu_transactions = transactions[transactions[!, mtu_symbol] .== mtu, :]
+		# see the whole-range storage_revenue above for why this uses final dispatch * FinalAuctionPrice
+		# rather than transactions. time_range can extend past the last MTU finalDispatchDecisions
+		# actually covers (e.g. plot() passes a test_range derived from clearForDays, which can run
+		# past the horizon the configured clearing schedule delivered) - nrow==0 there, so default
+		# to 0.0 rather than indexing into an empty row, matching the old transactions-based
+		# combine(...,sum) call this replaced (sum over zero rows was already 0.0).
+		mtu_storage_revenue = if nrow(mtu_finalDispatchDecisions) > 0
+			mtu_price = coalesce(mtu_finalDispatchDecisions.FinalAuctionPrice[1], 0.0)
+			snap0((mtu_finalDispatchDecisions.StorageDischarge[1] - mtu_finalDispatchDecisions.StorageCharge[1]) * mtu_price)
+		else
+			0.0
+		end
 		for (a_type, agents) in agentMap
 			for agent in agents
 				metrics = AgentEconomicMetrics(mtu_finalDispatchDecisions, mtu_transactions, a_type, agent)
