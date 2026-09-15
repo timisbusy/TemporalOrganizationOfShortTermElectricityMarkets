@@ -70,12 +70,35 @@ function LoadLauraSummary(case)
 		vals["Production Cost - $gen (€)"] = sh[generator_cost_row[gen], 2]
 	end
 
-	# "TOTAL FINANCIAL REVENUE" section - Gross Traded column only (col 4); Net Revenue/Net Traded
-	# (cols 2-3) and the Total Net Revenue row (25, col 2) were dropped from the table.
+	# "TOTAL FINANCIAL REVENUE" section: Gross Traded (col 4) and Net Revenue (col 2, relabeled
+	# "Generator Cashflow" - it's raw revenue = sum(quantity*price), not netted against
+	# Production Cost, so "Cashflow" avoids implying it's already a profit/surplus figure). Net
+	# Traded (col 3) stays dropped. Row 25's own totals (cols 2 and 4) are blank in her sheet, so
+	# sum the 5 generators ourselves for both.
 	gross_traded_row = Dict("Base" => 20, "Shoulder" => 21, "Peak" => 22, "Solar" => 23, "Wind" => 24)
+	total_gross_traded = 0.0
+	total_cashflow = 0.0
 	for gen in generators
-		vals["Gross Traded Volume - $gen (MWh)"] = sh[gross_traded_row[gen], 4]
+		r = gross_traded_row[gen]
+		v = sh[r, 4]
+		vals["Gross Traded Volume - $gen (MWh)"] = v
+		total_gross_traded += v
+		c = sh[r, 2]
+		vals["Generator Cashflow - $gen (€)"] = c
+		total_cashflow += c
 	end
+	vals["Gross Traded Volume - Total (MWh)"] = total_gross_traded
+	vals["Generator Cashflow - Total (€)"] = total_cashflow
+
+	# "GENERATOR PROFITS (Full Revenue - Cost)" section - Total Profit column, rows 39-43 per
+	# generator plus row 44's real Total (unlike Gross Traded/Cashflow above, this total cell
+	# isn't blank in her sheet). Relabeled "Generator Surplus" - unlike Cashflow, this genuinely
+	# is netted against Production Cost, so "Surplus" is accurate here.
+	profit_row = Dict("Base" => 39, "Shoulder" => 40, "Peak" => 41, "Solar" => 42, "Wind" => 43)
+	for gen in generators
+		vals["Generator Surplus - $gen (€)"] = sh[profit_row[gen], 2]
+	end
+	vals["Generator Surplus - Total (€)"] = sh[44, 2]
 
 	vals["Energy Discharged (MWh)"] = sh[48, 2]
 	vals["Energy Charged (MWh)"] = sh[49, 2]
@@ -119,10 +142,37 @@ function LoadOurKPIs(case)
 
 	gross_vol = DataFrame(XLSX.readtable(our_kpi_path, "gross_traded_volume"))
 	gross_vol_case = gross_vol[gross_vol.Case .== label, :]
+	total_gross_traded = 0.0
 	for gen in generators
 		row = gross_vol_case[gross_vol_case.Agent .== generator_agent_names[gen], :][1, :]
 		vals["Gross Traded Volume - $gen (MWh)"] = row.GrossTradedVolume
+		total_gross_traded += row.GrossTradedVolume
 	end
+	vals["Gross Traded Volume - Total (MWh)"] = total_gross_traded
+
+	# "total_financial_revenue" sheet's NetRevenue = sum(quantity*price), matching Laura's
+	# "TOTAL FINANCIAL REVENUE" col 2 - same transactions basis as Gross Traded Volume above
+	# (full look-ahead window, not executed-only), just signed instead of summed as |q|.
+	fin_rev = DataFrame(XLSX.readtable(our_kpi_path, "total_financial_revenue"))
+	fin_rev_case = fin_rev[fin_rev.Case .== label, :]
+	total_cashflow = 0.0
+	for gen in generators
+		row = fin_rev_case[fin_rev_case.Agent .== generator_agent_names[gen], :][1, :]
+		vals["Generator Cashflow - $gen (€)"] = row.NetRevenue
+		total_cashflow += row.NetRevenue
+	end
+	vals["Generator Cashflow - Total (€)"] = total_cashflow
+
+	# Generator Surplus = Cashflow - Production Cost - derived from values already loaded above,
+	# matching Laura's "GENERATOR PROFITS (Full Revenue - Cost)" section directly rather than
+	# needing a separate sheet.
+	total_surplus = 0.0
+	for gen in generators
+		s = vals["Generator Cashflow - $gen (€)"] - vals["Production Cost - $gen (€)"]
+		vals["Generator Surplus - $gen (€)"] = s
+		total_surplus += s
+	end
+	vals["Generator Surplus - Total (€)"] = total_surplus
 
 	storage_summary = DataFrame(XLSX.readtable(our_kpi_path, "storage_summary"))
 	storage_row = storage_summary[(storage_summary.Case .== label) .& (storage_summary.Period .== "Total"), :][1, :]
@@ -156,10 +206,11 @@ function KPIRowOrder()
 		"Imbalance (MWh)",
 		"Wind Curtailment (MWh)",
 	]))
-	push!(rows, ("Dispatch Quantity by Generator (MWh)", ["Dispatch Quantity - $gen (MWh)" for gen in generators]))
-	push!(rows, ("Dispatch Quantity - Total (MWh)", ["Dispatch Quantity - Total (MWh)"]))
+	push!(rows, ("Dispatch Quantity by Generator (MWh)", vcat(["Dispatch Quantity - $gen (MWh)" for gen in generators], ["Dispatch Quantity - Total (MWh)"])))
 	push!(rows, ("Production Cost by Generator (€)", ["Production Cost - $gen (€)" for gen in generators]))
-	push!(rows, ("Gross Traded Volume (MWh)", ["Gross Traded Volume - $gen (MWh)" for gen in generators]))
+	push!(rows, ("Gross Traded Volume (MWh)", vcat(["Gross Traded Volume - $gen (MWh)" for gen in generators], ["Gross Traded Volume - Total (MWh)"])))
+	push!(rows, ("Generator Cashflow (€)", vcat(["Generator Cashflow - $gen (€)" for gen in generators], ["Generator Cashflow - Total (€)"])))
+	push!(rows, ("Generator Surplus (€)", vcat(["Generator Surplus - $gen (€)" for gen in generators], ["Generator Surplus - Total (€)"])))
 	push!(rows, ("Storage", [
 		"Energy Discharged (MWh)",
 		"Energy Charged (MWh)",
@@ -209,6 +260,7 @@ function ShortLabel(kpi_label)
 			return gen
 		end
 	end
+	occursin("- Total (", kpi_label) && return "Total"
 	return kpi_label
 end
 
