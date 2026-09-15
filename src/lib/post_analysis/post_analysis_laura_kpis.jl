@@ -133,7 +133,13 @@ function PerformAnalysis()
 		# transactions, which (like Traded Volume) nets every adjustment leg from every clearing
 		# that touched a delivered MTU, not just the one that actually executed it - see the
 		# Executed-only Revenue/Payments block further down for the figures that do match her sheet.
-		(economic_indicators, agent_indicators, transactions, finalDispatchDecisions, mtu_economic_indicators) = MarketDataStorage.CalculateEconomicIndicators(final_dispatch_decision_files[case],transaction_files[case],agent_map,time_range)
+		# imbalance_agents: matches Laura's own definition (the "Imbalance" section below the main
+		# loop used to compute this by hand) - when Wind's and Peak's adjustments at an MTU are both
+		# nonzero and opposite in sign, Peak absorbed however much of Wind's forecast-error shortfall
+		# or surplus it could, and that's the imbalance for that MTU.
+		(economic_indicators, agent_indicators, transactions, finalDispatchDecisions, mtu_economic_indicators) = MarketDataStorage.CalculateEconomicIndicators(final_dispatch_decision_files[case],transaction_files[case],agent_map,time_range; imbalance_agents=("6G_Wind","5G_Peak"))
+
+		push!(imbalance_all, (Case=case, ImbalanceEnergy=economic_indicators[1, Symbol("Imbalance Energy (MWh)")]))
 
 		# Wind Curtailment, matching Laura's "Total Wind Curtailed (MWh)": Q_6G_Wind is the
 		# model's available-capacity time series for wind (m.ext[:timeseries][:Q_gen], exported
@@ -209,42 +215,6 @@ function PerformAnalysis()
 
 		financial_revenue[!, :Case] .= case
 		financial_revenue_all = vcat(financial_revenue_all, financial_revenue; cols=:union)
-	end
-
-	
-
-	# Imbalance
-		# defined by Laura as:
-		# for the auction held in t_0
-		# wind_delta = (Wind[t_0] - Wind_prev[t_0])
-		# peak_delta = (Peak[t_0] - Peak_prev[t_0])
-		# if abs(wind_delta) > atol && abs(peak_delta) > atol && sign(wind_delta) == -sign(peak_delta)
-		# 	return sign(peak_delta) * min(abs(peak_delta), abs(wind_delta))
-		# else
-		# 	return 0.0
-		# end
-	for case in cases
-		println("get imbalance energy for case: $case")
-		last_auction_mtu = 672
-		atol = 1e-6
-		mtu1_dvs = final_dispatch_decision_files[case][ final_dispatch_decision_files[case][!,:mtu] .<= last_auction_mtu, :]
-		imbalance_energy = 0.0
-		for row in eachrow(mtu1_dvs)
-			wind_delta = row["6G_Wind_adj"]
-			peak_delta = row["5G_Peak_adj"]
-
-			if abs(wind_delta) > atol && abs(peak_delta) > atol && sign(wind_delta) == -sign(peak_delta)
-				imbalance = sign(peak_delta) * min(abs(peak_delta), abs(wind_delta))
-				# signed sum, matching Laura's own label ("MWh, +up / -down") and her
-				# sum(all_results[:imbalance_energy]) - using abs() here double-counted the
-				# (rare) negative entries as positive, inflating the total by ~2x their magnitude
-				imbalance_energy += imbalance
-			end
-		end
-
-		println("Imbalance for case $case : $imbalance_energy")
-
-		push!(imbalance_all, (Case=case, ImbalanceEnergy=imbalance_energy))
 	end
 
 	# Storage Charge/Discharge/Net/Throughput

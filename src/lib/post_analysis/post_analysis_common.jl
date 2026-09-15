@@ -30,6 +30,11 @@ const DEFAULT_AGENT_MAP = Dict{HelperModelResults.AgentTypeEnum,Vector{String}}(
 	AGENT_DEMAND => ["1D_HighBid", "2D_ModerateBid"],
 )
 
+# (variable generator, balancing generator) pair for MarketDataStorage.CounterbalancedImbalance -
+# Peak absorbs Wind's forecast-error adjustments in this agent config. Not passed by default (see
+# CalculateCaseIndicators) since most callers in this suite don't need imbalance at all.
+const DEFAULT_IMBALANCE_AGENTS = ("6G_Wind", "5G_Peak")
+
 # D0.5-D28 delivered-MTU window, excluding spin-up/tail clearings - the same range used throughout
 # the Laura KPI validation (post_analysis_laura_kpis.jl), so every module in this suite stays
 # comparable to the KPI tables and to each other.
@@ -62,14 +67,14 @@ end
 # - there is no pre-aggregated multi-case economic_indicators.xlsx/agent_indicators.xlsx with a
 # "Market Configuration" column to filter here (that shape only exists for
 # ClearMarketComparisonForConfig runs), so each case's indicators are computed on demand instead.
-function CalculateCaseIndicators(case_paths, case; agent_map=DEFAULT_AGENT_MAP, time_range=DEFAULT_TIME_RANGE, raw_dispatch_prefix=DEFAULT_RAW_DISPATCH_PREFIX)
+function CalculateCaseIndicators(case_paths, case; agent_map=DEFAULT_AGENT_MAP, time_range=DEFAULT_TIME_RANGE, raw_dispatch_prefix=DEFAULT_RAW_DISPATCH_PREFIX, imbalance_agents::Union{Nothing,Tuple{String,String}}=nothing)
 	final_dispatch_decisions = LoadCaseFile(case_paths, case, "final_dispatch_decisions.xlsx")
 	transactions = LoadCaseFile(case_paths, case, "transactions.xlsx")
 	# older exports predate GetFinalDispatchDecisions carrying FinalAuctionPrice through - backfill
 	# it from each MTU's own per-clearing RAW export in that case. A fresh run's export already has
 	# the column, so this is skipped entirely for those.
 	hasproperty(final_dispatch_decisions, :FinalAuctionPrice) || MarketDataStorage.AddFinalAuctionPriceFromRAW!(final_dispatch_decisions, raw_dispatch_prefix[case])
-	return MarketDataStorage.CalculateEconomicIndicators(final_dispatch_decisions, transactions, agent_map, time_range)
+	return MarketDataStorage.CalculateEconomicIndicators(final_dispatch_decisions, transactions, agent_map, time_range; imbalance_agents=imbalance_agents)
 end
 
 end;

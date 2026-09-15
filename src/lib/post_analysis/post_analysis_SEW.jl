@@ -15,7 +15,7 @@ function PerformAnalysis(case_paths)
 
 	# fresh per-case economic indicators (one row each) - see PostAnalysisCommon.CalculateCaseIndicators
 	# for why this is computed on demand rather than read from a pre-aggregated economic_indicators.xlsx
-	economic_indicators_by_case = Dict(case => PostAnalysisCommon.CalculateCaseIndicators(case_paths, case)[1] for case in CASES)
+	economic_indicators_by_case = Dict(case => PostAnalysisCommon.CalculateCaseIndicators(case_paths, case; imbalance_agents=PostAnalysisCommon.DEFAULT_IMBALANCE_AGENTS)[1] for case in CASES)
 
 	fixed = economic_indicators_by_case["Fixed Horizon"]
 	rolling = economic_indicators_by_case["Rolling Horizon"]

@@ -19,7 +19,6 @@ function PerformAnalysis(case_paths)
     analysis_dir_path = "$(PostAnalysisCommon.ANALYSIS_OUTPUT_BASE)/post_analysis_daily"
 
     dispatch_decision_paths = Dict(case => joinpath(case_paths[case], "final_dispatch_decisions.xlsx") for case in CASES)
-    mtu_economic_indicator_paths = Dict(case => joinpath(case_paths[case], "mtu_economic_results.xlsx") for case in CASES)
 
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 
@@ -30,7 +29,7 @@ function PerformAnalysis(case_paths)
     print_cases = CASES
 
 	dds = GetDispatchDecisions(print_cases, dispatch_decision_paths)
-    mtu_economic_indicators = GetMTUEconomicIndicators(print_cases, mtu_economic_indicator_paths)
+    mtu_economic_indicators = GetMTUEconomicIndicators(print_cases, case_paths)
 
 	println("MAY 19 RESULTS")
 
@@ -70,10 +69,15 @@ function GetDispatchDecisions(cases, dispatch_decision_paths)
 end
 
 
-function GetMTUEconomicIndicators(cases, mtu_economic_indicator_paths)
+# Computed fresh via CalculateCaseIndicators (final_dispatch_decisions.xlsx + transactions.xlsx),
+# not read from the pre-exported mtu_economic_results.xlsx - that export was written without
+# imbalance_agents set, so it has no real Imbalance Energy figures (see AnalyzeDrivers' imbalance
+# driver plot, which needs them).
+function GetMTUEconomicIndicators(cases, case_paths)
     inds = Dict{String,Any}()
     for case in cases
-        inds[case] = LoadFile(mtu_economic_indicator_paths[case])
+        (economic_indicators, agent_indicators, transactions, finalDispatchDecisions, mtu_economic_indicators) = PostAnalysisCommon.CalculateCaseIndicators(case_paths, case; imbalance_agents=PostAnalysisCommon.DEFAULT_IMBALANCE_AGENTS)
+        inds[case] = mtu_economic_indicators
         AddDayAndHour!(inds[case], Symbol("MTU"))
     end
     return inds
@@ -108,6 +112,7 @@ end
 
 
 sewSymbol =  Symbol("Socioeconomic Welfare (€)")
+imbalanceSymbol = Symbol("Imbalance Energy (MWh)")
 
 function AnalyzeDailySEW(print_cases, mtu_economic_indicators, dds, analysis_dir_path)
 
@@ -232,11 +237,19 @@ function AnalyzeDrivers(print_cases, mtu_economic_indicators, dispatch_decisions
     end
     println(daily_net_discharges)
 
+    daily_imbalances = Dict{String,Any}()
+    for (marketConfiguration, mei) in mtu_economic_indicators
+        daily_mei = groupby(mei, :Day)
+        daily_imbalance = combine(daily_mei, imbalanceSymbol => sum => imbalanceSymbol)
+        daily_imbalances[marketConfiguration] = daily_imbalance
+    end
 
     sew_diffs = DiffByDay(daily_sews["Rolling Horizon"], daily_sews["Fixed Horizon"], sewSymbol)
     net_discharge_diffs = DiffByDay(daily_net_discharges["Rolling Horizon"], daily_net_discharges["Fixed Horizon"], Symbol("Net Discharge"))
 
     shoulder_peak_dispatch_diffs = DiffByDay(daily_shoulder_peak_dispatches["Rolling Horizon"], daily_shoulder_peak_dispatches["Fixed Horizon"], shoulderPeakDispatchSymbol)
+
+    imbalance_diffs = DiffByDay(daily_imbalances["Rolling Horizon"], daily_imbalances["Fixed Horizon"], imbalanceSymbol)
 
 
 
@@ -247,6 +260,11 @@ function AnalyzeDrivers(print_cases, mtu_economic_indicators, dispatch_decisions
 
     spec = (feature = :delta_mid_peak_dispatch_mwh, title = "Shoulder + peak dispatch", xlabel = "Delta Mid + Peak dispatch [MWh]", filepath = "$analysis_dir_path/shoulder_peak_dispatch_driver.png")
     (x, y) = AlignedXY(shoulder_peak_dispatch_diffs, sew_diffs)
+
+    PlotDriver(spec, x, y)
+
+    spec = (feature = :delta_imbalance_energy_mwh, title = "Imbalance energy", xlabel = "Delta imbalance energy [MWh]", filepath = "$analysis_dir_path/imbalance_driver.png")
+    (x, y) = AlignedXY(imbalance_diffs, sew_diffs)
 
     PlotDriver(spec, x, y)
 
