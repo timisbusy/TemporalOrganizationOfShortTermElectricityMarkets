@@ -206,15 +206,11 @@ function KPIRowOrder()
 		"Imbalance (MWh)",
 		"Wind Curtailment (MWh)",
 	]))
-	push!(rows, ("Dispatch Quantity by Generator (MWh)", ["Dispatch Quantity - $gen (MWh)" for gen in generators]))
-	push!(rows, ("Dispatch Quantity - Total (MWh)", ["Dispatch Quantity - Total (MWh)"]))
+	push!(rows, ("Dispatch Quantity by Generator (MWh)", vcat(["Dispatch Quantity - $gen (MWh)" for gen in generators], ["Dispatch Quantity - Total (MWh)"])))
 	push!(rows, ("Production Cost by Generator (€)", ["Production Cost - $gen (€)" for gen in generators]))
-	push!(rows, ("Gross Traded Volume (MWh)", ["Gross Traded Volume - $gen (MWh)" for gen in generators]))
-	push!(rows, ("Gross Traded Volume - Total (MWh)", ["Gross Traded Volume - Total (MWh)"]))
-	push!(rows, ("Generator Cashflow (€)", ["Generator Cashflow - $gen (€)" for gen in generators]))
-	push!(rows, ("Generator Cashflow - Total (€)", ["Generator Cashflow - Total (€)"]))
-	push!(rows, ("Generator Surplus (€)", ["Generator Surplus - $gen (€)" for gen in generators]))
-	push!(rows, ("Generator Surplus - Total (€)", ["Generator Surplus - Total (€)"]))
+	push!(rows, ("Gross Traded Volume (MWh)", vcat(["Gross Traded Volume - $gen (MWh)" for gen in generators], ["Gross Traded Volume - Total (MWh)"])))
+	push!(rows, ("Generator Cashflow (€)", vcat(["Generator Cashflow - $gen (€)" for gen in generators], ["Generator Cashflow - Total (€)"])))
+	push!(rows, ("Generator Surplus (€)", vcat(["Generator Surplus - $gen (€)" for gen in generators], ["Generator Surplus - Total (€)"])))
 	push!(rows, ("Storage", [
 		"Energy Discharged (MWh)",
 		"Energy Charged (MWh)",
@@ -264,6 +260,7 @@ function ShortLabel(kpi_label)
 			return gen
 		end
 	end
+	occursin("- Total (", kpi_label) && return "Total"
 	return kpi_label
 end
 
