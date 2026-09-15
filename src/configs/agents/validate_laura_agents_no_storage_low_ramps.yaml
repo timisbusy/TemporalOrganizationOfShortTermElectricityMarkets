@@ -4,21 +4,21 @@ dispatchableGenerators:
  3G_Base:
   bidPrice: 30 # EUR/MWh
   capacity: 6000 # MW
-  rampRate: 0.08333333333333333 # % of nominal power per minute
+  rampRateLD: 0.2 # fraction of nominal power per hour
   initialQuantity: 4800
   emissionFactor: 980 # kgCO2e/MWh
 
  4G_Shoulder:
   bidPrice: 80 # EUR/MWh
   capacity: 4000 # MW
-  rampRate: 0.08333333333333333 # % of nominal power per minute
+  rampRateLD: 0.5 # fraction of nominal power per hour
   initialQuantity: 2000
   emissionFactor: 420 # kgCO2e/MWh
 
  5G_Peak:
   bidPrice: 150 # EUR/MWh
   capacity: 5000 # MW
-  rampRate: 0.08333333333333333 # % of nominal power per minute
+  rampRateLD: 1.0 # fraction of nominal power per hour
   initialQuantity: 0
   emissionFactor: 420 # kgCO2e/MWh
 
