@@ -2,48 +2,26 @@ module PostAnalysisStorage
 
 using XLSX, DataFrames, Plots, Statistics, Latexify, Printf
 
+include("./post_analysis_common.jl")
 
-
-results_path_base_LD = "../DATA/_laura_data"
-
-
-dispatch_decision_paths_LD = Dict{String,String}(
-	"Fixed Horizon" => "$results_path_base_LD/decisionvariables_laura_Fixed36.xlsx",
-	"Rolling Horizon" => "$results_path_base_LD/decisionvariables_laura_Rolling36.xlsx",
-)
-
+CASES = PostAnalysisCommon.CASES
 
 percent_format = Ref(Printf.Format("%0.3f%%"))
 
-function CleanDirectory(path)
-	mkpath(path)
-end
+function PerformAnalysis(case_paths)
 
-function PerformAnalysis(results_path_base_in)
+	analysis_dir_path = "$(PostAnalysisCommon.ANALYSIS_OUTPUT_BASE)/post_analysis_storage"
 
-	if results_path_base_in != ""
-		results_path_base = results_path_base_in
-
-		
-		analysis_dir_path = "$results_path_base/additional_analysis/post_analysis_storage"
-
-		dispatch_decision_paths = Dict{String,String}(
-			"Fixed Horizon" => "$results_path_base/RAW/final_dispatch_decisions_Fixed.xlsx",
-			"Rolling Horizon" => "$results_path_base/RAW/final_dispatch_decisions_Rolling.xlsx",
-		)
-
-	end
+	dispatch_decision_paths = Dict(case => joinpath(case_paths[case], "final_dispatch_decisions.xlsx") for case in CASES)
 
 	println("starting analysis")
-	CleanDirectory(analysis_dir_path)
+	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 	dds = Dict{String,DataFrame}()
 
-	LD = false
+	start_day = 2
+	end_day = 29
 
-	start_day = LD ? 1 : 2
-	end_day = LD ? 28 : 29
-
-	for(case, path) in (LD ? dispatch_decision_paths_LD : dispatch_decision_paths)
+	for(case, path) in dispatch_decision_paths
 		dd = LoadFile(path)
 		dd[!,Symbol("Hour")] = dd[!,Symbol("mtu")] .% 24
 		dd[!,Symbol("Day")] = (dd[!,Symbol("mtu")] .- dd[!,Symbol("Hour")]) ./ 24
@@ -95,7 +73,7 @@ function NetDischargePerHour(dds, analysis_dir_path)
     pNetDischargeStdDev = Plots.plot(xlabel="Hour of Day", ylabel="Mean Net Discharge St Dev (MWh)",
                             title="Std Dev Net Discharge (MWh)")
 
-	for case in ["Fixed Horizon","Rolling Horizon"]
+	for case in CASES
 		dd = dds[case]
 		hourly_dd = groupby(dd,:Hour)
 		# show(hourly_dd, allgroups=true)
@@ -111,7 +89,7 @@ function NetDischargePerHour(dds, analysis_dir_path)
 
 		Plots.plot!(pNetDischarge, xPlotIndicator, hourly_net_discharge[!, :MeanNetDischarge], label=case)
     	Plots.plot!(pNetDischargeStdDev, xPlotIndicator, hourly_net_discharge_st_dev[!, :StdDevNetDischarge], label=case)
-    
+
 	end
 
     display(pNetDischarge)
