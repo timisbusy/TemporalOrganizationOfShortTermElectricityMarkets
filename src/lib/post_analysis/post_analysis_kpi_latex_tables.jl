@@ -90,6 +90,16 @@ function LoadLauraSummary(case)
 	vals["Gross Traded Volume - Total (MWh)"] = total_gross_traded
 	vals["Generator Cashflow - Total (€)"] = total_cashflow
 
+	# "GENERATOR PROFITS (Full Revenue - Cost)" section - Total Profit column, rows 39-43 per
+	# generator plus row 44's real Total (unlike Gross Traded/Cashflow above, this total cell
+	# isn't blank in her sheet). Relabeled "Generator Surplus" - unlike Cashflow, this genuinely
+	# is netted against Production Cost, so "Surplus" is accurate here.
+	profit_row = Dict("Base" => 39, "Shoulder" => 40, "Peak" => 41, "Solar" => 42, "Wind" => 43)
+	for gen in generators
+		vals["Generator Surplus - $gen (€)"] = sh[profit_row[gen], 2]
+	end
+	vals["Generator Surplus - Total (€)"] = sh[44, 2]
+
 	vals["Energy Discharged (MWh)"] = sh[48, 2]
 	vals["Energy Charged (MWh)"] = sh[49, 2]
 	vals["Avg Discharge Price (€/MWh)"] = sh[50, 2]
@@ -153,6 +163,17 @@ function LoadOurKPIs(case)
 	end
 	vals["Generator Cashflow - Total (€)"] = total_cashflow
 
+	# Generator Surplus = Cashflow - Production Cost - derived from values already loaded above,
+	# matching Laura's "GENERATOR PROFITS (Full Revenue - Cost)" section directly rather than
+	# needing a separate sheet.
+	total_surplus = 0.0
+	for gen in generators
+		s = vals["Generator Cashflow - $gen (€)"] - vals["Production Cost - $gen (€)"]
+		vals["Generator Surplus - $gen (€)"] = s
+		total_surplus += s
+	end
+	vals["Generator Surplus - Total (€)"] = total_surplus
+
 	storage_summary = DataFrame(XLSX.readtable(our_kpi_path, "storage_summary"))
 	storage_row = storage_summary[(storage_summary.Case .== label) .& (storage_summary.Period .== "Total"), :][1, :]
 	vals["Energy Discharged (MWh)"] = storage_row.DischargeTotal
@@ -192,6 +213,8 @@ function KPIRowOrder()
 	push!(rows, ("Gross Traded Volume - Total (MWh)", ["Gross Traded Volume - Total (MWh)"]))
 	push!(rows, ("Generator Cashflow (€)", ["Generator Cashflow - $gen (€)" for gen in generators]))
 	push!(rows, ("Generator Cashflow - Total (€)", ["Generator Cashflow - Total (€)"]))
+	push!(rows, ("Generator Surplus (€)", ["Generator Surplus - $gen (€)" for gen in generators]))
+	push!(rows, ("Generator Surplus - Total (€)", ["Generator Surplus - Total (€)"]))
 	push!(rows, ("Storage", [
 		"Energy Discharged (MWh)",
 		"Energy Charged (MWh)",
