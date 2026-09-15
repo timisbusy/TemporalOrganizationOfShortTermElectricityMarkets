@@ -2,48 +2,34 @@ module PostAnalysisSEW
 
 using XLSX, DataFrames, Plots, Statistics, Latexify, Printf
 
-function CleanDirectory(path)
-	mkpath(path)
-end
+include("./post_analysis_common.jl")
 
-short_names = ["Fixed", "Rolling", "AuctionOnly"]
-long_names = ["Fixed Horizon", "Rolling Horizon", "Auction Only"]
+CASES = PostAnalysisCommon.CASES
 
+function PerformAnalysis(case_paths)
 
-function PerformAnalysis(results_path_base_in)
-
-	if results_path_base_in != ""
-		results_path_base = results_path_base_in
-
-		analysis_dir_path = "$results_path_base/additional_analysis/post_analysis_SEW"
-
-		sew_data_path = "$results_path_base/economic_indicators.xlsx"
-	end
-
+	analysis_dir_path = "$(PostAnalysisCommon.ANALYSIS_OUTPUT_BASE)/post_analysis_SEW"
 
 	println("starting analysis")
-	CleanDirectory(analysis_dir_path)
-	
-	indicators = LoadFile(sew_data_path)
-	println(indicators)
-	indicators_df = permutedims(indicators,Symbol("Market Configuration"))
-	if hasproperty(indicators_df,:RollingTA)
-		indicators_df = indicators_df[!,Not(:RollingTA)]
-	end
-	indicators_df = rename!(indicators_df, short_names .=> long_names)
+	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 
-	println(indicators_df)
+	# fresh per-case economic indicators (one row each) - see PostAnalysisCommon.CalculateCaseIndicators
+	# for why this is computed on demand rather than read from a pre-aggregated economic_indicators.xlsx
+	economic_indicators_by_case = Dict(case => PostAnalysisCommon.CalculateCaseIndicators(case_paths, case)[1] for case in CASES)
+
+	fixed = economic_indicators_by_case["Fixed Horizon"]
+	rolling = economic_indicators_by_case["Rolling Horizon"]
 
 	percent_format = Ref(Printf.Format("%0.3f%%"))
 
-	final_indicators_df = DataFrame()
-	final_indicators_df[!,Symbol("Indicator")] = indicators_df[!,Symbol("Market Configuration")]
-	final_indicators_df[!,Symbol("Fixed Horizon")] = indicators_df[!,Symbol("Fixed Horizon")]
-	final_indicators_df[!,Symbol("Rolling Horizon")] = indicators_df[!,Symbol("Rolling Horizon")]
-	final_indicators_df[!,Symbol("Rolling Horizon % Difference")] = Printf.format.(percent_format,100*(indicators_df[!,Symbol("Rolling Horizon")] .- indicators_df[!,Symbol("Fixed Horizon")]) ./ indicators_df[!,Symbol("Fixed Horizon")])
+	final_indicators_df = DataFrame("Indicator"=>String[], "Fixed Horizon"=>Float64[], "Rolling Horizon"=>Float64[], "Rolling Horizon % Difference"=>String[])
 
-	final_indicators_df[!,Symbol("Auction Only")] = indicators_df[!,Symbol("Auction Only")]
-	final_indicators_df[!,Symbol("Auction Only % Difference")] = Printf.format.(percent_format,100*(indicators_df[!,Symbol("Auction Only")] .- indicators_df[!,Symbol("Fixed Horizon")]) ./ indicators_df[!,Symbol("Fixed Horizon")])
+	for indicator in names(fixed)
+		fixed_v = fixed[1, indicator]
+		rolling_v = rolling[1, indicator]
+		pct_diff = Printf.format(percent_format[], 100*(rolling_v - fixed_v)/fixed_v)
+		push!(final_indicators_df, [indicator, fixed_v, rolling_v, pct_diff])
+	end
 
 	println(final_indicators_df)
 
@@ -53,14 +39,5 @@ function PerformAnalysis(results_path_base_in)
 	write("$analysis_dir_path/sew_details.tex",sew_analysis_tex)
 
 end
-
-
-function LoadFile(filepath)
-
-    df = DataFrame(XLSX.readtable(filepath, "data"))
-    return df
-end
-
-
 
 end;

@@ -2,6 +2,7 @@ module PostAnalysisLeadTime
 
 using XLSX, DataFrames, Plots, Statistics, StatsPlots, Latexify
 
+include("./post_analysis_common.jl")
 
 mtuSymbol = Symbol("Market Time Unit")
 clearingMTUSymbol = Symbol("Clearing MTU")
@@ -10,31 +11,19 @@ timesClearedSymbol = Symbol("Times Cleared")
 quantitySymbol = Symbol("Quantity (MWh)")
 priceSymbol = Symbol("Price (€/MWh)")
 
+CASES = PostAnalysisCommon.CASES
 
-colors =  [:steelblue3 :darkorange2 :red]
+colors = [:steelblue3 :darkorange2]
 
 function CleanDirectory(path)
 	mkpath(path)
 end
 
-function PerformAnalysis(results_path_base_in)
+function PerformAnalysis(case_paths)
 
-	if results_path_base_in != ""
-		results_path_base = results_path_base_in
+	analysis_dir_path = "$(PostAnalysisCommon.ANALYSIS_OUTPUT_BASE)/lead_time_analysis"
 
-		analysis_dir_path = "$results_path_base/additional_analysis/lead_time_analysis"
-
-		dispatch_decision_paths = Dict{String,String}(
-			"Fixed" => "$results_path_base/RAW/final_dispatch_decisions_Fixed.xlsx",
-			"Rolling" => "$results_path_base/RAW/final_dispatch_decisions_Rolling.xlsx",
-		)
-
-		transaction_paths = Dict{String,String}(
-			"Fixed Horizon" => "$results_path_base/RAW/transactions_Fixed.xlsx",
-			"Rolling Horizon" => "$results_path_base/RAW/transactions_Rolling.xlsx",
-			"Auction Only" => "$results_path_base/RAW/transactions_AuctionOnly.xlsx",
-		)
-	end
+	transaction_paths = Dict(case => joinpath(case_paths[case], "transactions.xlsx") for case in CASES)
 
 	println("starting analysis")
 	CleanDirectory(analysis_dir_path)
@@ -73,7 +62,7 @@ function PerformAnalysis(results_path_base_in)
 	transaction_details_df = transaction_details_df[transaction_details_df[!,:Agent] .!= "1D_HighBid",:]
 	transaction_details_df = transaction_details_df[transaction_details_df[!,:Agent] .!= "2D_ModerateBid",:]
 	transaction_details_df = sort(transaction_details_df,[:Agent])
-	push!(transaction_details_df,["Total",sum(transaction_details_df[!,2]),sum(transaction_details_df[!,3]),sum(transaction_details_df[!,4]),sum(transaction_details_df[!,5]),sum(transaction_details_df[!,6]),sum(transaction_details_df[!,7])])
+	push!(transaction_details_df,["Total",sum(transaction_details_df[!,2]),sum(transaction_details_df[!,3]),sum(transaction_details_df[!,4]),sum(transaction_details_df[!,5])])
 	println(transaction_details_df)
 	XLSX.writetable("$analysis_dir_path/transaction_details.xlsx", "data" => transaction_details_df; overwrite=true)
 
@@ -95,7 +84,7 @@ function GetTransactionDetails(case, ts)
 	by_agent_ts = groupby(ts,:Agent)
 	gross_traded = combine(by_agent_ts, quantitySymbol => (q -> sum(abs.(q))) => gross_traded_symbol)
 	net_delivered = combine(by_agent_ts, quantitySymbol => (q -> sum(q)) => net_delivered_symbol)
-	
+
 	println("Transaction info for $case")
 	println("gross_traded: $gross_traded")
 	println("net_delivered: $net_delivered")
@@ -105,7 +94,6 @@ function GetTransactionDetails(case, ts)
 end
 
 function AgentSellPriceByLeadTime(transactions_by_case,agent, analysis_dir_path)
-	CASES =  ["Fixed Horizon","Rolling Horizon", "Auction Only"]
 	groupRanges = [1:12, 13:24, 25:36]
 	groupNames = ["1-12", "13-24", "25-36"]
 
@@ -113,13 +101,13 @@ function AgentSellPriceByLeadTime(transactions_by_case,agent, analysis_dir_path)
     volume = zeros(Float64, length(groupNames), length(CASES))
     price = zeros(Float64, length(groupNames), length(CASES))
 
-    
+
     for (i,groupName) in enumerate(groupNames), (j, case) in enumerate(CASES)
 		case_ts = transactions_by_case[case]
 		case_ts = case_ts[(case_ts.Agent .== agent .&& case_ts[!,quantitySymbol] .>= 0),:]
-		case_ts[:,:LeadTime] = case_ts[!,mtuSymbol] .- case_ts[!,clearingMTUSymbol] 
+		case_ts[:,:LeadTime] = case_ts[!,mtuSymbol] .- case_ts[!,clearingMTUSymbol]
 		case_ts_in_group = case_ts[groupRanges[i].start .<= case_ts[!,:LeadTime] .<= groupRanges[i].stop,:]
-		
+
 		volume_in_group = combine(case_ts_in_group, quantitySymbol => sum )[1,1]
 		print("Volume for $groupName in $case: $volume_in_group")
 		price_in_group = combine(case_ts_in_group, [priceSymbol,quantitySymbol] => ( (p,q) -> sum(p .* q)/sum(q) ) )[1,1]
@@ -127,7 +115,7 @@ function AgentSellPriceByLeadTime(transactions_by_case,agent, analysis_dir_path)
 
 		volume[i,j] = volume_in_group / 1e6
 		price[i,j] = price_in_group
-		
+
 	end
 
 
@@ -168,14 +156,13 @@ function AgentSellPriceByLeadTime(transactions_by_case,agent, analysis_dir_path)
     display(agentSellPrice)
 	savefig(agentSalesLeadTime, "$analysis_dir_path/$(agent)_sales_lead_time.png")
 	savefig(agentSellPrice, "$analysis_dir_path/$(agent)_sell_price.png")
-    
+
 end
 
 
 
 
 function SellAndBuybackPrices(transactions_by_case, analysis_dir_path)
-	CASES =  ["Fixed Horizon","Rolling Horizon", "Auction Only"]
 	agents = ["3G_Base","6G_Wind","7G_Solar"]
 
 
@@ -211,7 +198,7 @@ function SellAndBuybackPrices(transactions_by_case, analysis_dir_path)
         # bottom_margin = 14mm,
     )
 
-    offsets = [-0.18, 0.0, 0.18]
+    offsets = length(CASES) == 2 ? [-0.09, 0.09] : [-0.18, 0.0, 0.18]
     for (j, case_name) in enumerate(CASES)
         xpos = (1:length(agents)) .+ offsets[j]
         scatter!(p, xpos, sell_prices[:, j], marker=:circle, markersize=10,
@@ -225,7 +212,7 @@ function SellAndBuybackPrices(transactions_by_case, analysis_dir_path)
     end
     display(p)
 	savefig(p, "$analysis_dir_path/sell_and_buyback_prices.png")
-    
+
 end
 
 function LoadFile(filepath)

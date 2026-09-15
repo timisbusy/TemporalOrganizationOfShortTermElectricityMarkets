@@ -7,61 +7,48 @@ using DataFrames
 using XLSX
 using Printf
 
+include("./post_analysis_common.jl")
 include("./agent_renaming.jl")
 
-function CleanDirectory(path)
-	mkpath(path)
-end
-
-short_names = ["Fixed", "Rolling", "AuctionOnly"]
-long_names = ["Fixed Horizon", "Rolling Horizon", "Auction Only"]
+CASES = PostAnalysisCommon.CASES
 
 quantitySymbol = Symbol("Quantity (MWh)")
 
-
-marketConfigurationDisplayNames = Dict{String, String}(
-    "Fixed" => "Fixed Horizon", 
-    "Rolling" =>  "Rolling Horizon",
-    "AuctionOnly" => "Auction Only",
-)
-
-case_shortname =    Dict{String,String}(
+case_shortname = Dict{String,String}(
     "Fixed Horizon" => "fixed",
     "Rolling Horizon" => "rolling",
-    "Auction Only" => "auction_only",
 )
 
+# raw_dispatch_prefix maps case -> per-clearing RAW decisionvariables_<experiment name>_ prefix -
+# tied to the run's own experiment name, so it doesn't follow generically from case_paths (see
+# PostAnalysisCommon.DEFAULT_RAW_DISPATCH_PREFIX). Pass an explicit prefix Dict when pointing this
+# at run directories other than the default fixed_36/rolling_36 pair.
+function PerformAnalysis(case_paths, raw_dispatch_prefix=PostAnalysisCommon.DEFAULT_RAW_DISPATCH_PREFIX)
 
-function PerformAnalysis(results_path_base_in)
+    analysis_dir_path = "$(PostAnalysisCommon.ANALYSIS_OUTPUT_BASE)/post_analysis_prices"
 
-    results_path_base = results_path_base_in
+    PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 
-    analysis_dir_path = "$results_path_base/additional_analysis/post_analysis_prices"
+    # illustrative near-end-of-horizon day: fixed_36/rolling_36 only clear MTUs 12:672 (28 days,
+    # capped by lastAuctionMTU), unlike the ~30-day thesis run "May 28" was originally chosen from
+    # - day 26 keeps the same "close to the end, with room for the lookback/lookahead margins"
+    # positioning while staying in range.
+    illustrative_day = 26
+    illustrative_plus_interval = (illustrative_day*24 - 12):((illustrative_day + 1)*24 - 1)
 
-    raw_decision_variables_paths = Dict{String,String}(
-        "Fixed Horizon" => "$results_path_base/RAW/decisionvariables_Fixed_",
-        "Rolling Horizon" => "$results_path_base/RAW/decisionvariables_Rolling_",
-        "Auction Only" => "$results_path_base/RAW/decisionvariables_AuctionOnly_",
-    )
+    illustrative_interval = (illustrative_day*24):((illustrative_day + 1)*24 - 1)
 
-
-    CleanDirectory(analysis_dir_path)
-
-    may_28_plus_interval = (29*24 - 12):(30*24 - 1)
-
-    may_28_interval = (29*24):(30*24 - 1)
-
-    print_cases = ["Fixed Horizon", "Rolling Horizon"]
-
-    for case in print_cases
-        CreatePlots(case, may_28_plus_interval, may_28_interval, raw_decision_variables_paths, analysis_dir_path)
+    for case in CASES
+        CreatePlots(case, illustrative_plus_interval, illustrative_interval, raw_dispatch_prefix, analysis_dir_path)
     end
 end
 
 function CreatePlots(case, interval, highlight_interval, raw_decision_variables_paths, analysis_dir_path)
     dvs = GetDecisionVariables(case, interval, raw_decision_variables_paths)
 
-    println("MAY 28 RESULTS $case")
+    day_label = "Day $(highlight_interval.start ÷ 24)"
+
+    println("$(uppercase(day_label)) RESULTS $case")
 
     plotPrices(dvs, case, interval, highlight_interval, analysis_dir_path)
 
@@ -88,8 +75,10 @@ function LoadFile(case, mtu, raw_decision_variables_paths)
 end
 
 function plotPrices(dvs, case, interval, highlight_interval, analysis_dir_path)
+    day_label = "Day $(highlight_interval.start ÷ 24)"
+
     pPrices = Plots.plot(xlabel="MTU", ylabel="Price (EUR)",
-                            title="Price Evolution $case May 28",
+                            title="Price Evolution $case $day_label",
                             size=(1280, 450))
 
     for mtu in interval.start:(interval.start + 4)
@@ -98,18 +87,20 @@ function plotPrices(dvs, case, interval, highlight_interval, analysis_dir_path)
         Plots.plot!(pPrices, filtered.mtu, filtered.price, label="Auction at MTU $mtu", legend=:topleft)
     end
 
-    vspan!(pPrices,[highlight_interval.start - 0.5,highlight_interval.stop + 0.5], color = :seagreen2, alpha = 0.1, labels = "May 28")
-    
+    vspan!(pPrices,[highlight_interval.start - 0.5,highlight_interval.stop + 0.5], color = :seagreen2, alpha = 0.1, labels = day_label)
+
     xlims!(pPrices, interval.start - 0.5, interval.stop + 5 + 0.5)
-    
+
     display(pPrices)
-    savefig(pPrices, "$analysis_dir_path/prices_$(case_shortname[case])_may_28.png")
+    savefig(pPrices, "$analysis_dir_path/prices_$(case_shortname[case])_day$(highlight_interval.start ÷ 24).png")
 
 end
 
 function plotTrades(dvs, case, interval, highlight_interval, agent, analysis_dir_path)
+    day_label = "Day $(highlight_interval.start ÷ 24)"
+
     pTrades = Plots.plot(xlabel="MTU", ylabel="Auction MTU",
-                            title="$(AgentRenaming.DisplayName(agent)) Adjustments May 28")
+                            title="$(AgentRenaming.DisplayName(agent)) Adjustments $day_label")
 
     adj_col = Symbol("$(agent)_adj")
 
@@ -120,7 +111,7 @@ function plotTrades(dvs, case, interval, highlight_interval, agent, analysis_dir
     println(length(previous), length(xPlotIndicator))
     Plots.plot!(pTrades, xPlotIndicator, previous, label="Previous")
 
-    selected_auctions = interval.start:(interval.start + 4)   
+    selected_auctions = interval.start:(interval.start + 4)
 
     for mtu in selected_auctions
         dv = dvs[mtu]
@@ -132,7 +123,7 @@ function plotTrades(dvs, case, interval, highlight_interval, agent, analysis_dir
 
     y_tick_labels = vcat(["p_prev"], selected_auctions)
     p_gen = plot(
-            title="$(AgentRenaming.DisplayName(agent)) Adjustments $case May 28",
+            title="$(AgentRenaming.DisplayName(agent)) Adjustments $case $day_label",
             xlabel="MTU",
             ylabel="Auction MTU",
             legend=false,
@@ -185,7 +176,7 @@ function plotTrades(dvs, case, interval, highlight_interval, agent, analysis_dir
             end
         end
 
-        vspan!(p_gen,[highlight_interval.start - 0.5,highlight_interval.stop + 0.5], color = :seagreen2, alpha = 0.1, labels = "May 28")
+        vspan!(p_gen,[highlight_interval.start - 0.5,highlight_interval.stop + 0.5], color = :seagreen2, alpha = 0.1, labels = day_label)
         xlims!(p_gen, interval.start - 0.5, interval.stop + 5 + 0.5)
 
         display(p_gen)

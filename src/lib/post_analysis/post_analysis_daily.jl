@@ -8,52 +8,26 @@ using XLSX
 using Distributions
 using Latexify
 
-function CleanDirectory(path)
-	mkpath(path)
-end
+include("./post_analysis_common.jl")
 
-short_names = ["Fixed", "Rolling", "AuctionOnly"]
-long_names = ["Fixed Horizon", "Rolling Horizon", "Auction Only"]
+CASES = PostAnalysisCommon.CASES
 
 quantitySymbol = Symbol("Quantity (MWh)")
 
+function PerformAnalysis(case_paths)
 
-marketConfigurationDisplayNames = Dict{String, String}(
-    "Fixed" => "Fixed Horizon", 
-    "Rolling" =>  "Rolling Horizon",
-    "AuctionOnly" => "Auction Only",
-)
+    analysis_dir_path = "$(PostAnalysisCommon.ANALYSIS_OUTPUT_BASE)/post_analysis_daily"
 
+    dispatch_decision_paths = Dict(case => joinpath(case_paths[case], "final_dispatch_decisions.xlsx") for case in CASES)
+    mtu_economic_indicator_paths = Dict(case => joinpath(case_paths[case], "mtu_economic_results.xlsx") for case in CASES)
 
-
-function PerformAnalysis(results_path_base_in)
-
-    if results_path_base_in != ""
-        results_path_base = results_path_base_in
-
-        analysis_dir_path = "$results_path_base/additional_analysis/post_analysis_daily"
-
-        dispatch_decision_paths = Dict{String,String}(
-            "Fixed Horizon" => "$results_path_base/RAW/final_dispatch_decisions_Fixed.xlsx",
-            "Rolling Horizon" => "$results_path_base/RAW/final_dispatch_decisions_Rolling.xlsx",
-            "Auction Only" => "$results_path_base/RAW/final_dispatch_decisions_AuctionOnly.xlsx",
-        )
-
-        mtu_economic_indicator_paths = Dict{String,String}(
-            "Fixed Horizon" => "$results_path_base/mtu_economic_results_Fixed.xlsx",
-            "Rolling Horizon" => "$results_path_base/mtu_economic_results_Rolling.xlsx",
-            "Auction Only" => "$results_path_base/mtu_economic_results_AuctionOnly.xlsx",
-        )
-
-    end
-
-	CleanDirectory(analysis_dir_path)
+	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 
     may_19_interval = 20*24:(21*24 - 1)
     may_20_interval = 21*24:(22*24 - 1)
     may_21_interval = 22*24:(23*24 - 1)
 
-    print_cases = ["Fixed Horizon", "Rolling Horizon","Auction Only"]
+    print_cases = CASES
 
 	dds = GetDispatchDecisions(print_cases, dispatch_decision_paths)
     mtu_economic_indicators = GetMTUEconomicIndicators(print_cases, mtu_economic_indicator_paths)
@@ -125,7 +99,7 @@ function plotPhysicalIndicator(dds, test_range, indicator, print_cases, print_da
     pIndicator = Plots.plot(xlabel="MTU", ylabel="$indicator",
                             title="Comparing $indicator - $(print_date)")
 
-    for (marketConfiguration, indicatorSeries) in indicatorData   
+    for (marketConfiguration, indicatorSeries) in indicatorData
         Plots.plot!(pIndicator, xPlotIndicator, indicatorSeries, label=marketConfiguration)
     end
     display(pIndicator)
@@ -154,17 +128,39 @@ function AnalyzeDailySEW(print_cases, mtu_economic_indicators, dds, analysis_dir
 
 end
 
+# Fixed and Rolling are independent single-design runs (not one shared comparison run), so their
+# daily-grouped tables aren't guaranteed the same length (e.g. a spin-up/tail day present in one
+# run's export but not the other's) - join on :Day rather than assuming aligned row order/length.
+# Returns a (Day, Diff) DataFrame rather than a bare vector, since two DIFFERENT diff series (e.g.
+# SEW from mtu_economic_results vs. Net Discharge from final_dispatch_decisions) can themselves
+# cover different day ranges and need their own Day-join before being compared to each other - see
+# AlignedXY.
+function DiffByDay(rolling_df, fixed_df, value_symbol)
+    r = rename(rolling_df[!, [:Day, value_symbol]], value_symbol => :RollingValue)
+    f = rename(fixed_df[!, [:Day, value_symbol]], value_symbol => :FixedValue)
+    joined = innerjoin(r, f, on=:Day)
+    joined[!, :Diff] = joined.RollingValue .- joined.FixedValue
+    return joined[!, [:Day, :Diff]]
+end
+
+# aligns two DiffByDay results on :Day and returns their Diff columns as plain vectors, for
+# plotting/correlating one diff series against another.
+function AlignedXY(x_diff_df, y_diff_df)
+    joined = innerjoin(rename(x_diff_df, :Diff => :X), rename(y_diff_df, :Diff => :Y), on=:Day)
+    return joined.X, joined.Y
+end
+
 function CreateComparisonStats(mtu_economic_indicators, daily_sews, analysis_dir_path)
 
     comparisonStats = Dict{String,Any}()
 
-    sew_diffs = daily_sews["Rolling Horizon"][!,sewSymbol] .- daily_sews["Fixed Horizon"][!,sewSymbol]
+    sew_diffs = DiffByDay(daily_sews["Rolling Horizon"], daily_sews["Fixed Horizon"], sewSymbol).Diff
 
     comparisonStats["Mean"] = mean(sew_diffs)
     comparisonStats["Std Dev"] = std(sew_diffs)
     comparisonStats["Median"] = median(sew_diffs)
     comparisonStats["Days"] = length(sew_diffs)
-    
+
     alpha = 0.05
     d = TDist(comparisonStats["Days"] - 1)
     margin = quantile(d, 1 - alpha / 2) * (comparisonStats["Std Dev"] / sqrt(comparisonStats["Days"]))
@@ -236,24 +232,22 @@ function AnalyzeDrivers(print_cases, mtu_economic_indicators, dispatch_decisions
     end
     println(daily_net_discharges)
 
-    
-    sew_diffs = daily_sews["Rolling Horizon"][!,sewSymbol] .- daily_sews["Fixed Horizon"][!,sewSymbol]
-    net_discharge_diffs = daily_net_discharges["Rolling Horizon"][!,Symbol("Net Discharge")] .- daily_net_discharges["Fixed Horizon"][!,Symbol("Net Discharge")]
 
-    shoulder_peak_dispatch_diffs = daily_shoulder_peak_dispatches["Rolling Horizon"][!,shoulderPeakDispatchSymbol] .- daily_shoulder_peak_dispatches["Fixed Horizon"][!,shoulderPeakDispatchSymbol]
+    sew_diffs = DiffByDay(daily_sews["Rolling Horizon"], daily_sews["Fixed Horizon"], sewSymbol)
+    net_discharge_diffs = DiffByDay(daily_net_discharges["Rolling Horizon"], daily_net_discharges["Fixed Horizon"], Symbol("Net Discharge"))
+
+    shoulder_peak_dispatch_diffs = DiffByDay(daily_shoulder_peak_dispatches["Rolling Horizon"], daily_shoulder_peak_dispatches["Fixed Horizon"], shoulderPeakDispatchSymbol)
 
 
 
     spec = (feature = :delta_net_storage_discharge_mwh, title = "Net storage discharge", xlabel = "Delta net storage discharge [MWh]", filepath = "$analysis_dir_path/net_storage_driver.png")
-    x = net_discharge_diffs
-    y = sew_diffs
-    
+    (x, y) = AlignedXY(net_discharge_diffs, sew_diffs)
+
     PlotDriver(spec, x, y)
 
     spec = (feature = :delta_mid_peak_dispatch_mwh, title = "Shoulder + peak dispatch", xlabel = "Delta Mid + Peak dispatch [MWh]", filepath = "$analysis_dir_path/shoulder_peak_dispatch_driver.png")
-    x = shoulder_peak_dispatch_diffs
-    y = sew_diffs
-    
+    (x, y) = AlignedXY(shoulder_peak_dispatch_diffs, sew_diffs)
+
     PlotDriver(spec, x, y)
 
 
@@ -324,25 +318,16 @@ function plotSEWDifference(mtu_economic_indicators, interval, print_cases, print
     end
 
     rolling_fixed_diff = case_xs["Rolling Horizon"] .- case_xs["Fixed Horizon"]
-    auction_only_fixed_diff = case_xs["Auction Only"] .- case_xs["Fixed Horizon"]
-
 
     xPlotIndicator = interval
     # pSEWDiff = Plots.plot(xlabel="MTU", ylabel="Rolling - Fixed Δ SEW [EUR]", title="Rolling - Fixed Horizon SEW on $print_date")
 
-     
+
     pSEWDiff = bar(xPlotIndicator, rolling_fixed_diff;xlabel="MTU", ylabel="Rolling - Fixed Δ SEW [EUR]",
                             title="Rolling - Fixed Horizon SEW on $print_date")
 
     display(pSEWDiff)
     savefig(pSEWDiff, "$analysis_dir_path/SEW_roll_fix_diff_$(print_date).png")
-
-
-    pSEWDiffAO = bar(xPlotIndicator, auction_only_fixed_diff;xlabel="MTU", ylabel="Auction Only - Fixed Δ SEW [EUR]",
-                            title="Auction Only - Fixed Horizon SEW on $print_date")
-
-    display(pSEWDiffAO)
-    savefig(pSEWDiffAO, "$analysis_dir_path/SEW_ao_fix_diff_$(print_date).png")
 end
 
 end;

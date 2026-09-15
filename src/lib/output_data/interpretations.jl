@@ -5,6 +5,7 @@ using DataFrames
 DecisionVariablesInterpretation = DataFrame([
 	(DataPoint="MTU", Interpretation="Market Time Unit for which energy is dispatched, counted from beginning of experiment period"),  
 	(DataPoint="Price", Interpretation="Market Clearing Price for this MTU in this clearing (€/MWh)"),
+	(DataPoint="FinalAuctionPrice", Interpretation="Market Clearing Price set by the final auction that included this MTU, i.e. the realized/settlement price (€/MWh) - only present on the merged final_dispatch_decisions export, not per-clearing RAW exports (there it's still 'Price', scoped to that one clearing)"),
 	(DataPoint="SOC", Interpretation="Storage state of charge at end of this MTU (MWh)"),
 	(DataPoint="StorageCharge", Interpretation="Energy dispatched for charging of storage (MWh)"),
 	(DataPoint="StorageDischarge", Interpretation="Energy dispatched for discharging of storage (MWh)"), 
