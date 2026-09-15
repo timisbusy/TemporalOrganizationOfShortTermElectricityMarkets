@@ -71,11 +71,16 @@ function LoadLauraSummary(case)
 	end
 
 	# "TOTAL FINANCIAL REVENUE" section - Gross Traded column only (col 4); Net Revenue/Net Traded
-	# (cols 2-3) and the Total Net Revenue row (25, col 2) were dropped from the table.
+	# (cols 2-3) and the Total Net Revenue row (25, col 2) were dropped from the table. Row 25's
+	# own Gross Traded total (col 4) is blank in her sheet, so sum the 5 generators ourselves.
 	gross_traded_row = Dict("Base" => 20, "Shoulder" => 21, "Peak" => 22, "Solar" => 23, "Wind" => 24)
+	total_gross_traded = 0.0
 	for gen in generators
-		vals["Gross Traded Volume - $gen (MWh)"] = sh[gross_traded_row[gen], 4]
+		v = sh[gross_traded_row[gen], 4]
+		vals["Gross Traded Volume - $gen (MWh)"] = v
+		total_gross_traded += v
 	end
+	vals["Gross Traded Volume - Total (MWh)"] = total_gross_traded
 
 	vals["Energy Discharged (MWh)"] = sh[48, 2]
 	vals["Energy Charged (MWh)"] = sh[49, 2]
@@ -119,10 +124,13 @@ function LoadOurKPIs(case)
 
 	gross_vol = DataFrame(XLSX.readtable(our_kpi_path, "gross_traded_volume"))
 	gross_vol_case = gross_vol[gross_vol.Case .== label, :]
+	total_gross_traded = 0.0
 	for gen in generators
 		row = gross_vol_case[gross_vol_case.Agent .== generator_agent_names[gen], :][1, :]
 		vals["Gross Traded Volume - $gen (MWh)"] = row.GrossTradedVolume
+		total_gross_traded += row.GrossTradedVolume
 	end
+	vals["Gross Traded Volume - Total (MWh)"] = total_gross_traded
 
 	storage_summary = DataFrame(XLSX.readtable(our_kpi_path, "storage_summary"))
 	storage_row = storage_summary[(storage_summary.Case .== label) .& (storage_summary.Period .== "Total"), :][1, :]
@@ -160,6 +168,7 @@ function KPIRowOrder()
 	push!(rows, ("Dispatch Quantity - Total (MWh)", ["Dispatch Quantity - Total (MWh)"]))
 	push!(rows, ("Production Cost by Generator (€)", ["Production Cost - $gen (€)" for gen in generators]))
 	push!(rows, ("Gross Traded Volume (MWh)", ["Gross Traded Volume - $gen (MWh)" for gen in generators]))
+	push!(rows, ("Gross Traded Volume - Total (MWh)", ["Gross Traded Volume - Total (MWh)"]))
 	push!(rows, ("Storage", [
 		"Energy Discharged (MWh)",
 		"Energy Charged (MWh)",
