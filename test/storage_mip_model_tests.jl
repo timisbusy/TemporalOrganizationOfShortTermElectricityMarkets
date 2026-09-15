@@ -162,12 +162,12 @@ using .ClearMarket.LatestMarketModel
 		@test all(decisions.ClearingMTU .== 0)
 		@test all(isapprox.(decisions.ObjectiveMip, mr.StorageMipInfo[:objective_mip]))
 		@test all(isapprox.(decisions.ObjectiveFixedLP, mr.StorageMipInfo[:objective_fixed_lp]))
-		@test all(in.(decisions.ForcedZero, Ref(["charge", "discharge"])))
+		@test all(in.(decisions.z_star, Ref([0.0, 1.0]))) # rounded exactly by build(), not just close
 
 		# AND the recorded per-mtu side matches what build() itself decided
 		for t in OW
 			row = decisions[decisions.mtu .== t, :][1, :]
-			@test row.ForcedZero == mr.StorageMipInfo[:forced_zero][t]
+			@test row.z_star == mr.StorageMipInfo[:z_star][t]
 		end
 
 	end

@@ -13,13 +13,19 @@ using XLSX, DataFrames, Plots, StatsPlots
 
 results_path_base = "results/analysis"
 
-# result directories for each solver/method permutation, keyed by config label
+# result directories for each solver/method permutation, keyed by config label.
+# All Fixed runs are pinned to demand_adjust=false, ex_post_transactions=false so this case is
+# on equal footing with Rolling (whose own default is already false/false) - the original Fixed
+# dirs used fixed_36's default demand_adjust=true, which is harmless for the HiGHS rows (proven
+# exactly 0.000% sensitive to demand_adjust for this case) but shifted the 3 Gurobi rows by a
+# real, solver-dependent amount via LP-degeneracy sensitivity - see the demand_adjust/
+# ex_post_transactions isolation investigation.
 fixed_result_dirs = Dict{String,String}(
-	"HiGHS + simplex" => "results/1788868302_laura_solar_mtu1_lock_fixed",
-	"HiGHS + IPM" => "results/1788869518_laura_solar_mtu1_lock_fixed_highs_ipm",
-	"Gurobi + simplex" => "results/1788869144_laura_solar_mtu1_lock_fixed_gurobi_simplex",
-	"Gurobi + dual_simplex" => "results/1788869609_laura_solar_mtu1_lock_fixed_gurobi_dualsimplex",
-	"Gurobi + IPM" => "results/1788868826_laura_solar_mtu1_lock_fixed_gurobi_ipm",
+	"HiGHS + simplex" => "results/1789119039_fixed_highs_simplex_both_false",
+	"HiGHS + IPM" => "results/1789119090_fixed_highs_ipm_both_false",
+	"Gurobi + simplex" => "results/1789116424_toggle_fixed_gurobi_simplex_da_false_ept_false",
+	"Gurobi + dual_simplex" => "results/1789116515_toggle_fixed_gurobi_dualsimplex_da_false_ept_false",
+	"Gurobi + IPM" => "results/1789116611_toggle_fixed_gurobi_ipm_da_false_ept_false",
 )
 
 rolling_result_dirs = Dict{String,String}(

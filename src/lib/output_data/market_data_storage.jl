@@ -255,7 +255,9 @@ function AddFinalAuctionPriceFromRAW!(finalDispatchDecisions, raw_dispatch_prefi
 		path = "$raw_dispatch_prefix$mtu.xlsx"
 		isfile(path) || continue
 		df = DataFrame(XLSX.readtable(path, "data"))
-		prices[i] = df[1, :price]
+		# don't assume the row for this MTU is first - only true when the clearing's own window
+		# starts exactly at its TimeCleared (e.g. no positive lookAheadDistance)
+		prices[i] = df[df.mtu .== mtu, :price][1]
 	end
 	finalDispatchDecisions[!, :FinalAuctionPrice] = prices
 	return finalDispatchDecisions
@@ -375,8 +377,8 @@ function AddStorageMipDecisions!(market_result_container, mr)
 
 	existing = something(market_result_container.StorageMipDecisions, DataFrame())
 
-	forced_zero = mr.StorageMipInfo[:forced_zero]
-	decisions = DataFrame(mtu=collect(keys(forced_zero)), ForcedZero=collect(values(forced_zero)))
+	z_star = mr.StorageMipInfo[:z_star]
+	decisions = DataFrame(mtu=collect(keys(z_star)), z_star=collect(values(z_star)))
 	sort!(decisions, :mtu)
 	decisions.ClearingMTU .= mr.TimeCleared
 	decisions.ObjectiveMip .= mr.StorageMipInfo[:objective_mip]
