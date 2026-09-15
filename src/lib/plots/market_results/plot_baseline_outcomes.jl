@@ -12,7 +12,9 @@ include("../../output_data/market_data_storage.jl")
 include("../../output_data/interpretations.jl")
 
 function plot(marketresult, config, test_range, test_id)
-    (indicators, agent_indicators, transactions, final_dispatch_decisions, mtu_economic_outcomes) = MarketDataStorage.GetEconomicIndicatorsForRange(marketresult, test_range)
+    # imbalance_agents hardcoded to the Wind/Peak agent config every current experiment uses -
+    # revisit if/when a config with different generator names needs this too
+    (indicators, agent_indicators, transactions, final_dispatch_decisions, mtu_economic_outcomes) = MarketDataStorage.GetEconomicIndicatorsForRange(marketresult, test_range; imbalance_agents=("6G_Wind", "5G_Peak"))
 
     println(indicators)
     println(agent_indicators)
@@ -43,7 +45,7 @@ function plotCompare(market_results, config, test_range, test_id, fast_mode)
     combined_agent_indicators = DataFrame()
     for (marketConfiguration, marketResult) in market_results
         println("calculating indicators for: $marketConfiguration")
-        (indicators, agent_indicators, transactions, final_dispatch_decisions, mtu_economic_outcomes) = MarketDataStorage.GetEconomicIndicatorsForRange(marketResult, test_range)
+        (indicators, agent_indicators, transactions, final_dispatch_decisions, mtu_economic_outcomes) = MarketDataStorage.GetEconomicIndicatorsForRange(marketResult, test_range; imbalance_agents=("6G_Wind", "5G_Peak"))
         indicators[!,Symbol("Market Configuration")] .= marketConfiguration
         combined_indicators = vcat(combined_indicators, indicators)
         agent_indicators[!,Symbol("Market Configuration")] .= marketConfiguration
