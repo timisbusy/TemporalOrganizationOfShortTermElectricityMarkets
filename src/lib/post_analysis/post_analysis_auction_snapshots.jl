@@ -23,12 +23,15 @@ CASES = PostAnalysisCommon.CASES
 # lookup. Every other module in this suite hardcodes these same lists for the same reason.
 GENERATOR_STACK_ORDER = ["3G_Base", "4G_Shoulder", "5G_Peak", "6G_Wind", "7G_Solar"]
 DEMAND_AGENTS = ["1D_HighBid", "2D_ModerateBid"]
-GEN_COLORS = [:steelblue, :lightgreen, :red, :lightyellow, :coral, :orange]
+# Solar and Storage Discharge were both warm/orange tones (:coral, :orange) and hard to tell apart
+# in the stack - Solar is now :gold, Storage Discharge :purple, clearly distinct from each other
+# and from Wind's pale :lightyellow.
+GEN_COLORS = [:steelblue, :lightgreen, :red, :lightyellow, :gold, :purple]
 
-# clearing MTUs to snapshot by default - the auction held at MTU 660 (Fixed's own day-ahead
-# clearing: MTU 660 % 24 == 12, the clockTimeBegin of Fixed1of24, fixed_laura.yaml's full 36-MTU
-# window) plus the next two hourly clearings that follow it.
-DEFAULT_CLEARING_MTUS = [660, 661, 662]
+# clearing MTUs to snapshot by default - two sets of three consecutive hourly clearings, each
+# starting at a Fixed day-ahead auction (MTU % 24 == 12, the clockTimeBegin of Fixed1of24,
+# fixed_laura.yaml's full 36-MTU window): MTU 84-86 (day 3) and MTU 660-662 (day 27).
+DEFAULT_CLEARING_MTUS = [84, 85, 86, 660, 661, 662]
 
 CaseSlug(case) = lowercase(replace(case, " " => "_"))
 
@@ -72,7 +75,8 @@ function PlotAuctionStack(dvs, case, clearing_mtu, analysis_dir_path)
 	p = Plots.plot(xlabel="MTU", ylabel="Dispatched Production (MWh)",
 			title="$case - Auction Cleared at MTU $clearing_mtu",
 			legend=:topright,
-			ylims=(0, max_y), size=(1200,800))
+			ylims=(0, max_y), size=(1000,1000),
+			left_margin=16Plots.mm, bottom_margin=10Plots.mm)
 
 	for i in 1:size(stack_matrix, 1)
 		if i == 1
