@@ -35,7 +35,7 @@ function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisO
 	storage_analysis_df = DataFrame(Metric=metrics)
 	for (case, dd) in dds
 		(discharge_total,charge_total,discharge_per_day,charge_per_day) = PrintStorageDetails(case, dd)
-		storage_analysis_df[!,Symbol(case)] = [charge_per_day,discharge_per_day,charge_per_day-discharge_per_day,charge_per_day+discharge_per_day]
+		storage_analysis_df[!,Symbol(case)] = [charge_per_day,discharge_per_day,discharge_per_day-charge_per_day,charge_per_day+discharge_per_day]
 	end
 
 	storage_analysis_df[!, Symbol("Change")] = storage_analysis_df[!, Symbol("Rolling Horizon")] .- storage_analysis_df[!, Symbol("Fixed Horizon")]
@@ -45,7 +45,7 @@ function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisO
 
 	XLSX.writetable("$analysis_dir_path/storage_details.xlsx", "data" => storage_analysis_df; overwrite=true)
 
-	storage_analysis_tex = latexify(storage_analysis_df; env = :table, booktabs = true, snakecase=true, latex=false,fmt="%'\''d\n")
+	storage_analysis_tex = latexify(PostAnalysisCommon.EscapeForLatex(storage_analysis_df); env = :table, booktabs = true, snakecase=true, latex=false,fmt="%'\''d\n")
 	write("$analysis_dir_path/storage_details.tex",storage_analysis_tex)
 
 	NetDischargePerHour(dds, analysis_dir_path)

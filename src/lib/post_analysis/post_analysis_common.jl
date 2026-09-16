@@ -89,6 +89,21 @@ function DiscoverRawDispatchPrefixes(case_paths)
 	return Dict(case => DiscoverRawDispatchPrefix(path) for (case, path) in case_paths)
 end
 
+# latexify passes column headers and string cell values straight through unescaped - a bare "%"
+# starts a LaTeX comment, silently truncating that line (and anything after it in the table). Call
+# this on the copy of a DataFrame that's about to be handed to latexify() for a .tex export - it
+# escapes "%" -> "\%" in every column name and every String-typed column's values. Not needed for
+# xlsx output, which wants the plain "%".
+function EscapeForLatex(df)
+	escaped = rename(df, [name => replace(name, "%" => "\\%") for name in names(df)])
+	for col in names(escaped)
+		if eltype(escaped[!, col]) <: AbstractString
+			escaped[!, col] = replace.(escaped[!, col], "%" => "\\%")
+		end
+	end
+	return escaped
+end
+
 function LoadFile(filepath)
 	return DataFrame(XLSX.readtable(filepath, "data"))
 end

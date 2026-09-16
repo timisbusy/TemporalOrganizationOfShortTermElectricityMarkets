@@ -14,10 +14,6 @@ surplusSymbol = Symbol("Surplus (€)")
 
 percent_format = Ref(Printf.Format("%0.3f%%"))
 
-# latexify passes string-column content straight through, unescaped - a bare "%" starts a LaTeX
-# comment, silently swallowing the rest of that row. Only needed for .tex output.
-EscapePercentForLatex(s) = replace(s, "%" => "\\%")
-
 function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE)
 
 	analysis_dir_path = "$output_base/post_analysis_quantities_by_agent"
@@ -44,9 +40,7 @@ function WriteComparisonTable(df, xlsx_path, tex_path)
 
 	XLSX.writetable(xlsx_path, "data" => df; overwrite=true)
 
-	pct_col = Symbol("Rolling Horizon % Diff")
-	tex_df = transform(df, pct_col => ByRow(EscapePercentForLatex) => pct_col)
-	tex = latexify(tex_df; env = :table, booktabs = true, snakecase=true, latex=false,fmt="%'\''d\n")
+	tex = latexify(PostAnalysisCommon.EscapeForLatex(df); env = :table, booktabs = true, snakecase=true, latex=false,fmt="%'\''d\n")
 	write(tex_path, tex)
 end
 

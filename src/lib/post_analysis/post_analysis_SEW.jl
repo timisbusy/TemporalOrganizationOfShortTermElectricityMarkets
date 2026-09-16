@@ -8,11 +8,6 @@ CASES = PostAnalysisCommon.CASES
 
 percent_format = Ref(Printf.Format("%0.3f%%"))
 
-# latexify passes string-column content straight through, unescaped - a bare "%" starts a LaTeX
-# comment, silently swallowing the rest of that row. Only needed for the .tex output; the xlsx
-# sheet wants the plain "%".
-EscapePercentForLatex(s) = replace(s, "%" => "\\%")
-
 function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE)
 
 	analysis_dir_path = "$output_base/post_analysis_SEW"
@@ -54,11 +49,8 @@ function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisO
 
 	XLSX.writetable("$analysis_dir_path/sew_details.xlsx", "totals" => final_indicators_df, "daily_average" => daily_avg_df; overwrite=true)
 
-	pct_col = Symbol("Rolling Horizon % Difference")
-	totals_tex_df = transform(final_indicators_df, pct_col => ByRow(EscapePercentForLatex) => pct_col)
-	totals_tex = latexify(totals_tex_df; env = :table, booktabs = true, snakecase=true, latex=false,fmt="%'\''d\n")
-	daily_avg_tex_df = transform(daily_avg_df, pct_col => ByRow(EscapePercentForLatex) => pct_col)
-	daily_avg_tex = latexify(daily_avg_tex_df; env = :table, booktabs = true, snakecase=true, latex=false,fmt="%'\''d\n")
+	totals_tex = latexify(PostAnalysisCommon.EscapeForLatex(final_indicators_df); env = :table, booktabs = true, snakecase=true, latex=false,fmt="%'\''d\n")
+	daily_avg_tex = latexify(PostAnalysisCommon.EscapeForLatex(daily_avg_df); env = :table, booktabs = true, snakecase=true, latex=false,fmt="%'\''d\n")
 
 	open("$analysis_dir_path/sew_details.tex", "w") do io
 		println(io, totals_tex)

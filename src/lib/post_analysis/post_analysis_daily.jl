@@ -183,7 +183,7 @@ function CreateComparisonStats(mtu_economic_indicators, daily_sews, analysis_dir
 
     XLSX.writetable("$analysis_dir_path/sew_details.xlsx", "data" => comparisonDF; overwrite=true)
 
-    daily_sew_tex = latexify(comparisonDF; env = :table, booktabs = true, snakecase=true, latex=false,fmt="%'\''d\n")
+    daily_sew_tex = latexify(PostAnalysisCommon.EscapeForLatex(comparisonDF); env = :table, booktabs = true, snakecase=true, latex=false,fmt="%'\''d\n")
     write("$analysis_dir_path/sew_details.tex",daily_sew_tex)
 end
 
