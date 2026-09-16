@@ -42,16 +42,26 @@ const DEFAULT_TIME_RANGE = 12:672
 
 const ANALYSIS_OUTPUT_BASE = "results/validation_results/additional_analysis"
 
-# per-clearing RAW decision-variable export prefix for the default fixed_36/rolling_36 pair -
-# filenames are "decisionvariables_<experiment name>_<mtu>.xlsx", so the prefix is tied to each
-# run's own experiment name rather than derivable from its directory path.
-const DEFAULT_RAW_DISPATCH_PREFIX = Dict{String,String}(
-	"Fixed Horizon" => "$(DEFAULT_CASE_PATHS["Fixed Horizon"])/RAW/decisionvariables_validate_laura_fixed_36_",
-	"Rolling Horizon" => "$(DEFAULT_CASE_PATHS["Rolling Horizon"])/RAW/decisionvariables_validate_laura_rolling_36_",
-)
-
 function CleanDirectory(path)
 	mkpath(path)
+end
+
+# Per-clearing RAW decision-variable exports are named "decisionvariables_<experiment
+# name>_<mtu>.xlsx" - the experiment name is whatever the run's own config[:name] was, not
+# derivable from the run directory's own (possibly unrelated) name, so discover it by reading one
+# filename out of the case's RAW/ directory instead of requiring every caller to know/hardcode it.
+function DiscoverRawDispatchPrefix(case_path)
+	raw_dir = joinpath(case_path, "RAW")
+	for f in readdir(raw_dir)
+		m = match(r"^decisionvariables_(.+)_(\d+)\.xlsx$", f)
+		m === nothing && continue
+		return joinpath(raw_dir, "decisionvariables_$(m.captures[1])_")
+	end
+	throw("no decisionvariables_*.xlsx files found in $raw_dir")
+end
+
+function DiscoverRawDispatchPrefixes(case_paths)
+	return Dict(case => DiscoverRawDispatchPrefix(path) for (case, path) in case_paths)
 end
 
 function LoadFile(filepath)
@@ -67,13 +77,17 @@ end
 # - there is no pre-aggregated multi-case economic_indicators.xlsx/agent_indicators.xlsx with a
 # "Market Configuration" column to filter here (that shape only exists for
 # ClearMarketComparisonForConfig runs), so each case's indicators are computed on demand instead.
-function CalculateCaseIndicators(case_paths, case; agent_map=DEFAULT_AGENT_MAP, time_range=DEFAULT_TIME_RANGE, raw_dispatch_prefix=DEFAULT_RAW_DISPATCH_PREFIX, imbalance_agents::Union{Nothing,Tuple{String,String}}=nothing)
+function CalculateCaseIndicators(case_paths, case; agent_map=DEFAULT_AGENT_MAP, time_range=DEFAULT_TIME_RANGE, raw_dispatch_prefix=nothing, imbalance_agents::Union{Nothing,Tuple{String,String}}=nothing)
 	final_dispatch_decisions = LoadCaseFile(case_paths, case, "final_dispatch_decisions.xlsx")
 	transactions = LoadCaseFile(case_paths, case, "transactions.xlsx")
 	# older exports predate GetFinalDispatchDecisions carrying FinalAuctionPrice through - backfill
-	# it from each MTU's own per-clearing RAW export in that case. A fresh run's export already has
-	# the column, so this is skipped entirely for those.
-	hasproperty(final_dispatch_decisions, :FinalAuctionPrice) || MarketDataStorage.AddFinalAuctionPriceFromRAW!(final_dispatch_decisions, raw_dispatch_prefix[case])
+	# it from each MTU's own per-clearing RAW export in that case, discovering the prefix from the
+	# RAW/ directory itself unless the caller supplied one. A fresh run's export already has the
+	# column, so this (and the discovery) is skipped entirely for those.
+	if !hasproperty(final_dispatch_decisions, :FinalAuctionPrice)
+		prefix = raw_dispatch_prefix === nothing ? DiscoverRawDispatchPrefix(case_paths[case]) : raw_dispatch_prefix[case]
+		MarketDataStorage.AddFinalAuctionPriceFromRAW!(final_dispatch_decisions, prefix)
+	end
 	return MarketDataStorage.CalculateEconomicIndicators(final_dispatch_decisions, transactions, agent_map, time_range; imbalance_agents=imbalance_agents)
 end
 

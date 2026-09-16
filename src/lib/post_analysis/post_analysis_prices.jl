@@ -20,20 +20,20 @@ case_shortname = Dict{String,String}(
 )
 
 # raw_dispatch_prefix maps case -> per-clearing RAW decisionvariables_<experiment name>_ prefix -
-# tied to the run's own experiment name, so it doesn't follow generically from case_paths (see
-# PostAnalysisCommon.DEFAULT_RAW_DISPATCH_PREFIX). Pass an explicit prefix Dict when pointing this
-# at run directories other than the default fixed_36/rolling_36 pair.
-function PerformAnalysis(case_paths, raw_dispatch_prefix=PostAnalysisCommon.DEFAULT_RAW_DISPATCH_PREFIX)
+# tied to the run's own experiment name, so it doesn't follow generically from case_paths. Left as
+# nothing, it's discovered straight from each case's own RAW/ directory (see
+# PostAnalysisCommon.DiscoverRawDispatchPrefixes); pass an explicit prefix Dict to override.
+# illustrative_day: needs MTU data through (illustrative_day+1)*24-1 to exist as its own RAW
+# clearing. Defaults to 26, which fits the default lastAuctionMTU-capped fixed_36/rolling_36 pair
+# (max MTU 672); day 28 (needs MTU up to 695) only fits an uncapped run with clearForDays >= 31
+# (36h window: 31*24-36=708) - pass illustrative_day=28 explicitly when pointing this at such a run.
+function PerformAnalysis(case_paths, raw_dispatch_prefix=nothing; illustrative_day=26)
+    raw_dispatch_prefix = raw_dispatch_prefix === nothing ? PostAnalysisCommon.DiscoverRawDispatchPrefixes(case_paths) : raw_dispatch_prefix
 
     analysis_dir_path = "$(PostAnalysisCommon.ANALYSIS_OUTPUT_BASE)/post_analysis_prices"
 
     PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 
-    # illustrative near-end-of-horizon day: fixed_36/rolling_36 only clear MTUs 12:672 (28 days,
-    # capped by lastAuctionMTU), unlike the ~30-day thesis run "May 28" was originally chosen from
-    # - day 26 keeps the same "close to the end, with room for the lookback/lookahead margins"
-    # positioning while staying in range.
-    illustrative_day = 26
     illustrative_plus_interval = (illustrative_day*24 - 12):((illustrative_day + 1)*24 - 1)
 
     illustrative_interval = (illustrative_day*24):((illustrative_day + 1)*24 - 1)
