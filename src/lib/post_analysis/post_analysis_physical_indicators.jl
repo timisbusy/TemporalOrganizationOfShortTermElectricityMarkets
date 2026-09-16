@@ -57,7 +57,7 @@ function DailyValue(mtu_economic_indicators, case, value_symbol)
 end
 
 function PlotByDay(daily_values, label, value_symbol, file_label, analysis_dir_path)
-	p = Plots.plot(xlabel="Day", ylabel=label, title="Comparing $label by day")
+	p = Plots.plot(xlabel="Day", ylabel=label, title="$label by day")
 	for case in CASES
 		Plots.plot!(p, daily_values[case].Day, daily_values[case][!, value_symbol], label=case)
 	end

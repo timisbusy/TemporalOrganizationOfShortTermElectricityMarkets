@@ -9,6 +9,7 @@ using Distributions
 using Latexify
 
 include("./post_analysis_common.jl")
+include("./agent_renaming.jl")
 
 CASES = PostAnalysisCommon.CASES
 
@@ -93,8 +94,9 @@ function plotPhysicalIndicator(dds, test_range, indicator, print_cases, print_da
     end
     # println(intervalIndicatorData)
     xPlotIndicator = test_range
-    pIndicator = Plots.plot(xlabel="MTU", ylabel="$indicator",
-                            title="Comparing $indicator - $(print_date)")
+    indicator_label = String(indicator) == "SOC" ? "SOC" : AgentRenaming.DisplayName(String(indicator))
+    pIndicator = Plots.plot(xlabel="MTU", ylabel="$indicator_label (MWh)",
+                            title="$indicator_label - $(print_date)")
 
     for (marketConfiguration, indicatorSeries) in indicatorData
         Plots.plot!(pIndicator, xPlotIndicator, indicatorSeries, label=marketConfiguration)
