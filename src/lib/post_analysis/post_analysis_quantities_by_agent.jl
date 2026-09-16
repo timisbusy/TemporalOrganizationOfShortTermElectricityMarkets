@@ -61,13 +61,13 @@ end
 
 function AnalyzeSurpluses(agent_indicators_by_case, analysis_dir_path)
 
-	renamed_agent_ind_df = DataFrame("Agent"=>String[], "Fixed Horizon Surplus (M€)"=>Float64[], "Rolling Horizon Surplus (M€)"=>Float64[], "Rolling Horizon % Diff"=>String[])
+	renamed_agent_ind_df = DataFrame("Agent"=>String[], "Fixed Horizon Surplus (€)"=>Float64[], "Rolling Horizon Surplus (€)"=>Float64[], "Rolling Horizon % Diff"=>String[])
 
 	for agent in agent_names
 		fixed_s = ValueForAgent(agent_indicators_by_case["Fixed Horizon"], agent, surplusSymbol)
 		rolling_s = ValueForAgent(agent_indicators_by_case["Rolling Horizon"], agent, surplusSymbol)
 		pct_diff = Printf.format(percent_format[], 100*(rolling_s - fixed_s)/fixed_s)
-		push!(renamed_agent_ind_df, [AgentRenaming.DisplayName(agent), fixed_s/1e6, rolling_s/1e6, pct_diff])
+		push!(renamed_agent_ind_df, [AgentRenaming.DisplayName(agent), fixed_s, rolling_s, pct_diff])
 	end
 
 	WriteComparisonTable(renamed_agent_ind_df, "$analysis_dir_path/agent_surplus_details.xlsx", "$analysis_dir_path/agent_surpluses.tex")
