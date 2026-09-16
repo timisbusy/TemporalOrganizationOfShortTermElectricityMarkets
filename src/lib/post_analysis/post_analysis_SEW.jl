@@ -6,9 +6,9 @@ include("./post_analysis_common.jl")
 
 CASES = PostAnalysisCommon.CASES
 
-function PerformAnalysis(case_paths)
+function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths))
 
-	analysis_dir_path = "$(PostAnalysisCommon.ANALYSIS_OUTPUT_BASE)/post_analysis_SEW"
+	analysis_dir_path = "$output_base/post_analysis_SEW"
 
 	println("starting analysis")
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)

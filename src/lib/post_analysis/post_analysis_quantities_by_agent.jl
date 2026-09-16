@@ -13,9 +13,9 @@ surplusSymbol = Symbol("Surplus (€)")
 
 percent_format = Ref(Printf.Format("%0.3f%%"))
 
-function PerformAnalysis(case_paths)
+function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths))
 
-	analysis_dir_path = "$(PostAnalysisCommon.ANALYSIS_OUTPUT_BASE)/post_analysis_quantities_by_agent"
+	analysis_dir_path = "$output_base/post_analysis_quantities_by_agent"
 
 	println("starting analysis")
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)

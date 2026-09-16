@@ -8,9 +8,9 @@ CASES = PostAnalysisCommon.CASES
 
 percent_format = Ref(Printf.Format("%0.3f%%"))
 
-function PerformAnalysis(case_paths)
+function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths))
 
-	analysis_dir_path = "$(PostAnalysisCommon.ANALYSIS_OUTPUT_BASE)/post_analysis_storage"
+	analysis_dir_path = "$output_base/post_analysis_storage"
 
 	dispatch_decision_paths = Dict(case => joinpath(case_paths[case], "final_dispatch_decisions.xlsx") for case in CASES)
 

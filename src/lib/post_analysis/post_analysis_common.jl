@@ -8,7 +8,7 @@
 
 module PostAnalysisCommon
 
-using XLSX, DataFrames
+using XLSX, DataFrames, YAML, Dates
 
 include("../helpers.jl")
 using .Helpers.HelperModelResults
@@ -40,10 +40,30 @@ const DEFAULT_IMBALANCE_AGENTS = ("6G_Wind", "5G_Peak")
 # comparable to the KPI tables and to each other.
 const DEFAULT_TIME_RANGE = 12:672
 
-const ANALYSIS_OUTPUT_BASE = "results/validation_results/additional_analysis"
-
 function CleanDirectory(path)
 	mkpath(path)
+end
+
+# case name -> trailing directory name, in CASES order, joined - e.g. "1789484690_fresh_validate_fixed_36_vs_1789484741_fresh_validate_rolling_36"
+function DefaultAnalysisLabel(case_paths)
+	return join([basename(case_paths[c]) for c in CASES if haskey(case_paths, c)], "_vs_")
+end
+
+# Gives each PostAnalysisRunner.Run call (or a standalone submodule PerformAnalysis) its own
+# permanent, never-overwritten output directory under results/post_analysis/, the same
+# {timestamp}_{name} convention TestExperiment.RunBasic uses for simulation runs - the suite used
+# to always write into one fixed, silently-overwritten location regardless of which case_paths
+# were actually analyzed. Also drops a metadata.yaml recording what was analyzed, the same
+# provenance role ClearMarket.CopyConfigFiles! plays for a simulation run's own Config/ copy.
+function NewAnalysisOutputDir(case_paths; label=DefaultAnalysisLabel(case_paths))
+	dir = "results/post_analysis/$(round(Int, datetime2unix(now())))_$(label)"
+	mkpath(dir)
+	YAML.write_file(joinpath(dir, "metadata.yaml"), Dict(
+		"label" => label,
+		"generated_at" => string(now()),
+		"case_paths" => case_paths,
+	))
+	return dir
 end
 
 # Per-clearing RAW decision-variable exports are named "decisionvariables_<experiment

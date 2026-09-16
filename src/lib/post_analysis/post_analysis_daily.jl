@@ -14,9 +14,9 @@ CASES = PostAnalysisCommon.CASES
 
 quantitySymbol = Symbol("Quantity (MWh)")
 
-function PerformAnalysis(case_paths)
+function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths))
 
-    analysis_dir_path = "$(PostAnalysisCommon.ANALYSIS_OUTPUT_BASE)/post_analysis_daily"
+    analysis_dir_path = "$output_base/post_analysis_daily"
 
     dispatch_decision_paths = Dict(case => joinpath(case_paths[case], "final_dispatch_decisions.xlsx") for case in CASES)
 

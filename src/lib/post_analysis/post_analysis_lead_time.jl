@@ -19,9 +19,9 @@ function CleanDirectory(path)
 	mkpath(path)
 end
 
-function PerformAnalysis(case_paths)
+function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths))
 
-	analysis_dir_path = "$(PostAnalysisCommon.ANALYSIS_OUTPUT_BASE)/lead_time_analysis"
+	analysis_dir_path = "$output_base/lead_time_analysis"
 
 	transaction_paths = Dict(case => joinpath(case_paths[case], "transactions.xlsx") for case in CASES)
 
