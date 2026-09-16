@@ -22,8 +22,8 @@ const CASES = ["Fixed Horizon", "Rolling Horizon"]
 # GetFinalDispatchDecisions started carrying FinalAuctionPrice through, so
 # CalculateCaseIndicators' RAW backfill is a no-op for these.
 const DEFAULT_CASE_PATHS = Dict{String,String}(
-	"Fixed Horizon" => "results/1789549574_validate_laura_fixed_36_no_cap",
-	"Rolling Horizon" => "results/1789549669_validate_laura_rolling_36_no_cap",
+	"Fixed Horizon" => "results/1789559723_fixed_36_no_cap",
+	"Rolling Horizon" => "results/1789559835_rolling_36_no_cap",
 )
 
 const DEFAULT_AGENT_MAP = Dict{HelperModelResults.AgentTypeEnum,Vector{String}}(

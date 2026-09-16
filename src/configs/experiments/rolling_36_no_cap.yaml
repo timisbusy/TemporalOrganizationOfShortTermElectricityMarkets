@@ -1,6 +1,6 @@
 # general parameters
 
-name: validate_laura_fixed_36_no_cap # descriptive name for experiment
+name: rolling_36_no_cap # descriptive name for experiment
 
 # Set temporal parameters for experiment - granularity and duration
 timePeriodsPerDay: 24 # number of time periods in a day
@@ -9,7 +9,7 @@ clearForDays: 31 # number of days to clear market for - one more than the capped
 # to 695; 31*24-36=708)
 skipEarlyAuctions: 12
 samplePeriodExcludeSpinUp: 0
-samplePeriodExcludeEnd: 0
+samplePeriodExcludeEnd: 2
 
 # set a start date for data to be used from incoming agent profile data
 startDate: 2025-05-01
@@ -20,7 +20,7 @@ windOffset: 11
 
 
 # choose a market configuration from the markets directory
-marketConfig: fixed_laura.yaml
+marketConfig: rolling_laura.yaml
 
 # choose an agent configuration from the agents directory
 agentConfig: validate_laura_agents.yaml
