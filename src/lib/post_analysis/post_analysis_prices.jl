@@ -24,11 +24,14 @@ case_shortname = Dict{String,String}(
 # nothing, it's discovered straight from each case's own RAW/ directory (see
 # PostAnalysisCommon.DiscoverRawDispatchPrefixes); pass an explicit prefix Dict to override.
 # illustrative_day: needs MTU data through (illustrative_day+1)*24-1 to exist as its own RAW
-# clearing. Defaults to 26, which fits the default lastAuctionMTU-capped fixed_36/rolling_36 pair
-# (max MTU 672); day 28 (needs MTU up to 695) only fits an uncapped run with clearForDays >= 31
-# (36h window: 31*24-36=708) - pass illustrative_day=28 explicitly when pointing this at such a run.
-function PerformAnalysis(case_paths, raw_dispatch_prefix=nothing; illustrative_day=26, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths))
+# clearing for every case - true for an uncapped run with clearForDays >= 31 (36h window:
+# 31*24-36=708), but not for the lastAuctionMTU-capped fixed_36/rolling_36 pair (max MTU 672).
+# Left as nothing, day 28 is used when every case's RAW export actually reaches that far,
+# otherwise falling back to 26 (which fits the capped pair too); pass an explicit day to override.
+function PerformAnalysis(case_paths, raw_dispatch_prefix=nothing; illustrative_day=nothing, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths))
     raw_dispatch_prefix = raw_dispatch_prefix === nothing ? PostAnalysisCommon.DiscoverRawDispatchPrefixes(case_paths) : raw_dispatch_prefix
+
+    illustrative_day = illustrative_day !== nothing ? illustrative_day : (DayFits(28, raw_dispatch_prefix) ? 28 : 26)
 
     analysis_dir_path = "$output_base/post_analysis_prices"
 
@@ -41,6 +44,13 @@ function PerformAnalysis(case_paths, raw_dispatch_prefix=nothing; illustrative_d
     for case in CASES
         CreatePlots(case, illustrative_plus_interval, illustrative_interval, raw_dispatch_prefix, analysis_dir_path)
     end
+end
+
+# whether every case has its own RAW clearing for day's last MTU, i.e. whether the illustrative
+# window for that day can actually be drawn at all
+function DayFits(day, raw_dispatch_prefix)
+    last_mtu = (day + 1)*24 - 1
+    return all(isfile("$(raw_dispatch_prefix[case])$(last_mtu).xlsx") for case in CASES)
 end
 
 function CreatePlots(case, interval, highlight_interval, raw_decision_variables_paths, analysis_dir_path)
