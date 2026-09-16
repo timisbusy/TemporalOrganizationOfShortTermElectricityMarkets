@@ -18,12 +18,13 @@ include("../output_data/market_data_storage.jl")
 const CASES = ["Fixed Horizon", "Rolling Horizon"]
 
 # fixed_36/rolling_36 with lastAuctionMTU removed (clearForDays: 31, so there's room for the
-# day-28 price-analysis window - see post_analysis_prices.jl). Exported after
+# day-28 price-analysis window - see post_analysis_prices.jl) and a full day of spin-up excluded
+# (samplePeriodExcludeSpinUp: 1, not 0 - see DEFAULT_TIME_RANGE below). Exported after
 # GetFinalDispatchDecisions started carrying FinalAuctionPrice through, so
 # CalculateCaseIndicators' RAW backfill is a no-op for these.
 const DEFAULT_CASE_PATHS = Dict{String,String}(
-	"Fixed Horizon" => "results/1789559723_fixed_36_no_cap",
-	"Rolling Horizon" => "results/1789559835_rolling_36_no_cap",
+	"Fixed Horizon" => "results/1789572958_fixed_36_no_cap_1d_spinup",
+	"Rolling Horizon" => "results/1789572958_rolling_36_no_cap_1d_spinup",
 )
 
 const DEFAULT_AGENT_MAP = Dict{HelperModelResults.AgentTypeEnum,Vector{String}}(
@@ -36,10 +37,12 @@ const DEFAULT_AGENT_MAP = Dict{HelperModelResults.AgentTypeEnum,Vector{String}}(
 # CalculateCaseIndicators) since most callers in this suite don't need imbalance at all.
 const DEFAULT_IMBALANCE_AGENTS = ("6G_Wind", "5G_Peak")
 
-# D0.5-D28 delivered-MTU window, excluding spin-up/tail clearings - the same range used throughout
-# the Laura KPI validation (post_analysis_laura_kpis.jl), so every module in this suite stays
-# comparable to the KPI tables and to each other.
-const DEFAULT_TIME_RANGE = 12:672
+# D1-D28 delivered-MTU window: a clean 28 days, excluding a full day of spin-up at the start and
+# the samplePeriodExcludeEnd=2 days of tail clearings at the end (MTU 24*1 to 24*(31-2)-1). This
+# used to be 12:672 (D0.5-D28, matching the Laura KPI validation's own comparable_delivery_hours
+# range exactly) before samplePeriodExcludeSpinUp moved from 0 to 1 day, so this suite's own
+# tables/plots no longer line up 1:1 against post_analysis_laura_kpis.jl's 12:672 window.
+const DEFAULT_TIME_RANGE = 24:695
 
 function CleanDirectory(path)
 	mkpath(path)
