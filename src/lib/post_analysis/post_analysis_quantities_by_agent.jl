@@ -3,6 +3,7 @@ module PostAnalysisQuantitiesByAgent
 using XLSX, DataFrames, Plots, Statistics, Latexify, Printf
 
 include("./post_analysis_common.jl")
+include("./agent_renaming.jl")
 
 CASES = PostAnalysisCommon.CASES
 
@@ -52,7 +53,7 @@ function AnalyzeQuantities(agent_indicators_by_case, analysis_dir_path)
 		fixed_q = ValueForAgent(agent_indicators_by_case["Fixed Horizon"], agent, quantitySymbol)
 		rolling_q = ValueForAgent(agent_indicators_by_case["Rolling Horizon"], agent, quantitySymbol)
 		pct_diff = Printf.format(percent_format[], 100*(rolling_q - fixed_q)/fixed_q)
-		push!(renamed_agent_ind_df, [agent, fixed_q, rolling_q, pct_diff])
+		push!(renamed_agent_ind_df, [AgentRenaming.DisplayName(agent), fixed_q, rolling_q, pct_diff])
 	end
 
 	WriteComparisonTable(renamed_agent_ind_df, "$analysis_dir_path/agent_quantities_details.xlsx", "$analysis_dir_path/agent_quantities.tex")
@@ -66,7 +67,7 @@ function AnalyzeSurpluses(agent_indicators_by_case, analysis_dir_path)
 		fixed_s = ValueForAgent(agent_indicators_by_case["Fixed Horizon"], agent, surplusSymbol)
 		rolling_s = ValueForAgent(agent_indicators_by_case["Rolling Horizon"], agent, surplusSymbol)
 		pct_diff = Printf.format(percent_format[], 100*(rolling_s - fixed_s)/fixed_s)
-		push!(renamed_agent_ind_df, [agent, fixed_s/1e6, rolling_s/1e6, pct_diff])
+		push!(renamed_agent_ind_df, [AgentRenaming.DisplayName(agent), fixed_s/1e6, rolling_s/1e6, pct_diff])
 	end
 
 	WriteComparisonTable(renamed_agent_ind_df, "$analysis_dir_path/agent_surplus_details.xlsx", "$analysis_dir_path/agent_surpluses.tex")
@@ -96,7 +97,7 @@ function AnalyzeGrossTradedVolume(case_paths, time_range, analysis_dir_path)
 		fixed_v = gross_traded["Fixed Horizon"][agent]
 		rolling_v = gross_traded["Rolling Horizon"][agent]
 		pct_diff = Printf.format(percent_format[], 100*(rolling_v - fixed_v)/fixed_v)
-		push!(renamed_agent_ind_df, [agent, fixed_v, rolling_v, pct_diff])
+		push!(renamed_agent_ind_df, [AgentRenaming.DisplayName(agent), fixed_v, rolling_v, pct_diff])
 	end
 
 	WriteComparisonTable(renamed_agent_ind_df, "$analysis_dir_path/agent_gross_traded_volume_details.xlsx", "$analysis_dir_path/agent_gross_traded_volume.tex")
