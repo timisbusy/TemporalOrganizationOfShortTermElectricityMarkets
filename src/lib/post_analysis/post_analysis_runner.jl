@@ -8,6 +8,7 @@ include("./post_analysis_storage.jl")
 include("./post_analysis_prices.jl")
 include("./post_analysis_daily.jl")
 include("./post_analysis_physical_indicators.jl")
+include("./post_analysis_auction_snapshots.jl")
 
 # case_paths maps "Fixed Horizon"/"Rolling Horizon" to each design's own single-design run
 # directory (see PostAnalysisCommon.DEFAULT_CASE_PATHS) - defaults to the latest validated
@@ -25,6 +26,7 @@ function Run(case_paths=PostAnalysisCommon.DEFAULT_CASE_PATHS; label=PostAnalysi
 	PostAnalysisPrices.PerformAnalysis(case_paths; output_base=output_base)
 	PostAnalysisStorage.PerformAnalysis(case_paths; output_base=output_base)
 	PostAnalysisPhysicalIndicators.PerformAnalysis(case_paths; output_base=output_base)
+	PostAnalysisAuctionSnapshots.PerformAnalysis(case_paths; output_base=output_base)
 
 	return output_base
 end
