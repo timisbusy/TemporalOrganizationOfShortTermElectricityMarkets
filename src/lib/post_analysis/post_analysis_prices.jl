@@ -91,9 +91,14 @@ function plotPrices(dvs, case, interval, highlight_interval, analysis_dir_path)
                             title="Price Evolution $case $day_label",
                             size=(1280, 450))
 
+    # dv.mtu goes up to interval.stop + 5 to match xlims! below and the trade_blocks chart in
+    # plotTrades - each auction's own RAW export already has price data out that far (obviously so
+    # for Rolling Horizon, whose 36h window means every one of these 5 auctions reaches well past
+    # interval.stop on its own), truncating at interval.stop alone just discarded it, leaving the
+    # last 5 MTU of the plot's intended headroom empty.
     for mtu in interval.start:(interval.start + 4)
         dv = dvs[mtu]
-        filtered = dv[mtu .<= dv.mtu .<= interval.stop, :]
+        filtered = dv[mtu .<= dv.mtu .<= interval.stop + 5, :]
         Plots.plot!(pPrices, filtered.mtu, filtered.price, label="Auction at MTU $mtu", legend=:topleft)
     end
 
