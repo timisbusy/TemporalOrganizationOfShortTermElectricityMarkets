@@ -8,7 +8,7 @@
 
 module PostAnalysisCommon
 
-using XLSX, DataFrames, YAML, Dates
+using XLSX, DataFrames, YAML, Dates, Printf
 
 include("../helpers.jl")
 using .Helpers.HelperModelResults
@@ -102,6 +102,17 @@ function EscapeForLatex(df)
 		end
 	end
 	return escaped
+end
+
+const PERCENT_FORMAT = Ref(Printf.Format("%0.3f%%"))
+
+# "rolling vs fixed" percent-difference string, formatted like "12.345%" - or "—" when fixed is
+# zero, since dividing by it gives NaN/Inf rather than a meaningful percentage (Printf happily
+# renders those as the literal strings "NaN%"/"Inf%", which is worse than just saying there's no
+# ratio to report).
+function PercentDiffString(rolling, fixed)
+	fixed == 0 && return "—"
+	return Printf.format(PERCENT_FORMAT[], 100*(rolling - fixed)/fixed)
 end
 
 function LoadFile(filepath)

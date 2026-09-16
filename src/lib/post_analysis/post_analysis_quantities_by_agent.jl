@@ -1,6 +1,6 @@
 module PostAnalysisQuantitiesByAgent
 
-using XLSX, DataFrames, Plots, Statistics, Latexify, Printf
+using XLSX, DataFrames, Plots, Statistics, Latexify
 
 include("./post_analysis_common.jl")
 include("./agent_renaming.jl")
@@ -12,8 +12,6 @@ generator_names = ["3G_Base","4G_Shoulder","5G_Peak","6G_Wind","7G_Solar"]
 
 quantitySymbol = Symbol("Quantity (MWh)")
 surplusSymbol = Symbol("Surplus (€)")
-
-percent_format = Ref(Printf.Format("%0.3f%%"))
 
 function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE)
 
@@ -52,7 +50,7 @@ function AnalyzeQuantities(agent_indicators_by_case, analysis_dir_path)
 	for agent in agent_names
 		fixed_q = ValueForAgent(agent_indicators_by_case["Fixed Horizon"], agent, quantitySymbol)
 		rolling_q = ValueForAgent(agent_indicators_by_case["Rolling Horizon"], agent, quantitySymbol)
-		pct_diff = Printf.format(percent_format[], 100*(rolling_q - fixed_q)/fixed_q)
+		pct_diff = PostAnalysisCommon.PercentDiffString(rolling_q, fixed_q)
 		push!(renamed_agent_ind_df, [AgentRenaming.DisplayName(agent), fixed_q, rolling_q, pct_diff])
 	end
 
@@ -66,7 +64,7 @@ function AnalyzeSurpluses(agent_indicators_by_case, analysis_dir_path)
 	for agent in agent_names
 		fixed_s = ValueForAgent(agent_indicators_by_case["Fixed Horizon"], agent, surplusSymbol)
 		rolling_s = ValueForAgent(agent_indicators_by_case["Rolling Horizon"], agent, surplusSymbol)
-		pct_diff = Printf.format(percent_format[], 100*(rolling_s - fixed_s)/fixed_s)
+		pct_diff = PostAnalysisCommon.PercentDiffString(rolling_s, fixed_s)
 		push!(renamed_agent_ind_df, [AgentRenaming.DisplayName(agent), fixed_s, rolling_s, pct_diff])
 	end
 
@@ -96,7 +94,7 @@ function AnalyzeGrossTradedVolume(case_paths, time_range, analysis_dir_path)
 	for agent in generator_names
 		fixed_v = gross_traded["Fixed Horizon"][agent]
 		rolling_v = gross_traded["Rolling Horizon"][agent]
-		pct_diff = Printf.format(percent_format[], 100*(rolling_v - fixed_v)/fixed_v)
+		pct_diff = PostAnalysisCommon.PercentDiffString(rolling_v, fixed_v)
 		push!(renamed_agent_ind_df, [AgentRenaming.DisplayName(agent), fixed_v, rolling_v, pct_diff])
 	end
 

@@ -1,12 +1,10 @@
 module PostAnalysisSEW
 
-using XLSX, DataFrames, Plots, Statistics, Latexify, Printf
+using XLSX, DataFrames, Plots, Statistics, Latexify
 
 include("./post_analysis_common.jl")
 
 CASES = PostAnalysisCommon.CASES
-
-percent_format = Ref(Printf.Format("%0.3f%%"))
 
 function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE)
 
@@ -27,7 +25,7 @@ function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisO
 	for indicator in names(fixed)
 		fixed_v = fixed[1, indicator]
 		rolling_v = rolling[1, indicator]
-		pct_diff = Printf.format(percent_format[], 100*(rolling_v - fixed_v)/fixed_v)
+		pct_diff = PostAnalysisCommon.PercentDiffString(rolling_v, fixed_v)
 		push!(final_indicators_df, [indicator, fixed_v, rolling_v, pct_diff])
 	end
 

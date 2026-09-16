@@ -1,12 +1,10 @@
 module PostAnalysisStorage
 
-using XLSX, DataFrames, Plots, Statistics, Latexify, Printf
+using XLSX, DataFrames, Plots, Statistics, Latexify
 
 include("./post_analysis_common.jl")
 
 CASES = PostAnalysisCommon.CASES
-
-percent_format = Ref(Printf.Format("%0.3f%%"))
 
 function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths))
 
@@ -39,7 +37,7 @@ function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisO
 	end
 
 	storage_analysis_df[!, Symbol("Change")] = storage_analysis_df[!, Symbol("Rolling Horizon")] .- storage_analysis_df[!, Symbol("Fixed Horizon")]
-	storage_analysis_df[!, Symbol("% Change")] = Printf.format.(percent_format,100*(storage_analysis_df[!, Symbol("Change")] ./ storage_analysis_df[!, Symbol("Fixed Horizon")]))
+	storage_analysis_df[!, Symbol("% Change")] = PostAnalysisCommon.PercentDiffString.(storage_analysis_df[!, Symbol("Rolling Horizon")], storage_analysis_df[!, Symbol("Fixed Horizon")])
 
 	println(storage_analysis_df)
 
