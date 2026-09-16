@@ -22,39 +22,32 @@ function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisO
 
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 
-    may_19_interval = 20*24:(21*24 - 1)
-    may_20_interval = 21*24:(22*24 - 1)
-    may_21_interval = 22*24:(23*24 - 1)
+    # day index d spans MTU [24d, 24d+23] and maps to calendar date startDate + d days - with
+    # startDate: 2025-05-01 (day 0 = May 1), May 4 is day index 3 and May 5 is day index 4.
+    may_4_interval = 3*24:(4*24 - 1)
+    may_5_interval = 4*24:(5*24 - 1)
 
     print_cases = CASES
 
 	dds = GetDispatchDecisions(print_cases, dispatch_decision_paths)
     mtu_economic_indicators = GetMTUEconomicIndicators(print_cases, case_paths)
 
-	println("MAY 19 RESULTS")
+	println("MAY 4 RESULTS")
 
-    plotPhysicalIndicator(dds, may_19_interval, Symbol("SOC"), print_cases, "May 19", analysis_dir_path)
-    plotPhysicalIndicator(dds, may_19_interval, Symbol("6G_Wind"), print_cases, "May 19", analysis_dir_path)
-    plotPhysicalIndicator(dds, may_19_interval, Symbol("2D_ModerateBid"), print_cases, "May 19", analysis_dir_path)
-    plotPhysicalIndicator(dds, may_19_interval, Symbol("4G_Shoulder"), print_cases, "May 19", analysis_dir_path)
+    plotPhysicalIndicator(dds, may_4_interval, Symbol("SOC"), print_cases, "May 4", analysis_dir_path)
+    plotPhysicalIndicator(dds, may_4_interval, Symbol("6G_Wind"), print_cases, "May 4", analysis_dir_path)
+    plotPhysicalIndicator(dds, may_4_interval, Symbol("2D_ModerateBid"), print_cases, "May 4", analysis_dir_path)
+    plotPhysicalIndicator(dds, may_4_interval, Symbol("4G_Shoulder"), print_cases, "May 4", analysis_dir_path)
 
-    println("MAY 20 RESULTS")
+    println("MAY 5 RESULTS")
 
-    plotPhysicalIndicator(dds, may_20_interval, Symbol("SOC"), print_cases, "May 20", analysis_dir_path)
-    plotPhysicalIndicator(dds, may_20_interval, Symbol("6G_Wind"), print_cases, "May 20", analysis_dir_path)
-    plotPhysicalIndicator(dds, may_20_interval, Symbol("2D_ModerateBid"), print_cases, "May 20", analysis_dir_path)
-    plotPhysicalIndicator(dds, may_20_interval, Symbol("4G_Shoulder"), print_cases, "May 20", analysis_dir_path)
+    plotPhysicalIndicator(dds, may_5_interval, Symbol("SOC"), print_cases, "May 5", analysis_dir_path)
+    plotPhysicalIndicator(dds, may_5_interval, Symbol("6G_Wind"), print_cases, "May 5", analysis_dir_path)
+    plotPhysicalIndicator(dds, may_5_interval, Symbol("2D_ModerateBid"), print_cases, "May 5", analysis_dir_path)
+    plotPhysicalIndicator(dds, may_5_interval, Symbol("4G_Shoulder"), print_cases, "May 5", analysis_dir_path)
 
-    println("MAY 21 RESULTS")
-
-    plotPhysicalIndicator(dds, may_21_interval, Symbol("SOC"), print_cases, "May 21", analysis_dir_path)
-    plotPhysicalIndicator(dds, may_21_interval, Symbol("6G_Wind"), print_cases, "May 21", analysis_dir_path)
-    plotPhysicalIndicator(dds, may_21_interval, Symbol("2D_ModerateBid"), print_cases, "May 21", analysis_dir_path)
-    plotPhysicalIndicator(dds, may_21_interval, Symbol("4G_Shoulder"), print_cases, "May 21", analysis_dir_path)
-
-    plotSEWDifference(mtu_economic_indicators, may_19_interval, print_cases, "May 19", analysis_dir_path)
-    plotSEWDifference(mtu_economic_indicators, may_20_interval, print_cases, "May 20", analysis_dir_path)
-    plotSEWDifference(mtu_economic_indicators, may_21_interval, print_cases, "May 21", analysis_dir_path)
+    plotSEWDifference(mtu_economic_indicators, may_4_interval, print_cases, "May 4", analysis_dir_path)
+    plotSEWDifference(mtu_economic_indicators, may_5_interval, print_cases, "May 5", analysis_dir_path)
 
     AnalyzeDailySEW(print_cases, mtu_economic_indicators, dds, analysis_dir_path)
 end
