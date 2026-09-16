@@ -17,12 +17,13 @@ include("../output_data/market_data_storage.jl")
 
 const CASES = ["Fixed Horizon", "Rolling Horizon"]
 
-# latest validated fixed_36/rolling_36 runs - same pair post_analysis_laura_kpis.jl points at.
-# Exported after GetFinalDispatchDecisions started carrying FinalAuctionPrice through, so
+# fixed_36/rolling_36 with lastAuctionMTU removed (clearForDays: 31, so there's room for the
+# day-28 price-analysis window - see post_analysis_prices.jl). Exported after
+# GetFinalDispatchDecisions started carrying FinalAuctionPrice through, so
 # CalculateCaseIndicators' RAW backfill is a no-op for these.
 const DEFAULT_CASE_PATHS = Dict{String,String}(
-	"Fixed Horizon" => "results/1789484690_fresh_validate_fixed_36",
-	"Rolling Horizon" => "results/1789484741_fresh_validate_rolling_36",
+	"Fixed Horizon" => "results/1789549574_validate_laura_fixed_36_no_cap",
+	"Rolling Horizon" => "results/1789549669_validate_laura_rolling_36_no_cap",
 )
 
 const DEFAULT_AGENT_MAP = Dict{HelperModelResults.AgentTypeEnum,Vector{String}}(
@@ -44,9 +45,13 @@ function CleanDirectory(path)
 	mkpath(path)
 end
 
-# case name -> trailing directory name, in CASES order, joined - e.g. "1789484690_fresh_validate_fixed_36_vs_1789484741_fresh_validate_rolling_36"
+# case name -> trailing directory name, own leading "{unix_timestamp}_" stripped (it's already
+# redundant with NewAnalysisOutputDir's own timestamp prefix, and every extra character here
+# tightens the margin against Windows' 260-char MAX_PATH once a deeply-nested output file name is
+# built on top of it), in CASES order, joined - e.g. "fresh_validate_fixed_36_vs_fresh_validate_rolling_36"
 function DefaultAnalysisLabel(case_paths)
-	return join([basename(case_paths[c]) for c in CASES if haskey(case_paths, c)], "_vs_")
+	names = [replace(basename(case_paths[c]), r"^\d+_" => "") for c in CASES if haskey(case_paths, c)]
+	return join(names, "_vs_")
 end
 
 # Gives each PostAnalysisRunner.Run call (or a standalone submodule PerformAnalysis) its own
