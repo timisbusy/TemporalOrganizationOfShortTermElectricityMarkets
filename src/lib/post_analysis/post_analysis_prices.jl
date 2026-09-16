@@ -87,9 +87,12 @@ end
 function plotPrices(dvs, case, interval, highlight_interval, analysis_dir_path)
     day_label = "Day $(highlight_interval.start ÷ 24)"
 
-    pPrices = Plots.plot(xlabel="MTU", ylabel="Price (EUR)",
+    # left_margin: without it the ylabel gets clipped off-canvas entirely rather than just
+    # crowded - same fix already applied to plotTrades' p_gen chart below.
+    pPrices = Plots.plot(xlabel="MTU", ylabel="Market Clearing Price (€/MWh)",
                             title="Price Evolution $case $day_label",
-                            size=(1280, 450))
+                            size=(1280, 450),
+                            left_margin=16Plots.mm, bottom_margin=10Plots.mm)
 
     # dv.mtu goes up to interval.stop + 5 to match xlims! below and the trade_blocks chart in
     # plotTrades - each auction's own RAW export already has price data out that far (obviously so
