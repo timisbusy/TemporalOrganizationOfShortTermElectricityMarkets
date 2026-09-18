@@ -280,7 +280,7 @@ function ClearMarketComparisonForConfig(config, test_id)
 		MarketDataStorage.WriteTwoStageConstrainedMTUs(market_result_container, market_name, test_id)
 		MarketDataStorage.WriteStorageMipDecisions(market_result_container, market_name, test_id)
 	end
-	PlotBaselineOutcomes.plotCompare(marketResults, config, test_range, test_id, FAST_MODE)
+	PlotBaselineOutcomes.plotCompare(marketResults, config, test_range, test_id)
 	if !FAST_MODE
 		PlotPriceDispersionByMTU.plotCompare(marketResults, config, test_range, test_id)
 		PlotImbalanceOutcomes.plotCompare(marketResults, config, test_range, test_id, variableGeneratorProfiles,"full")

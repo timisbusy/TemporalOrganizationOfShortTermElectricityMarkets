@@ -1,0 +1,35 @@
+# general parameters
+
+name: rolling_36_no_cap # descriptive name for experiment
+
+# Set temporal parameters for experiment - granularity and duration
+timePeriodsPerDay: 24 # number of time periods in a day
+clearForDays: 31 # number of days to clear market for - one more than the capped 36h configs so
+# lastAuctionMTU's absence still leaves room for the day-28 price-analysis window (needs MTU up
+# to 695; 31*24-36=708)
+skipEarlyAuctions: 12
+samplePeriodExcludeSpinUp: 0
+samplePeriodExcludeEnd: 2
+
+# set a start date for data to be used from incoming agent profile data
+startDate: 2025-05-01
+
+# set the uncertainty in renewable generation
+noiseLevel: 0.2
+windOffset: 11
+
+
+# choose a market configuration from the markets directory
+marketConfig: rolling_laura.yaml
+
+# choose an agent configuration from the agents directory
+agentConfig: validate_laura_agents.yaml
+
+# for optimization model customization
+optimizationModelConfig:
+  model: latest
+  solver: highs
+  solver_method: simplex
+  demand_adjust: false
+  ex_post_transactions: false
+  restrict_mtu1_trading: true

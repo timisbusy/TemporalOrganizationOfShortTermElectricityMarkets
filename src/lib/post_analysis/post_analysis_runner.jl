@@ -7,18 +7,28 @@ include("./post_analysis_SEW.jl")
 include("./post_analysis_storage.jl")
 include("./post_analysis_prices.jl")
 include("./post_analysis_daily.jl")
+include("./post_analysis_physical_indicators.jl")
+include("./post_analysis_auction_snapshots.jl")
 
 # case_paths maps "Fixed Horizon"/"Rolling Horizon" to each design's own single-design run
 # directory (see PostAnalysisCommon.DEFAULT_CASE_PATHS) - defaults to the latest validated
-# fixed_36/rolling_36 pair.
-function Run(case_paths=PostAnalysisCommon.DEFAULT_CASE_PATHS)
-	PostAnalysisLeadTime.PerformAnalysis(case_paths)
+# fixed_36/rolling_36 pair. All six modules write into one shared, never-overwritten
+# results/post_analysis/{timestamp}_{label}/ directory for this Run call (see
+# PostAnalysisCommon.NewAnalysisOutputDir) - label defaults to one derived from case_paths itself.
+function Run(case_paths=PostAnalysisCommon.DEFAULT_CASE_PATHS; label=PostAnalysisCommon.DefaultAnalysisLabel(case_paths))
+	output_base = PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=label)
 
-	PostAnalysisQuantitiesByAgent.PerformAnalysis(case_paths)
-	PostAnalysisSEW.PerformAnalysis(case_paths)
-	PostAnalysisDaily.PerformAnalysis(case_paths)
-	PostAnalysisPrices.PerformAnalysis(case_paths)
-	PostAnalysisStorage.PerformAnalysis(case_paths)
+	PostAnalysisLeadTime.PerformAnalysis(case_paths; output_base=output_base)
+
+	PostAnalysisQuantitiesByAgent.PerformAnalysis(case_paths; output_base=output_base)
+	PostAnalysisSEW.PerformAnalysis(case_paths; output_base=output_base)
+	PostAnalysisDaily.PerformAnalysis(case_paths; output_base=output_base)
+	PostAnalysisPrices.PerformAnalysis(case_paths; output_base=output_base)
+	PostAnalysisStorage.PerformAnalysis(case_paths; output_base=output_base)
+	PostAnalysisPhysicalIndicators.PerformAnalysis(case_paths; output_base=output_base)
+	PostAnalysisAuctionSnapshots.PerformAnalysis(case_paths; output_base=output_base)
+
+	return output_base
 end
 
 end;

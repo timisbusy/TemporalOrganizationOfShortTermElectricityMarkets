@@ -3,6 +3,7 @@ module PostAnalysisLeadTime
 using XLSX, DataFrames, Plots, Statistics, StatsPlots, Latexify
 
 include("./post_analysis_common.jl")
+include("./agent_renaming.jl")
 
 mtuSymbol = Symbol("Market Time Unit")
 clearingMTUSymbol = Symbol("Clearing MTU")
@@ -19,9 +20,9 @@ function CleanDirectory(path)
 	mkpath(path)
 end
 
-function PerformAnalysis(case_paths)
+function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths))
 
-	analysis_dir_path = "$(PostAnalysisCommon.ANALYSIS_OUTPUT_BASE)/lead_time_analysis"
+	analysis_dir_path = "$output_base/lead_time_analysis"
 
 	transaction_paths = Dict(case => joinpath(case_paths[case], "transactions.xlsx") for case in CASES)
 
@@ -127,7 +128,7 @@ function AgentSellPriceByLeadTime(transactions_by_case,agent, analysis_dir_path)
         bar_position = :dodge,
         color = colors,
         ylabel = "Sold volume (m MWh)",
-        title = "$agent Sales by Lead Time",
+        title = "$(AgentRenaming.DisplayName(agent)) Sales by Lead Time",
         legend = :topleft,
         grid = :y,
         framestyle = :box,
@@ -143,7 +144,7 @@ function AgentSellPriceByLeadTime(transactions_by_case,agent, analysis_dir_path)
         bar_position = :dodge,
         color = colors,
         ylabel = "Avg sell price (EUR/MWh)",
-        title = "$agent Sell Price by Lead Time",
+        title = "$(AgentRenaming.DisplayName(agent)) Sell Price by Lead Time",
         legend = :topleft,
         grid = :y,
         framestyle = :box,
@@ -187,7 +188,7 @@ function SellAndBuybackPrices(transactions_by_case, analysis_dir_path)
     p = plot(
         title = "Average Sell and Buyback Prices",
         ylabel = "EUR/MWh",
-        xticks = (1:length(agents), agents),
+        xticks = (1:length(agents), AgentRenaming.DisplayName.(agents)),
         xlims = (0.45, length(agents) + 0.55),
         ylims = (-2, ymax * 1.22),
         legend = :topright,

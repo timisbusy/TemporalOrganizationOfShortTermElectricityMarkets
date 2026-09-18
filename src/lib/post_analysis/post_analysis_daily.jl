@@ -9,52 +9,46 @@ using Distributions
 using Latexify
 
 include("./post_analysis_common.jl")
+include("./agent_renaming.jl")
 
 CASES = PostAnalysisCommon.CASES
 
 quantitySymbol = Symbol("Quantity (MWh)")
 
-function PerformAnalysis(case_paths)
+function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths))
 
-    analysis_dir_path = "$(PostAnalysisCommon.ANALYSIS_OUTPUT_BASE)/post_analysis_daily"
+    analysis_dir_path = "$output_base/post_analysis_daily"
 
     dispatch_decision_paths = Dict(case => joinpath(case_paths[case], "final_dispatch_decisions.xlsx") for case in CASES)
 
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 
-    may_19_interval = 20*24:(21*24 - 1)
-    may_20_interval = 21*24:(22*24 - 1)
-    may_21_interval = 22*24:(23*24 - 1)
+    # day index d spans MTU [24d, 24d+23] and maps to calendar date startDate + d days - with
+    # startDate: 2025-05-01 (day 0 = May 1), May 4 is day index 3 and May 5 is day index 4.
+    may_4_interval = 3*24:(4*24 - 1)
+    may_5_interval = 4*24:(5*24 - 1)
 
     print_cases = CASES
 
 	dds = GetDispatchDecisions(print_cases, dispatch_decision_paths)
     mtu_economic_indicators = GetMTUEconomicIndicators(print_cases, case_paths)
 
-	println("MAY 19 RESULTS")
+	println("MAY 4 RESULTS")
 
-    plotPhysicalIndicator(dds, may_19_interval, Symbol("SOC"), print_cases, "May 19", analysis_dir_path)
-    plotPhysicalIndicator(dds, may_19_interval, Symbol("6G_Wind"), print_cases, "May 19", analysis_dir_path)
-    plotPhysicalIndicator(dds, may_19_interval, Symbol("2D_ModerateBid"), print_cases, "May 19", analysis_dir_path)
-    plotPhysicalIndicator(dds, may_19_interval, Symbol("4G_Shoulder"), print_cases, "May 19", analysis_dir_path)
+    plotPhysicalIndicator(dds, may_4_interval, Symbol("SOC"), print_cases, "May 4", analysis_dir_path)
+    plotPhysicalIndicator(dds, may_4_interval, Symbol("6G_Wind"), print_cases, "May 4", analysis_dir_path)
+    plotPhysicalIndicator(dds, may_4_interval, Symbol("2D_ModerateBid"), print_cases, "May 4", analysis_dir_path)
+    plotPhysicalIndicator(dds, may_4_interval, Symbol("4G_Shoulder"), print_cases, "May 4", analysis_dir_path)
 
-    println("MAY 20 RESULTS")
+    println("MAY 5 RESULTS")
 
-    plotPhysicalIndicator(dds, may_20_interval, Symbol("SOC"), print_cases, "May 20", analysis_dir_path)
-    plotPhysicalIndicator(dds, may_20_interval, Symbol("6G_Wind"), print_cases, "May 20", analysis_dir_path)
-    plotPhysicalIndicator(dds, may_20_interval, Symbol("2D_ModerateBid"), print_cases, "May 20", analysis_dir_path)
-    plotPhysicalIndicator(dds, may_20_interval, Symbol("4G_Shoulder"), print_cases, "May 20", analysis_dir_path)
+    plotPhysicalIndicator(dds, may_5_interval, Symbol("SOC"), print_cases, "May 5", analysis_dir_path)
+    plotPhysicalIndicator(dds, may_5_interval, Symbol("6G_Wind"), print_cases, "May 5", analysis_dir_path)
+    plotPhysicalIndicator(dds, may_5_interval, Symbol("2D_ModerateBid"), print_cases, "May 5", analysis_dir_path)
+    plotPhysicalIndicator(dds, may_5_interval, Symbol("4G_Shoulder"), print_cases, "May 5", analysis_dir_path)
 
-    println("MAY 21 RESULTS")
-
-    plotPhysicalIndicator(dds, may_21_interval, Symbol("SOC"), print_cases, "May 21", analysis_dir_path)
-    plotPhysicalIndicator(dds, may_21_interval, Symbol("6G_Wind"), print_cases, "May 21", analysis_dir_path)
-    plotPhysicalIndicator(dds, may_21_interval, Symbol("2D_ModerateBid"), print_cases, "May 21", analysis_dir_path)
-    plotPhysicalIndicator(dds, may_21_interval, Symbol("4G_Shoulder"), print_cases, "May 21", analysis_dir_path)
-
-    plotSEWDifference(mtu_economic_indicators, may_19_interval, print_cases, "May 19", analysis_dir_path)
-    plotSEWDifference(mtu_economic_indicators, may_20_interval, print_cases, "May 20", analysis_dir_path)
-    plotSEWDifference(mtu_economic_indicators, may_21_interval, print_cases, "May 21", analysis_dir_path)
+    plotSEWDifference(mtu_economic_indicators, may_4_interval, print_cases, "May 4", analysis_dir_path)
+    plotSEWDifference(mtu_economic_indicators, may_5_interval, print_cases, "May 5", analysis_dir_path)
 
     AnalyzeDailySEW(print_cases, mtu_economic_indicators, dds, analysis_dir_path)
 end
@@ -100,8 +94,9 @@ function plotPhysicalIndicator(dds, test_range, indicator, print_cases, print_da
     end
     # println(intervalIndicatorData)
     xPlotIndicator = test_range
-    pIndicator = Plots.plot(xlabel="MTU", ylabel="$indicator",
-                            title="Comparing $indicator - $(print_date)")
+    indicator_label = String(indicator) == "SOC" ? "SOC" : AgentRenaming.DisplayName(String(indicator))
+    pIndicator = Plots.plot(xlabel="MTU", ylabel="$indicator_label (MWh)",
+                            title="$indicator_label - $(print_date)")
 
     for (marketConfiguration, indicatorSeries) in indicatorData
         Plots.plot!(pIndicator, xPlotIndicator, indicatorSeries, label=marketConfiguration)
@@ -113,6 +108,7 @@ end
 
 sewSymbol =  Symbol("Socioeconomic Welfare (€)")
 imbalanceSymbol = Symbol("Imbalance Energy (MWh)")
+demandUtilitySymbol = Symbol("Demand Utility (€)")
 
 function AnalyzeDailySEW(print_cases, mtu_economic_indicators, dds, analysis_dir_path)
 
@@ -190,7 +186,7 @@ function CreateComparisonStats(mtu_economic_indicators, daily_sews, analysis_dir
 
     XLSX.writetable("$analysis_dir_path/sew_details.xlsx", "data" => comparisonDF; overwrite=true)
 
-    daily_sew_tex = latexify(comparisonDF; env = :table, booktabs = true, snakecase=true, latex=false,fmt="%'\''d\n")
+    daily_sew_tex = latexify(PostAnalysisCommon.EscapeForLatex(comparisonDF); env = :table, booktabs = true, snakecase=true, latex=false,fmt="%'\''d\n")
     write("$analysis_dir_path/sew_details.tex",daily_sew_tex)
 end
 
@@ -244,12 +240,21 @@ function AnalyzeDrivers(print_cases, mtu_economic_indicators, dispatch_decisions
         daily_imbalances[marketConfiguration] = daily_imbalance
     end
 
+    daily_demand_utilities = Dict{String,Any}()
+    for (marketConfiguration, mei) in mtu_economic_indicators
+        daily_mei = groupby(mei, :Day)
+        daily_demand_utility = combine(daily_mei, demandUtilitySymbol => sum => demandUtilitySymbol)
+        daily_demand_utilities[marketConfiguration] = daily_demand_utility
+    end
+
     sew_diffs = DiffByDay(daily_sews["Rolling Horizon"], daily_sews["Fixed Horizon"], sewSymbol)
     net_discharge_diffs = DiffByDay(daily_net_discharges["Rolling Horizon"], daily_net_discharges["Fixed Horizon"], Symbol("Net Discharge"))
 
     shoulder_peak_dispatch_diffs = DiffByDay(daily_shoulder_peak_dispatches["Rolling Horizon"], daily_shoulder_peak_dispatches["Fixed Horizon"], shoulderPeakDispatchSymbol)
 
     imbalance_diffs = DiffByDay(daily_imbalances["Rolling Horizon"], daily_imbalances["Fixed Horizon"], imbalanceSymbol)
+
+    demand_utility_diffs = DiffByDay(daily_demand_utilities["Rolling Horizon"], daily_demand_utilities["Fixed Horizon"], demandUtilitySymbol)
 
 
 
@@ -265,6 +270,11 @@ function AnalyzeDrivers(print_cases, mtu_economic_indicators, dispatch_decisions
 
     spec = (feature = :delta_imbalance_energy_mwh, title = "Imbalance energy", xlabel = "Delta imbalance energy [MWh]", filepath = "$analysis_dir_path/imbalance_driver.png")
     (x, y) = AlignedXY(imbalance_diffs, sew_diffs)
+
+    PlotDriver(spec, x, y)
+
+    spec = (feature = :delta_demand_utility_eur, title = "Demand utility", xlabel = "Delta demand utility [EUR]", filepath = "$analysis_dir_path/demand_utility_driver.png")
+    (x, y) = AlignedXY(demand_utility_diffs, sew_diffs)
 
     PlotDriver(spec, x, y)
 

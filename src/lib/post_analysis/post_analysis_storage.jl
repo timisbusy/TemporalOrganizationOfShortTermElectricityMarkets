@@ -1,16 +1,14 @@
 module PostAnalysisStorage
 
-using XLSX, DataFrames, Plots, Statistics, Latexify, Printf
+using XLSX, DataFrames, Plots, Statistics, Latexify
 
 include("./post_analysis_common.jl")
 
 CASES = PostAnalysisCommon.CASES
 
-percent_format = Ref(Printf.Format("%0.3f%%"))
+function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths))
 
-function PerformAnalysis(case_paths)
-
-	analysis_dir_path = "$(PostAnalysisCommon.ANALYSIS_OUTPUT_BASE)/post_analysis_storage"
+	analysis_dir_path = "$output_base/post_analysis_storage"
 
 	dispatch_decision_paths = Dict(case => joinpath(case_paths[case], "final_dispatch_decisions.xlsx") for case in CASES)
 
@@ -35,17 +33,17 @@ function PerformAnalysis(case_paths)
 	storage_analysis_df = DataFrame(Metric=metrics)
 	for (case, dd) in dds
 		(discharge_total,charge_total,discharge_per_day,charge_per_day) = PrintStorageDetails(case, dd)
-		storage_analysis_df[!,Symbol(case)] = [charge_per_day,discharge_per_day,charge_per_day-discharge_per_day,charge_per_day+discharge_per_day]
+		storage_analysis_df[!,Symbol(case)] = [charge_per_day,discharge_per_day,discharge_per_day-charge_per_day,charge_per_day+discharge_per_day]
 	end
 
 	storage_analysis_df[!, Symbol("Change")] = storage_analysis_df[!, Symbol("Rolling Horizon")] .- storage_analysis_df[!, Symbol("Fixed Horizon")]
-	storage_analysis_df[!, Symbol("% Change")] = Printf.format.(percent_format,100*(storage_analysis_df[!, Symbol("Change")] ./ storage_analysis_df[!, Symbol("Fixed Horizon")]))
+	storage_analysis_df[!, Symbol("% Change")] = PostAnalysisCommon.PercentDiffString.(storage_analysis_df[!, Symbol("Rolling Horizon")], storage_analysis_df[!, Symbol("Fixed Horizon")])
 
 	println(storage_analysis_df)
 
 	XLSX.writetable("$analysis_dir_path/storage_details.xlsx", "data" => storage_analysis_df; overwrite=true)
 
-	storage_analysis_tex = latexify(storage_analysis_df; env = :table, booktabs = true, snakecase=true, latex=false,fmt="%'\''d\n")
+	storage_analysis_tex = latexify(PostAnalysisCommon.EscapeForLatex(storage_analysis_df); env = :table, booktabs = true, snakecase=true, latex=false,fmt="%'\''d\n")
 	write("$analysis_dir_path/storage_details.tex",storage_analysis_tex)
 
 	NetDischargePerHour(dds, analysis_dir_path)

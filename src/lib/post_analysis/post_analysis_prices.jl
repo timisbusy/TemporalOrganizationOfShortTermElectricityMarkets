@@ -20,20 +20,23 @@ case_shortname = Dict{String,String}(
 )
 
 # raw_dispatch_prefix maps case -> per-clearing RAW decisionvariables_<experiment name>_ prefix -
-# tied to the run's own experiment name, so it doesn't follow generically from case_paths (see
-# PostAnalysisCommon.DEFAULT_RAW_DISPATCH_PREFIX). Pass an explicit prefix Dict when pointing this
-# at run directories other than the default fixed_36/rolling_36 pair.
-function PerformAnalysis(case_paths, raw_dispatch_prefix=PostAnalysisCommon.DEFAULT_RAW_DISPATCH_PREFIX)
+# tied to the run's own experiment name, so it doesn't follow generically from case_paths. Left as
+# nothing, it's discovered straight from each case's own RAW/ directory (see
+# PostAnalysisCommon.DiscoverRawDispatchPrefixes); pass an explicit prefix Dict to override.
+# illustrative_day: needs MTU data through (illustrative_day+1)*24-1 to exist as its own RAW
+# clearing for every case - true for an uncapped run with clearForDays >= 31 (36h window:
+# 31*24-36=708), but not for the lastAuctionMTU-capped fixed_36/rolling_36 pair (max MTU 672).
+# Left as nothing, day 28 is used when every case's RAW export actually reaches that far,
+# otherwise falling back to 26 (which fits the capped pair too); pass an explicit day to override.
+function PerformAnalysis(case_paths, raw_dispatch_prefix=nothing; illustrative_day=nothing, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths))
+    raw_dispatch_prefix = raw_dispatch_prefix === nothing ? PostAnalysisCommon.DiscoverRawDispatchPrefixes(case_paths) : raw_dispatch_prefix
 
-    analysis_dir_path = "$(PostAnalysisCommon.ANALYSIS_OUTPUT_BASE)/post_analysis_prices"
+    illustrative_day = illustrative_day !== nothing ? illustrative_day : (DayFits(28, raw_dispatch_prefix) ? 28 : 26)
+
+    analysis_dir_path = "$output_base/post_analysis_prices"
 
     PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 
-    # illustrative near-end-of-horizon day: fixed_36/rolling_36 only clear MTUs 12:672 (28 days,
-    # capped by lastAuctionMTU), unlike the ~30-day thesis run "May 28" was originally chosen from
-    # - day 26 keeps the same "close to the end, with room for the lookback/lookahead margins"
-    # positioning while staying in range.
-    illustrative_day = 26
     illustrative_plus_interval = (illustrative_day*24 - 12):((illustrative_day + 1)*24 - 1)
 
     illustrative_interval = (illustrative_day*24):((illustrative_day + 1)*24 - 1)
@@ -41,6 +44,13 @@ function PerformAnalysis(case_paths, raw_dispatch_prefix=PostAnalysisCommon.DEFA
     for case in CASES
         CreatePlots(case, illustrative_plus_interval, illustrative_interval, raw_dispatch_prefix, analysis_dir_path)
     end
+end
+
+# whether every case has its own RAW clearing for day's last MTU, i.e. whether the illustrative
+# window for that day can actually be drawn at all
+function DayFits(day, raw_dispatch_prefix)
+    last_mtu = (day + 1)*24 - 1
+    return all(isfile("$(raw_dispatch_prefix[case])$(last_mtu).xlsx") for case in CASES)
 end
 
 function CreatePlots(case, interval, highlight_interval, raw_decision_variables_paths, analysis_dir_path)
@@ -77,13 +87,21 @@ end
 function plotPrices(dvs, case, interval, highlight_interval, analysis_dir_path)
     day_label = "Day $(highlight_interval.start ÷ 24)"
 
-    pPrices = Plots.plot(xlabel="MTU", ylabel="Price (EUR)",
+    # left_margin: without it the ylabel gets clipped off-canvas entirely rather than just
+    # crowded - same fix already applied to plotTrades' p_gen chart below.
+    pPrices = Plots.plot(xlabel="MTU", ylabel="Market Clearing Price (€/MWh)",
                             title="Price Evolution $case $day_label",
-                            size=(1280, 450))
+                            size=(1280, 450),
+                            left_margin=16Plots.mm, bottom_margin=10Plots.mm)
 
+    # dv.mtu goes up to interval.stop + 5 to match xlims! below and the trade_blocks chart in
+    # plotTrades - each auction's own RAW export already has price data out that far (obviously so
+    # for Rolling Horizon, whose 36h window means every one of these 5 auctions reaches well past
+    # interval.stop on its own), truncating at interval.stop alone just discarded it, leaving the
+    # last 5 MTU of the plot's intended headroom empty.
     for mtu in interval.start:(interval.start + 4)
         dv = dvs[mtu]
-        filtered = dv[mtu .<= dv.mtu .<= interval.stop, :]
+        filtered = dv[mtu .<= dv.mtu .<= interval.stop + 5, :]
         Plots.plot!(pPrices, filtered.mtu, filtered.price, label="Auction at MTU $mtu", legend=:topleft)
     end
 
