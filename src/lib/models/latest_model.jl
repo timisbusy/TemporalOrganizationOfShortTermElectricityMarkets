@@ -427,8 +427,13 @@ function build(time_period, marketresults, initialization, data, market)
             set_attribute(m, "solver", "ipm")
         elseif solver_method == "simplex"
             set_attribute(m, "solver", "simplex")
+        elseif solver_method == "unspecified"
+            # leave HiGHS's own "solver" option at its built-in default ("choose", which lets HiGHS
+            # itself pick simplex vs ipm) - this is what an external reference run (e.g. Laura's)
+            # gets from HiGHS if it never sets the option explicitly, so it's needed to reproduce
+            # that run's solver behavior exactly rather than approximate it with a forced method.
         else
-            throw("unknown solver_method \"$solver_method\" in optimizationModelConfig - supported solver methods for highs are \"ipm\" and \"simplex\"")
+            throw("unknown solver_method \"$solver_method\" in optimizationModelConfig - supported solver methods for highs are \"ipm\", \"simplex\", and \"unspecified\"")
         end
     elseif solver == "gurobi"
         if solver_method == "ipm"
@@ -437,9 +442,11 @@ function build(time_period, marketresults, initialization, data, market)
             set_attribute(m, "Method", 0)
         elseif solver_method == "dual_simplex"
             set_attribute(m, "Method", 1)
+        elseif solver_method == "unspecified"
+            # leave Gurobi's own Method option at its built-in default (-1, automatic)
          else
-            throw("unknown solver_method \"$solver_method\" in optimizationModelConfig - supported solver methods for gurobi are \"ipm\" (2), \"simplex\" (0) and \"dual_simplex\" (1)")
-        end 
+            throw("unknown solver_method \"$solver_method\" in optimizationModelConfig - supported solver methods for gurobi are \"ipm\" (2), \"simplex\" (0), \"dual_simplex\" (1), and \"unspecified\"")
+        end
     end
 
 	# build the sets, time series and parameters based on the inputs
