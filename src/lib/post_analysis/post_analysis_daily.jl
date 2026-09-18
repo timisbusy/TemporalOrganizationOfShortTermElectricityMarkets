@@ -108,6 +108,7 @@ end
 
 sewSymbol =  Symbol("Socioeconomic Welfare (€)")
 imbalanceSymbol = Symbol("Imbalance Energy (MWh)")
+demandUtilitySymbol = Symbol("Demand Utility (€)")
 
 function AnalyzeDailySEW(print_cases, mtu_economic_indicators, dds, analysis_dir_path)
 
@@ -239,12 +240,21 @@ function AnalyzeDrivers(print_cases, mtu_economic_indicators, dispatch_decisions
         daily_imbalances[marketConfiguration] = daily_imbalance
     end
 
+    daily_demand_utilities = Dict{String,Any}()
+    for (marketConfiguration, mei) in mtu_economic_indicators
+        daily_mei = groupby(mei, :Day)
+        daily_demand_utility = combine(daily_mei, demandUtilitySymbol => sum => demandUtilitySymbol)
+        daily_demand_utilities[marketConfiguration] = daily_demand_utility
+    end
+
     sew_diffs = DiffByDay(daily_sews["Rolling Horizon"], daily_sews["Fixed Horizon"], sewSymbol)
     net_discharge_diffs = DiffByDay(daily_net_discharges["Rolling Horizon"], daily_net_discharges["Fixed Horizon"], Symbol("Net Discharge"))
 
     shoulder_peak_dispatch_diffs = DiffByDay(daily_shoulder_peak_dispatches["Rolling Horizon"], daily_shoulder_peak_dispatches["Fixed Horizon"], shoulderPeakDispatchSymbol)
 
     imbalance_diffs = DiffByDay(daily_imbalances["Rolling Horizon"], daily_imbalances["Fixed Horizon"], imbalanceSymbol)
+
+    demand_utility_diffs = DiffByDay(daily_demand_utilities["Rolling Horizon"], daily_demand_utilities["Fixed Horizon"], demandUtilitySymbol)
 
 
 
@@ -260,6 +270,11 @@ function AnalyzeDrivers(print_cases, mtu_economic_indicators, dispatch_decisions
 
     spec = (feature = :delta_imbalance_energy_mwh, title = "Imbalance energy", xlabel = "Delta imbalance energy [MWh]", filepath = "$analysis_dir_path/imbalance_driver.png")
     (x, y) = AlignedXY(imbalance_diffs, sew_diffs)
+
+    PlotDriver(spec, x, y)
+
+    spec = (feature = :delta_demand_utility_eur, title = "Demand utility", xlabel = "Delta demand utility [EUR]", filepath = "$analysis_dir_path/demand_utility_driver.png")
+    (x, y) = AlignedXY(demand_utility_diffs, sew_diffs)
 
     PlotDriver(spec, x, y)
 
