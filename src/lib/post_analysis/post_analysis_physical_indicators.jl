@@ -5,8 +5,6 @@ using Plots, DataFrames
 include("./post_analysis_common.jl")
 include("./post_analysis_daily.jl")
 
-CASES = PostAnalysisCommon.CASES
-
 # raw MTU-level dispatch decisions to compare - SOC and each of the three agents whose adjustments
 # matter most for the fixed/rolling comparison (wind forecast error, the moderate-bid demand
 # segment, and the shoulder generator that often absorbs the difference)
@@ -19,7 +17,12 @@ INTERVAL_INDICATORS = [
 	(symbol=Symbol("Imbalance Energy (MWh)"), label="Imbalance Energy (MWh)", file="imbalance_energy"),
 ]
 
-function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE, imbalance_agents=PostAnalysisCommon.DEFAULT_IMBALANCE_AGENTS)
+# cases is (case_a, case_b) - any two case_paths keys, not just the module-default "Rolling
+# Horizon"/"Fixed Horizon" pair. Diff plots (PlotDiffByDay) are case_a - case_b - the default order
+# matches the previous hardcoded "Rolling Horizon" - "Fixed Horizon" behavior.
+function PerformAnalysis(case_paths; cases=("Rolling Horizon", "Fixed Horizon"), output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE, imbalance_agents=PostAnalysisCommon.DEFAULT_IMBALANCE_AGENTS)
+
+	case_a, case_b = cases
 
 	# kept short ("physical_indicators", not "post_analysis_physical_indicators") - this nests under
 	# an already long {timestamp}_{label} output_base, and Windows' 260-char MAX_PATH doesn't leave
@@ -29,25 +32,25 @@ function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisO
 
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 
-	dispatch_decision_paths = Dict(case => joinpath(case_paths[case], "final_dispatch_decisions.xlsx") for case in CASES)
-	dds = PostAnalysisDaily.GetDispatchDecisions(CASES, dispatch_decision_paths)
+	dispatch_decision_paths = Dict(case => joinpath(case_paths[case], "final_dispatch_decisions.xlsx") for case in cases)
+	dds = PostAnalysisDaily.GetDispatchDecisions(cases, dispatch_decision_paths)
 
 	for indicator in PHYSICAL_INDICATORS
-		PostAnalysisDaily.plotPhysicalIndicator(dds, time_range, indicator, CASES, "FullRange", analysis_dir_path)
+		PostAnalysisDaily.plotPhysicalIndicator(dds, time_range, indicator, cases, "FullRange", analysis_dir_path)
 	end
 
 	mtu_economic_indicators = Dict{String,DataFrame}()
-	for case in CASES
+	for case in cases
 		(economic_indicators, agent_indicators, transactions, finalDispatchDecisions, mtu_ei) = PostAnalysisCommon.CalculateCaseIndicators(case_paths, case; time_range=time_range, imbalance_agents=imbalance_agents)
 		PostAnalysisDaily.AddDayAndHour!(mtu_ei, Symbol("MTU"))
 		mtu_economic_indicators[case] = mtu_ei
 	end
 
 	for ind in INTERVAL_INDICATORS
-		daily_values = Dict(case => DailyValue(mtu_economic_indicators, case, ind.symbol) for case in CASES)
-		PlotByDay(daily_values, ind.label, ind.symbol, ind.file, analysis_dir_path)
-		PlotDiffByDay(daily_values, ind.label, ind.symbol, ind.file, analysis_dir_path; sorted=false)
-		PlotDiffByDay(daily_values, ind.label, ind.symbol, ind.file, analysis_dir_path; sorted=true)
+		daily_values = Dict(case => DailyValue(mtu_economic_indicators, case, ind.symbol) for case in cases)
+		PlotByDay(daily_values, ind.label, ind.symbol, ind.file, analysis_dir_path, cases)
+		PlotDiffByDay(daily_values, ind.label, ind.symbol, ind.file, analysis_dir_path, case_a, case_b; sorted=false)
+		PlotDiffByDay(daily_values, ind.label, ind.symbol, ind.file, analysis_dir_path, case_a, case_b; sorted=true)
 	end
 end
 
@@ -56,17 +59,17 @@ function DailyValue(mtu_economic_indicators, case, value_symbol)
 	return combine(daily, value_symbol => sum => value_symbol)
 end
 
-function PlotByDay(daily_values, label, value_symbol, file_label, analysis_dir_path)
+function PlotByDay(daily_values, label, value_symbol, file_label, analysis_dir_path, cases)
 	p = Plots.plot(xlabel="Day", ylabel=label, title="$label by day")
-	for case in CASES
+	for case in cases
 		Plots.plot!(p, daily_values[case].Day, daily_values[case][!, value_symbol], label=case)
 	end
 	display(p)
 	savefig(p, "$analysis_dir_path/by_day_$(file_label).png")
 end
 
-function PlotDiffByDay(daily_values, label, value_symbol, file_label, analysis_dir_path; sorted=false)
-	diff_df = PostAnalysisDaily.DiffByDay(daily_values["Rolling Horizon"], daily_values["Fixed Horizon"], value_symbol)
+function PlotDiffByDay(daily_values, label, value_symbol, file_label, analysis_dir_path, case_a, case_b; sorted=false)
+	diff_df = PostAnalysisDaily.DiffByDay(daily_values[case_a], daily_values[case_b], value_symbol)
 	diffs = diff_df.Diff
 	x = diff_df.Day
 	if sorted
@@ -75,7 +78,7 @@ function PlotDiffByDay(daily_values, label, value_symbol, file_label, analysis_d
 	end
 
 	p = Plots.plot(xlabel = sorted ? "Rank" : "Day", ylabel=label,
-					title="$label: Rolling Horizon - Fixed Horizon")
+					title="$label: $case_a - $case_b")
 	Plots.plot!(p, x, diffs, label="Difference in $label", t=:bar)
 	display(p)
 	savefig(p, "$analysis_dir_path/diff_by_day_$(sorted ? "sorted_" : "")$(file_label).png")
