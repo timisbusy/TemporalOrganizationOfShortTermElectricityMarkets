@@ -254,15 +254,16 @@ function CaseColor(case, cases)
 	return palette[mod1(idx, length(palette))]
 end
 
-# Threshold-hour guide lines, same set Laura's own plot_cdf_comparison draws.
-const THRESHOLD_HOURS = [6, 12, 24, 36, 48, 72]
+# Day-boundary guide lines/ticks - 24h increments over the 0-72h residence-time range, so each
+# line marks a full day of residence rather than Laura's original mixed 6/12/36h set.
+const THRESHOLD_HOURS = 24:24:72
 
 # Mirrors Laura's plot_cdf_comparison: one plot, all cases as CDF lines, xlim/ylim (0,72)/(0,1),
-# faint vertical guide lines at the same threshold hours, linewidth 2.5.
+# faint vertical guide lines (and matching x-axis ticks) at 24h increments, linewidth 2.5.
 function PlotResidenceTimeCDF(residence_by_case, weights_by_case, cases, analysis_dir_path)
 	p = Plots.plot(xlabel="Residence time (h)", ylabel="Cumulative discharge share",
 					title="Storage Residence-Time CDF",
-					xlims=(0, 72), ylims=(0, 1.0),
+					xlims=(0, 72), ylims=(0, 1.0), xticks=0:24:72,
 					size=(1000, 600), left_margin=10Plots.mm, bottom_margin=8Plots.mm)
 
 	for threshold in THRESHOLD_HOURS
@@ -286,7 +287,7 @@ end
 
 # Mirrors Laura's plot_group_histograms: one subplot per case, stacked vertically, 3h-wide bins
 # over 0-72h, normalized to a discharge-share probability, no per-panel legend (the case name is
-# the panel title instead).
+# the panel title instead) - plus the same 24h day-boundary guide lines/ticks as the CDF plot.
 function PlotResidenceTimeHistograms(residence_by_case, weights_by_case, cases, analysis_dir_path)
 	bins = 0:3:72
 	subplots = Any[]
@@ -308,10 +309,13 @@ function PlotResidenceTimeHistograms(residence_by_case, weights_by_case, cases, 
 		sp = Plots.bar(hist_edges[1:end-1], hist_probs, bar_width=step(bins),
 						xlabel="Residence time (h)", ylabel="Discharge share",
 						title=case, legend=false,
-						xlims=(-1, 73), ylims=(0, y_upper),
+						xlims=(-1, 73), ylims=(0, y_upper), xticks=0:24:72,
 						color=CaseColor(case, cases), alpha=0.75,
 						linewidth=0, framestyle=:box, gridalpha=0.18,
 						left_margin=8Plots.mm, right_margin=4Plots.mm, bottom_margin=4Plots.mm)
+		for threshold in THRESHOLD_HOURS
+			Plots.vline!(sp, [threshold], color=RGBA(0, 0, 0, 0.25), linestyle=:dash, label="")
+		end
 		push!(subplots, sp)
 	end
 
