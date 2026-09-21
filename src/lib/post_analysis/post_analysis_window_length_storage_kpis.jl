@@ -26,6 +26,17 @@ const INDICATOR_NAMES = ["Charge Energy (MWh)", "Discharge Energy (MWh)", "Throu
 # (€/MWh, independent of how many days they're averaged over) and pass through unscaled.
 const PER_DAY_INDICATORS = Set(["Charge Energy (MWh)", "Discharge Energy (MWh)", "Throughput (MWh)", "Net Revenue (€)"])
 
+# "Name (Unit)" -> "Name (Unit/day)" for the daily-average table, so its row labels can't be
+# mistaken for the same totals reported in the "totals" sheet just by glancing at the Indicator
+# column - the two average-price indicators (already a rate, not scaled by day count) are left
+# unchanged.
+function DailyIndicatorLabel(indicator)
+	indicator in PER_DAY_INDICATORS || return indicator
+	m = match(r"^(.*)\(([^()]*)\)$", indicator)
+	m === nothing && return "$indicator (per day)"
+	return "$(m.captures[1])($(m.captures[2])/day)"
+end
+
 function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=PostAnalysisConventionalGenerationCost.DefaultLabel(case_paths, cases)), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE)
 
 	length(cases) == 3 || throw("PostAnalysisWindowLengthStorageKPIs compares exactly 3 window lengths (for the adjacent-pair %% difference columns); got $(length(cases)): $cases")
@@ -59,7 +70,7 @@ function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, out
 	daily_avg_df = DataFrame("Indicator"=>String[], short=>Float64[], mid=>Float64[], long=>Float64[], mid_vs_short_col=>String[], long_vs_mid_col=>String[])
 	for row in eachrow(final_indicators_df)
 		scale = row.Indicator in PER_DAY_INDICATORS ? 24 / mtu_count : 1.0
-		push!(daily_avg_df, [row.Indicator, row[short] * scale, row[mid] * scale, row[long] * scale, row[mid_vs_short_col], row[long_vs_mid_col]])
+		push!(daily_avg_df, [DailyIndicatorLabel(row.Indicator), row[short] * scale, row[mid] * scale, row[long] * scale, row[mid_vs_short_col], row[long_vs_mid_col]])
 	end
 	push!(daily_avg_df, ["Days in Test Range", days, days, days, "—", "—"])
 

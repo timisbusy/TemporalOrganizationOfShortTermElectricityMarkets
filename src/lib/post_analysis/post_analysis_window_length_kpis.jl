@@ -22,6 +22,16 @@ const DEFAULT_CASES = PostAnalysisConventionalGenerationCost.DEFAULT_CASES
 # days like every other (extensive) indicator in this table.
 const INTENSIVE_INDICATORS = Set(["Average Final Auction Price (€/MWh)"])
 
+# "Name (Unit)" -> "Name (Unit/day)" for the daily-average table, so its row labels can't be
+# mistaken for the same totals reported in the "totals" sheet just by glancing at the Indicator
+# column - INTENSIVE_INDICATORS (already a rate, not scaled by day count) are left unchanged.
+function DailyIndicatorLabel(indicator)
+	indicator in INTENSIVE_INDICATORS && return indicator
+	m = match(r"^(.*)\(([^()]*)\)$", indicator)
+	m === nothing && return "$indicator (per day)"
+	return "$(m.captures[1])($(m.captures[2])/day)"
+end
+
 function LoadAverageFinalAuctionPrice(case_path, time_range)
 	dd = PostAnalysisCommon.LoadFile(joinpath(case_path, "final_dispatch_decisions.xlsx"))
 	dd = dd[time_range.start .<= dd.mtu .<= time_range.stop, :]
@@ -68,7 +78,7 @@ function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, out
 	daily_avg_df = DataFrame("Indicator"=>String[], short=>Float64[], mid=>Float64[], long=>Float64[], mid_vs_short_col=>String[], long_vs_mid_col=>String[])
 	for row in eachrow(final_indicators_df)
 		scale = row.Indicator in INTENSIVE_INDICATORS ? 1.0 : 24 / mtu_count
-		push!(daily_avg_df, [row.Indicator, row[short] * scale, row[mid] * scale, row[long] * scale, row[mid_vs_short_col], row[long_vs_mid_col]])
+		push!(daily_avg_df, [DailyIndicatorLabel(row.Indicator), row[short] * scale, row[mid] * scale, row[long] * scale, row[mid_vs_short_col], row[long_vs_mid_col]])
 	end
 	push!(daily_avg_df, ["Days in Test Range", days, days, days, "—", "—"])
 
