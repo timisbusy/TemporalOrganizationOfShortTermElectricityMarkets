@@ -1,10 +1,11 @@
-# Wind forecast-error-at-first-entry comparison across the 36h/48h/72h rolling-horizon
-# optimizationWindow configs: for every delivered MTU in time_range, finds the earliest clearing
-# that ever considered that MTU - clearingMTU = mtu - optimizationWindow + 1, clamped to the
-# earliest clearing that actually ran (skipEarlyAuctions), since a natural first-entry clearing for
-# an early MTU can predate the run's own start - reads Wind's own bid quantity for that MTU from
-# that clearing's RAW export (Q_6G_Wind - Wind bids its full forecast availability at price 0, so
-# this *is* its bid), and compares it against the true (noise-free) wind availability for that MTU,
+# Wind forecast-error-at-first-entry comparison, generalized over any marketSequence shape - a
+# single rolling market (36h/48h/72h) or a Fixed Horizon design's 24 separate named markets (one
+# per hour-of-day, each with its own clockTimeBegin/optimizationWindow - see fixed_laura.yaml).
+# For every delivered MTU in time_range, finds the earliest clearing (across every named market in
+# the sequence) that ever considered that MTU - see EarliestClearingMTUForMTU - reads Wind's own
+# bid quantity for that MTU from that clearing's RAW export (Q_6G_Wind - Wind bids its full
+# forecast availability at price 0, so this *is* its bid), and compares it against the true
+# (noise-free) wind availability for that MTU,
 # reconstructed from the same input CSVs via HelperInputData.GetProfileFromFiles - matching exactly
 # how latest_model.jl's own process_time_series_data! builds Q_gen for wind (capacity *
 # power_to_energy_scale * availability-factor-from-profile) before add_wind_forecast_noise!
@@ -66,13 +67,6 @@ function LoadCaseConfigs(case_path)
 	return (experiment_cfg, market_cfg, agent_cfg)
 end
 
-# the rolling-horizon design's own optimizationWindow (assumes a single market in the sequence -
-# true for every rolling_*_no_cap_1d_spinup config this module targets)
-function OptimizationWindow(market_cfg)
-	first_market = first(values(market_cfg["marketSequence"]))
-	return Int(first_market["optimizationWindow"])
-end
-
 # true (noise-free) wind availability per MTU, keyed by mtu - reconstructed the same way
 # latest_model.jl builds Q_gen for wind before add_wind_forecast_noise! perturbs it (Q = capacity *
 # power_to_energy_scale * af, af from HelperInputData.GetProfileFromFiles) - i.e. summing
@@ -95,17 +89,53 @@ function TrueWindAvailability(experiment_cfg, agent_cfg)
 	return Dict(zip(profile_df.mtu, true_availability))
 end
 
-# earliest clearing MTU actually present in this case's RAW/ directory - the RAW filename's own
-# trailing number is its Clearing MTU (see PostAnalysisCommon.DiscoverRawDispatchPrefix).
-function EarliestClearingMTU(raw_dir)
-	earliest = typemax(Int)
-	for f in readdir(raw_dir)
-		m = match(r"_(\d+)\.xlsx$", f)
-		m === nothing && continue
-		earliest = min(earliest, parse(Int, m.captures[1]))
+# The earliest clearing MTU, across every named market in market_cfg["marketSequence"], whose own
+# window reaches `mtu` - generalizes the single-market rolling-horizon shortcut this module used to
+# take (clearing_mtu = mtu - optimizationWindow + 1) to an arbitrary sequence, needed for e.g. a
+# Fixed Horizon design's 24 separate named markets (one per hour-of-day, each with its own
+# clockTimeBegin/clearingInterval/optimizationWindow - see fixed_laura.yaml), where taking "the
+# first market" from the Dict would pick an arbitrary one of the 24 (Dict iteration order isn't
+# YAML file order) and applying a single window via the rolling formula wouldn't reflect how that
+# market's own once-per-day clearingInterval actually schedules it.
+#
+# A market's clearing at time t covers window [t + lookAheadDistance, t + lookAheadDistance +
+# optimizationWindow - 1] (matches ClearMarket's own window construction), and it only clears at
+# t = clockTimeBegin, clockTimeBegin + clearingInterval, clockTimeBegin + 2*clearingInterval, ...
+# (matches MarketSequence.marketMatch's own (t - clockTimeBegin) % clearingInterval == 0 test,
+# reproduced directly here rather than reusing that function, since its own dict shape carries an
+# extra :timePeriodsPerDay key from a DataImporter assembly step this module has no reason to
+# replicate). For each market, walks forward along its own clearing cadence from the smallest time
+# whose window could reach `mtu`, taking the first one that actually produced a RAW export - this
+# is what makes skipEarlyAuctions (or any other reason a theoretically-scheduled clearing never
+# actually ran) fall out for free, without needing to duplicate that logic here. The global answer
+# is the minimum across all markets, since "first entry" means the very first calendar clearing,
+# by any market, that ever considered this MTU.
+function EarliestClearingMTUForMTU(market_cfg, mtu, raw_dispatch_prefix)
+	best = nothing
+	for market in values(market_cfg["marketSequence"])
+		clock_time_begin = Int(market["clockTimeBegin"])
+		clearing_interval = Int(market["clearingInterval"])
+		look_ahead_distance = Int(market["lookAheadDistance"])
+		optimization_window = Int(market["optimizationWindow"])
+
+		lower = mtu - look_ahead_distance - optimization_window + 1
+		upper = mtu - look_ahead_distance
+
+		k_min = max(0, ceil(Int, (lower - clock_time_begin) / clearing_interval))
+		t = clock_time_begin + k_min * clearing_interval
+
+		while t <= upper
+			if isfile("$(raw_dispatch_prefix)$(t).xlsx")
+				best = best === nothing ? t : min(best, t)
+				break # this market's own earliest reach of `mtu` - later occurrences of the same
+				      # market only revise it further, not "first enter" it
+			end
+			t += clearing_interval
+		end
 	end
-	earliest == typemax(Int) && throw("no decisionvariables_*.xlsx files found in $raw_dir")
-	return earliest
+
+	best === nothing && throw("no clearing found for mtu $mtu across marketSequence $(collect(keys(market_cfg["marketSequence"])))")
+	return best
 end
 
 # Wind's own bid quantity (Q_6G_Wind) for `mtu` as it stood in the clearing at `clearing_mtu` -
@@ -124,17 +154,15 @@ end
 # Inf/NaN).
 function CaseForecastErrors(case_path, time_range)
 	(experiment_cfg, market_cfg, agent_cfg) = LoadCaseConfigs(case_path)
-	optimization_window = OptimizationWindow(market_cfg)
 	true_availability = TrueWindAvailability(experiment_cfg, agent_cfg)
 
 	raw_dispatch_prefix = PostAnalysisCommon.DiscoverRawDispatchPrefix(case_path)
-	earliest_clearing_mtu = EarliestClearingMTU(joinpath(case_path, "RAW"))
 
 	cache = Dict{Int,DataFrame}()
 	errors = Float64[]
 	relative_abs_errors = Float64[]
 	for mtu in time_range
-		clearing_mtu = max(mtu - optimization_window + 1, earliest_clearing_mtu)
+		clearing_mtu = EarliestClearingMTUForMTU(market_cfg, mtu, raw_dispatch_prefix)
 		bid = FirstEntryWindBid(raw_dispatch_prefix, mtu, clearing_mtu, cache)
 		true_value = true_availability[mtu]
 		error = bid - true_value
