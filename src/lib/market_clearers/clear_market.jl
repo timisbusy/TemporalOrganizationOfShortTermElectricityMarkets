@@ -164,6 +164,7 @@ end
 
 
 function addTimeseriesProfiles!(variableGeneratorProfiles, config, test_id)
+    full_time_period_range = range(0,config[:clearForDays]*config[:timePeriodsPerDay]) # go from time_period 0 to the last mtp - this is for getting forecast data, for example
     for (gName, gData) in config[:variableGenerators]
     	if haskey(gData,"profile_file") && haskey(gData,"profile_type") 
 	    	gData["profile"] = HelperInputData.GetProfileFromFile(gData["profile_file"], gData["profile_type"], config[:startDate]:config[:endDate], config[:timePeriodsPerDay], gData["conversionFactor"], gData["capacity"])
