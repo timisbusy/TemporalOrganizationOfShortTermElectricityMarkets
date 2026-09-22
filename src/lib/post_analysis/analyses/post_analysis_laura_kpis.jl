@@ -165,7 +165,7 @@ function PerformAnalysis()
 		economic_indicators_all = vcat(economic_indicators_all, economic_indicators, daily_economic_indicators; cols=:union)
 
 	# Trading Volume
-	# Quantity Delivered
+	# Quantity Contracted
 	# Revenue/Profit (surplus)
 
 		println("agents")

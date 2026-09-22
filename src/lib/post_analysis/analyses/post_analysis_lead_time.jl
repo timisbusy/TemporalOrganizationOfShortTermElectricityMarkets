@@ -43,7 +43,7 @@ function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisO
 		println("$case rows: $(nrow(transactions_by_case[case]))")
 	end
 
-	metrics = ["Gross Traded [MWh]","Net Delivered [MWh]"]
+	metrics = ["Gross Traded [MWh]","Net Energy Contracted [MWh]"]
 
 	transaction_details_df = DataFrame()
 	for (case, ts) in transactions_by_case
@@ -80,17 +80,17 @@ function GetTransactionDetails(case, ts)
 	agent_trading_by_case = DataFrame()
 
 	gross_traded_symbol = Symbol("Gross traded - $case [MWh]")
-	net_delivered_symbol = Symbol("Net delivered - $case [MWh]")
+	net_energy_contracted_symbol = Symbol("Net Energy Contracted - $case [MWh]")
 
 	by_agent_ts = groupby(ts,:Agent)
 	gross_traded = combine(by_agent_ts, quantitySymbol => (q -> sum(abs.(q))) => gross_traded_symbol)
-	net_delivered = combine(by_agent_ts, quantitySymbol => (q -> sum(q)) => net_delivered_symbol)
+	net_energy_contracted = combine(by_agent_ts, quantitySymbol => (q -> sum(q)) => net_energy_contracted_symbol)
 
 	println("Transaction info for $case")
 	println("gross_traded: $gross_traded")
-	println("net_delivered: $net_delivered")
+	println("net_energy_contracted: $net_energy_contracted")
 
-	details = leftjoin(gross_traded,net_delivered,on=:Agent)
+	details = leftjoin(gross_traded,net_energy_contracted,on=:Agent)
 	return details
 end
 

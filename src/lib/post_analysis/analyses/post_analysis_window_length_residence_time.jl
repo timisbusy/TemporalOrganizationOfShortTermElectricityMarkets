@@ -10,8 +10,8 @@
 # Storage is modeled as a FIFO queue of energy "packets", each tagged with the MTU it was charged
 # in. Charging pushes a new packet of `efficiency * charge` MWh (SOC-energy units) onto the back of
 # the queue; discharging withdraws from the front (oldest first), consuming `discharge / efficiency`
-# MWh of SOC-energy per MWh actually delivered. A packet's residence time is (discharge MTU - its
-# own charge MTU), weighted by however much delivered discharge (MWh) came from it - one MWh
+# MWh of SOC-energy per MWh actually contracted. A packet's residence time is (discharge MTU - its
+# own charge MTU), weighted by however much Contracted Discharge (MWh) came from it - one MWh
 # charged then split across several later discharges contributes one weighted residence-time
 # observation per split. Any SOC already present at the start of the analyzed time_range (i.e.
 # charged before it) is treated as a single untraceable "initial" packet and excluded from the
