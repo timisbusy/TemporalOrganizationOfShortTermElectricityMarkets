@@ -17,8 +17,8 @@ module PostAnalysisRollingHorizonChurn
 
 using XLSX, DataFrames, Latexify
 
-include("./post_analysis_common.jl")
-include("./agent_renaming.jl")
+include("../post_analysis_common.jl")
+include("../agent_renaming.jl")
 
 generator_names = ["3G_Base", "4G_Shoulder", "5G_Peak", "6G_Wind", "7G_Solar"]
 

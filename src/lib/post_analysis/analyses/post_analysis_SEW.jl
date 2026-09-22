@@ -2,7 +2,7 @@ module PostAnalysisSEW
 
 using XLSX, DataFrames, Plots, Statistics, Latexify
 
-include("./post_analysis_common.jl")
+include("../post_analysis_common.jl")
 
 CASES = PostAnalysisCommon.CASES
 

@@ -18,7 +18,7 @@ module PostAnalysisCrossRunValidation
 
 using XLSX, DataFrames, Statistics
 
-include("./post_analysis_common.jl")
+include("../post_analysis_common.jl")
 
 # our column name -> Laura's own per-clearing decisionvariables export column name, for the key
 # indicators both sides actually carry - her export has no per-agent Q_<agent>/P_<agent>/adj

@@ -17,7 +17,7 @@ module PostAnalysisSimulationTiming
 
 using Plots, Dates
 
-include("../data_importer.jl")
+include("../../data_importer.jl")
 
 results_path_base = "results/analysis"
 

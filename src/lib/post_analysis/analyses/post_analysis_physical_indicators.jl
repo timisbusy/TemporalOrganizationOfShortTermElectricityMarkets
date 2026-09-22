@@ -2,7 +2,7 @@ module PostAnalysisPhysicalIndicators
 
 using Plots, DataFrames
 
-include("./post_analysis_common.jl")
+include("../post_analysis_common.jl")
 include("./post_analysis_daily.jl")
 
 # raw MTU-level dispatch decisions to compare - SOC and each of the three agents whose adjustments

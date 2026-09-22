@@ -33,7 +33,7 @@ module PostAnalysisStorageRevenueReconciliation
 
 using XLSX, DataFrames, Plots, Printf
 
-include("./post_analysis_common.jl")
+include("../post_analysis_common.jl")
 
 # The 8 no_cap_1d_spinup designs (4 market designs x standard/high storage) re-run after the
 # demand-transaction fix (see git history around "Add a reusable row-level cross-run validation

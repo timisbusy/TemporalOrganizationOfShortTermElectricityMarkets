@@ -12,13 +12,13 @@
 module PostAnalysisWindowLengthRunner
 
 include("./post_analysis_common.jl")
-include("./post_analysis_conventional_generation_cost.jl")
-include("./post_analysis_price_by_hour.jl")
-include("./post_analysis_window_length_kpis.jl")
-include("./post_analysis_window_length_storage_kpis.jl")
-include("./post_analysis_window_length_residence_time.jl")
-include("./post_analysis_rolling_horizon_churn.jl")
-include("./post_analysis_wind_forecast_error.jl")
+include("./analyses/post_analysis_conventional_generation_cost.jl")
+include("./analyses/post_analysis_price_by_hour.jl")
+include("./analyses/post_analysis_window_length_kpis.jl")
+include("./analyses/post_analysis_window_length_storage_kpis.jl")
+include("./analyses/post_analysis_window_length_residence_time.jl")
+include("./analyses/post_analysis_rolling_horizon_churn.jl")
+include("./analyses/post_analysis_wind_forecast_error.jl")
 
 const DEFAULT_CASE_PATHS = PostAnalysisConventionalGenerationCost.DEFAULT_CASE_PATHS
 const DEFAULT_CASES = PostAnalysisConventionalGenerationCost.DEFAULT_CASES
