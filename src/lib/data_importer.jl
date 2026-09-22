@@ -50,6 +50,7 @@ function load_market_configuration_xlsx(path::String, expTimePeriodsPerDay::Int)
         addMarket[:lookAheadDistance] = Int(marketDef["Look Ahead Distance"]) # window under consideration starts lookAheadDistance time periods ahead
         addMarket[:clockTimeBegin] = Int(marketDef["Clock Time Begin"]) # expressed in market clearing periods - how long from the beginning of the day should this sequence begin?
         addMarket[:enforceRampRates] = hasproperty(marketDef, "Enforce Ramp Rates") ? Bool(marketDef["Enforce Ramp Rates"]) : true # default to true. if false, ramp rates for conventional generators will be disabled in this market
+        addMarket[:overrideMTU1Restriction] = hasproperty(marketDef, "Override MTU1 Restriction") ? Bool(marketDef["Override MTU1 Restriction"]) : false
         push!(marketSequence, addMarket)
     end
 
@@ -144,8 +145,28 @@ function load_input_data_xlsx(path::String)
     data[:timePeriodsPerDay] = Int(cfg_df[!,"MTU per Day"][1]) # number of MTU in each day
     data[:lastAuctionMTU] = hasproperty(cfg_df,"Last Auction MTU") && cfg_df[!,"Last Auction MTU"][1] != "" ? Int(cfg_df[!,"Last Auction MTU"][1]) : nothing
     data[:noiseLevel] = float(cfg_df[!,"Noise Level"][1])
-    data[:startDate] = hasproperty(cfg_df,"Start Date") && cfg_df[!,"Start Date"][1] != "" ? cfg_df[!,"Start Date"][1] : Date(2026,1,1) 
+    data[:startDate] = hasproperty(cfg_df,"Start Date") && cfg_df[!,"Start Date"][1] != "" ? cfg_df[!,"Start Date"][1] : Date(2026,1,1)
     data[:endDate] = data[:startDate] + Dates.Day(data[:clearForDays])
+
+    data[:skipEarlyAuctions] = hasproperty(cfg_df,"Skip Early Auctions") && cfg_df[!,"Skip Early Auctions"][1] !== missing ? Int(cfg_df[!,"Skip Early Auctions"][1]) : 0
+    data[:windOffset] = hasproperty(cfg_df,"Wind Offset") && cfg_df[!,"Wind Offset"][1] !== missing ? Int(cfg_df[!,"Wind Offset"][1]) : 0
+    data[:samplePeriodExcludeSpinUp] = hasproperty(cfg_df,"Sample Period Exclude Spin Up") && cfg_df[!,"Sample Period Exclude Spin Up"][1] !== missing ? Int(cfg_df[!,"Sample Period Exclude Spin Up"][1]) : 2
+    data[:samplePeriodExcludeEnd] = hasproperty(cfg_df,"Sample Period Exclude End") && cfg_df[!,"Sample Period Exclude End"][1] !== missing ? Int(cfg_df[!,"Sample Period Exclude End"][1]) : 2
+
+    # optimization model selection and customization - only built when "Optimization Model" is
+    # set, mirroring the YAML path's haskey(cfg, "optimizationModelConfig") gate. every subkey is
+    # given a default because downstream code (e.g. latest_model.jl) indexes them unconditionally
+    # once the top-level key exists.
+    if hasproperty(cfg_df,"Optimization Model") && cfg_df[!,"Optimization Model"][1] !== missing
+        data[:optimizationModelConfig] = Dict{String,Any}(
+            "model" => String(cfg_df[!,"Optimization Model"][1]),
+            "solver" => hasproperty(cfg_df,"Solver") && cfg_df[!,"Solver"][1] !== missing ? String(cfg_df[!,"Solver"][1]) : "gurobi",
+            "solver_method" => hasproperty(cfg_df,"Solver Method") && cfg_df[!,"Solver Method"][1] !== missing ? String(cfg_df[!,"Solver Method"][1]) : "simplex",
+            "demand_adjust" => hasproperty(cfg_df,"Demand Adjust") && cfg_df[!,"Demand Adjust"][1] !== missing ? Bool(cfg_df[!,"Demand Adjust"][1]) : false,
+            "ex_post_transactions" => hasproperty(cfg_df,"Ex Post Transactions") && cfg_df[!,"Ex Post Transactions"][1] !== missing ? Bool(cfg_df[!,"Ex Post Transactions"][1]) : false,
+            "restrict_mtu1_trading" => hasproperty(cfg_df,"Restrict MTU1 Trading") && cfg_df[!,"Restrict MTU1 Trading"][1] !== missing ? Bool(cfg_df[!,"Restrict MTU1 Trading"][1]) : false,
+        )
+    end
 
     # track the resolved config file paths (experiment/market/agent) so a caller can copy them
     # alongside a run's results for later reference - see ClearMarket.CopyConfigFiles!
@@ -186,7 +207,7 @@ function load_input_data_xlsx(path::String)
             "initialQuantity" => genRow["Initial Quantity"],
             "emissionFactor" => genRow["Emission Factor"],
         )
-        gen["conversionFactor"] = .001
+        gen["conversionFactor"] = hasproperty(genRow, "Conversion Factor") && genRow["Conversion Factor"] !== missing ? Float64(genRow["Conversion Factor"]) : .001
         data[:dispatchableGenerators][String(genRow["Name"])] = gen
     end
 
@@ -200,11 +221,12 @@ function load_input_data_xlsx(path::String)
 
         genRow["Profile"] !== missing ? gen["profile"] = parse.(Float64,split(strip(genRow["Profile"],['"','[',']']),',')) : false
         genRow["Profile File"] !== missing ? gen["profile_file"] = genRow["Profile File"] : false
+        hasproperty(genRow, "Profile Files") && genRow["Profile Files"] !== missing ? gen["profile_files"] = String.(strip.(split(strip(genRow["Profile Files"],['"','[',']']),','))) : false
         genRow["Profile Type"] !== missing ? gen["profile_type"] = genRow["Profile Type"] : false
-        gen["conversionFactor"] = .001
+        gen["conversionFactor"] = hasproperty(genRow, "Conversion Factor") && genRow["Conversion Factor"] !== missing ? Float64(genRow["Conversion Factor"]) : .001
         data[:variableGenerators][String(genRow["Name"])] = gen
     end
-    
+
     # demand segments: Base and Flex demand, each with a bid and hourly quantities
     data[:demandSegments] = Dict{String, Any}()
 
@@ -215,8 +237,9 @@ function load_input_data_xlsx(path::String)
         dRow["Profile"] !== missing ? dem["profile"] = parse.(Float64,split(strip(dRow["Profile"],['"','[',']']),',')) : false
         dRow["Profile File"] !== missing ? dem["profile_file"] = dRow["Profile File"] : false
         dRow["Profile Type"] !== missing ? dem["profile_type"] = dRow["Profile Type"] : false
-        dem["conversionFactor"] = .001
-        
+        hasproperty(dRow, "Quantity Constant") && dRow["Quantity Constant"] !== missing ? dem["quantity_constant"] = Float64(dRow["Quantity Constant"]) : false
+        dem["conversionFactor"] = hasproperty(dRow, "Conversion Factor") && dRow["Conversion Factor"] !== missing ? Float64(dRow["Conversion Factor"]) : .001
+
         data[:demandSegments][String(dRow["Name"])] = dem
     end
     
