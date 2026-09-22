@@ -26,9 +26,9 @@ CONVENTIONAL_GENERATORS = ["3G_Base", "4G_Shoulder", "5G_Peak"]
 # Rolling since that's what this analysis varies. cases below fixes the draw/legend order, since
 # Dict iteration order isn't guaranteed and "36h, 48h, 72h" reads far better than an arbitrary one.
 const DEFAULT_CASE_PATHS = Dict{String,String}(
-	"36h" => "results/1789572958_rolling_36_no_cap_1d_spinup",
-	"48h" => "results/1789663548_rolling_48_no_cap_1d_spinup",
-	"72h" => "results/1789663548_rolling_72_no_cap_1d_spinup",
+	"36h" => "results/1789748169_rolling_36_no_cap_1d_spinup",
+	"48h" => "results/1789748204_rolling_48_no_cap_1d_spinup",
+	"72h" => "results/1789748246_rolling_72_no_cap_1d_spinup",
 )
 const DEFAULT_CASES = ["36h", "48h", "72h"]
 

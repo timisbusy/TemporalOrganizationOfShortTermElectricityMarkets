@@ -57,6 +57,31 @@ function DefaultAnalysisLabel(case_paths)
 	return join(names, "_vs_")
 end
 
+# Windows caps a full path at 260 characters (MAX_PATH) unless long-path support has been
+# explicitly opted into system-wide, which this repo doesn't rely on. The deepest relative path any
+# post-analysis module currently writes under an output_base is
+# post_analysis_quantities_by_agent/agent_gross_traded_volume_details.xlsx (~73 chars); this margin
+# reserves comfortably more than that so future filenames have room to grow without silently
+# reviving this problem.
+const WINDOWS_MAX_PATH = 260
+const OUTPUT_SUBPATH_MARGIN = 85
+
+# Truncates `label` (at a "_" boundary where possible, for readability) if
+# "$base_dir/$timestamp_prefix$label" plus OUTPUT_SUBPATH_MARGIN would exceed WINDOWS_MAX_PATH -
+# a label built from long case_paths basenames (e.g. a "high storage" run pair) would otherwise
+# only fail once some later module tries to write a file under it, deep inside XLSX.writetable with
+# an opaque "No such file or directory". The full, untruncated label is still recorded in
+# metadata.yaml for provenance.
+function TruncateLabelForPath(label, base_dir, timestamp_prefix)
+	budget = WINDOWS_MAX_PATH - length(abspath(base_dir)) - 1 - length(timestamp_prefix) - OUTPUT_SUBPATH_MARGIN
+	length(label) <= budget && return label
+	budget = max(budget, 10)
+	cut = findlast('_', label[1:min(end, budget)])
+	truncated = label[1:(cut === nothing ? budget : cut - 1)]
+	println("warning: analysis label truncated to fit Windows MAX_PATH: \"$label\" -> \"$truncated\"")
+	return truncated
+end
+
 # Gives each PostAnalysisRunner.Run call (or a standalone submodule PerformAnalysis) its own
 # permanent, never-overwritten output directory under results/post_analysis/, the same
 # {timestamp}_{name} convention TestExperiment.RunBasic uses for simulation runs - the suite used
@@ -64,7 +89,10 @@ end
 # were actually analyzed. Also drops a metadata.yaml recording what was analyzed, the same
 # provenance role ClearMarket.CopyConfigFiles! plays for a simulation run's own Config/ copy.
 function NewAnalysisOutputDir(case_paths; label=DefaultAnalysisLabel(case_paths))
-	dir = "results/post_analysis/$(round(Int, datetime2unix(now())))_$(label)"
+	base_dir = "results/post_analysis"
+	timestamp_prefix = "$(round(Int, datetime2unix(now())))_"
+	label = TruncateLabelForPath(label, base_dir, timestamp_prefix)
+	dir = "$base_dir/$timestamp_prefix$label"
 	mkpath(dir)
 	YAML.write_file(joinpath(dir, "metadata.yaml"), Dict(
 		"label" => label,
