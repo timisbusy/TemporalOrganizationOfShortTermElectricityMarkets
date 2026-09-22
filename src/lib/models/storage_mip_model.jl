@@ -224,6 +224,7 @@ function process_parameters!(m::Model, time_period::Int, marketresults, initiali
 
     m.ext[:data_storage] = Dict{Symbol,Any}()
     m.ext[:data_storage][:ex_post_transactions] = haskey(data, :optimizationModelConfig) && data[:optimizationModelConfig]["ex_post_transactions"] == true
+    m.ext[:data_storage][:demand_adjust] = haskey(data, :optimizationModelConfig) && data[:optimizationModelConfig]["demand_adjust"] == true
 
     return m
 end
