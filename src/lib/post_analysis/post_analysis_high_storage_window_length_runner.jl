@@ -14,11 +14,13 @@ include("./post_analysis_price_by_hour.jl")
 include("./post_analysis_window_length_kpis.jl")
 include("./post_analysis_window_length_storage_kpis.jl")
 include("./post_analysis_window_length_residence_time.jl")
+include("./post_analysis_rolling_horizon_churn.jl")
+include("./post_analysis_wind_forecast_error.jl")
 
 const DEFAULT_CASE_PATHS = Dict{String,String}(
-	"36h" => "results/1789730587_rolling_36_no_cap_1d_spinup_high_storage",
-	"48h" => "results/1789730790_rolling_48_no_cap_1d_spinup_high_storage",
-	"72h" => "results/1789730857_rolling_72_no_cap_1d_spinup_high_storage",
+	"36h" => "results/1789748893_rolling_36_no_cap_1d_spinup_high_storage",
+	"48h" => "results/1789748945_rolling_48_no_cap_1d_spinup_high_storage",
+	"72h" => "results/1789749015_rolling_72_no_cap_1d_spinup_high_storage",
 )
 const DEFAULT_CASES = ["36h", "48h", "72h"]
 
@@ -32,6 +34,8 @@ function Run(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, label=DefaultLa
 	PostAnalysisWindowLengthKPIs.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
 	PostAnalysisWindowLengthStorageKPIs.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
 	PostAnalysisWindowLengthResidenceTime.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
+	PostAnalysisRollingHorizonChurn.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
+	PostAnalysisWindForecastError.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
 
 	return output_base
 end

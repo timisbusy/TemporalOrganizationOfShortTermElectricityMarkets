@@ -11,19 +11,16 @@ using Plots, DataFrames, XLSX, Statistics
 
 include("./post_analysis_common.jl")
 include("./post_analysis_daily.jl")
+include("./post_analysis_conventional_generation_cost.jl")
 
-# label -> single-design run directory, one per optimization-window length being compared - same
-# shape/defaults as PostAnalysisConventionalGenerationCost.DEFAULT_CASE_PATHS.
-const DEFAULT_CASE_PATHS = Dict{String,String}(
-	"36h" => "results/1789572958_rolling_36_no_cap_1d_spinup",
-	"48h" => "results/1789663548_rolling_48_no_cap_1d_spinup",
-	"72h" => "results/1789663548_rolling_72_no_cap_1d_spinup",
-)
-const DEFAULT_CASES = ["36h", "48h", "72h"]
+# same case_paths/cases as PostAnalysisConventionalGenerationCost - a single shared source rather
+# than each window-length submodule hardcoding its own copy of the same defaults (which drift
+# independently otherwise - see PostAnalysisWindowLengthKPIs/StorageKPIs/ResidenceTime, which
+# already follow this pattern).
+const DEFAULT_CASE_PATHS = PostAnalysisConventionalGenerationCost.DEFAULT_CASE_PATHS
+const DEFAULT_CASES = PostAnalysisConventionalGenerationCost.DEFAULT_CASES
 
-DefaultLabel(case_paths, cases) = join([c for c in cases if haskey(case_paths, c)], "_vs_")
-
-function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=DefaultLabel(case_paths, cases)), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE)
+function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=PostAnalysisConventionalGenerationCost.DefaultLabel(case_paths, cases)), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE)
 	# kept short for the same MAX_PATH reason as PostAnalysisConventionalGenerationCost's gen_cost.
 	analysis_dir_path = "$output_base/price_by_hour"
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
