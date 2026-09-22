@@ -6,7 +6,7 @@ include("../post_analysis_common.jl")
 
 # All of CalculateCaseIndicators' own indicators are extensive (totals over time_range), so this is
 # currently empty - kept for parity with PostAnalysisWindowLengthKPIs/StorageKPIs (whose own
-# Average Final Auction Price/Avg Charging/Discharging Price are already €/MWh rates) in case an
+# Mean Final Auction Price/Avg Charging/Discharging Price are already €/MWh rates) in case an
 # intensive indicator is ever added here too.
 const INTENSIVE_INDICATORS = Set{String}()
 
