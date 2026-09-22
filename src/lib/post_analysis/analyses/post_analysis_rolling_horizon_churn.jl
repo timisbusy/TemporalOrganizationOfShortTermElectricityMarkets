@@ -1,11 +1,11 @@
 # Rolling-horizon churn comparison: for the 36h/48h/72h rolling-horizon optimizationWindow
 # configs, compares each generator's Gross Traded Volume (sum(|quantity|) across every
-# adjustment leg from every clearing that touched a delivered MTU, including the speculative,
+# adjustment leg from every clearing that touched a final-auction MTU, including the speculative,
 # never-delivered tail of each clearing's own look-ahead window - see
 # PostAnalysisQuantitiesByAgent.AnalyzeGrossTradedVolume for the same definition) against its
-# Delivered Energy Volume (the quantity actually dispatched at delivery), and reports the
+# Contracted Energy Quantity (the quantity actually dispatched at delivery), and reports the
 # difference as Churn: volume that got traded/re-traded across successive rolling-horizon
-# clearings but never became delivered energy. A longer optimizationWindow gives later clearings
+# clearings but never became contracted energy. A longer optimizationWindow gives later clearings
 # more opportunity to revise earlier commitments, so Churn is expected to grow with the window.
 #
 # Both figures come straight out of PostAnalysisCommon.CalculateCaseIndicators's agent_indicators
@@ -70,13 +70,13 @@ function ValueForAgent(agent_indicators, agent, symbol)
 end
 
 # one row per generator plus a Total row, grouped by case: {case} Gross Traded Volume (MWh),
-# {case} Delivered Energy Volume (MWh), {case} Churn (MWh) - Churn is Gross Traded minus
-# Delivered, so the Total row's Churn is consistent whether it's computed from the total columns
+# {case} Contracted Energy Quantity (MWh), {case} Churn (MWh) - Churn is Gross Traded minus
+# Contracted, so the Total row's Churn is consistent whether it's computed from the total columns
 # or summed from the per-generator Churn column.
 function BuildChurnTable(agent_indicators_by_case, cases)
 	columns = ["Agent"]
 	for case in cases
-		append!(columns, ["$case Gross Traded Volume (MWh)", "$case Delivered Energy Volume (MWh)", "$case Churn (MWh)"])
+		append!(columns, ["$case Gross Traded Volume (MWh)", "$case Contracted Energy Quantity (MWh)", "$case Churn (MWh)"])
 	end
 	df = DataFrame([col => (col == "Agent" ? String[] : Float64[]) for col in columns])
 
@@ -84,8 +84,8 @@ function BuildChurnTable(agent_indicators_by_case, cases)
 		row = Any[AgentRenaming.DisplayName(agent)]
 		for case in cases
 			gross = ValueForAgent(agent_indicators_by_case[case], agent, tradedVolumeSymbol)
-			delivered = ValueForAgent(agent_indicators_by_case[case], agent, quantitySymbol)
-			append!(row, [gross, delivered, gross - delivered])
+			contracted = ValueForAgent(agent_indicators_by_case[case], agent, quantitySymbol)
+			append!(row, [gross, contracted, gross - contracted])
 		end
 		push!(df, row)
 	end
@@ -93,8 +93,8 @@ function BuildChurnTable(agent_indicators_by_case, cases)
 	total_row = Any["Total"]
 	for case in cases
 		gross_total = sum(ValueForAgent(agent_indicators_by_case[case], agent, tradedVolumeSymbol) for agent in generator_names)
-		delivered_total = sum(ValueForAgent(agent_indicators_by_case[case], agent, quantitySymbol) for agent in generator_names)
-		append!(total_row, [gross_total, delivered_total, gross_total - delivered_total])
+		contracted_total = sum(ValueForAgent(agent_indicators_by_case[case], agent, quantitySymbol) for agent in generator_names)
+		append!(total_row, [gross_total, contracted_total, gross_total - contracted_total])
 	end
 	push!(df, total_row)
 
@@ -105,7 +105,7 @@ end
 # window length as columns, pulled straight from that row rather than re-summed here so the two
 # tables can never drift apart.
 function BuildTotalsTable(df, cases)
-	metric_labels = ["Gross Traded Volume (MWh)", "Delivered Energy Volume (MWh)", "Churn (MWh)"]
+	metric_labels = ["Gross Traded Volume (MWh)", "Contracted Energy Quantity (MWh)", "Churn (MWh)"]
 	total_row = df[df.Agent .== "Total", :][1, :]
 
 	columns = vcat(["Metric"], cases)

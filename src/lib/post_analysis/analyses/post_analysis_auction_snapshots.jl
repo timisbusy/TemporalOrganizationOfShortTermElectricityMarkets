@@ -1,7 +1,7 @@
 # Generation-stack plots for individual auctions, rather than the delivered/final dispatch that
 # plot_generation_stack.jl (src/lib/plots/market_results/) charts. Each market clearing decides a
 # dispatch plan for its own optimization window at the moment it's held - later clearings for the
-# same delivered MTUs can revise that plan (see LatestMarketModel's Qg_adj/Qd_adj adjustments).
+# same final-auction MTUs can revise that plan (see LatestMarketModel's Qg_adj/Qd_adj adjustments).
 # This module snapshots a handful of specific clearings (by the MTU at which they were held) and
 # plots exactly what each one decided over its own window, so a set of consecutive auctions'
 # evolving plans for the same stretch of time can be compared side by side.

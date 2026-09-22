@@ -37,7 +37,7 @@ const DEFAULT_AGENT_MAP = Dict{HelperModelResults.AgentTypeEnum,Vector{String}}(
 # CalculateCaseIndicators) since most callers in this suite don't need imbalance at all.
 const DEFAULT_IMBALANCE_AGENTS = ("6G_Wind", "5G_Peak")
 
-# D1-D28 delivered-MTU window: a clean 28 days, excluding a full day of spin-up at the start and
+# D1-D28 final-auction-MTU window: a clean 28 days, excluding a full day of spin-up at the start and
 # the samplePeriodExcludeEnd=2 days of tail clearings at the end (MTU 24*1 to 24*(31-2)-1). This
 # used to be 12:672 (D0.5-D28, matching the Laura KPI validation's own comparable_delivery_hours
 # range exactly) before samplePeriodExcludeSpinUp moved from 0 to 1 day, so this suite's own

@@ -133,7 +133,7 @@ function PerformAnalysis()
 		# own bid price, not from transactions. Payments/Revenue/Surplus in agent_indicators below
 		# are NOT comparable to her "Producer Revenues (Executed-only)" though: they're summed from
 		# transactions, which (like Traded Volume) nets every adjustment leg from every clearing
-		# that touched a delivered MTU, not just the one that actually executed it - see the
+		# that touched a final-auction MTU, not just the one that actually executed it - see the
 		# Executed-only Revenue/Payments block further down for the figures that do match her sheet.
 		# imbalance_agents: matches Laura's own definition (the "Imbalance" section below the main
 		# loop used to compute this by hand) - when Wind's and Peak's adjustments at an MTU are both
@@ -178,7 +178,7 @@ function PerformAnalysis()
 		traded_volume_symbol = Symbol("Traded Volume (MWh)")
 
 		total_traded_volume = combine((agent_indicators[ [a in agent_map[HelperModelResults.AGENT_GENERATOR] for a in agent_indicators[!, :Agent]], :]), traded_volume_symbol => sum)
-		println("Traded Volume (delivered MTUs only, capped by delivery MTU $(time_range.start):$(time_range.stop), gross across all clearings that touched them): $total_traded_volume")
+		println("Traded Volume (final-auction MTUs only, capped by final-auction MTU $(time_range.start):$(time_range.stop), gross across all clearings that touched them): $total_traded_volume")
 
 		# Gross Traded Volume, computed to match Laura's calculate_generator_revenues_full (costs.jl):
 		# sum(|adjustment|) across every hour of every clearing's full look-ahead window - so it
