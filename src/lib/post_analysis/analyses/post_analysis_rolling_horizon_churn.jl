@@ -52,7 +52,7 @@ function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=CASES, output_base
 
 	# fresh per-case agent indicators - see PostAnalysisCommon.CalculateCaseIndicators for why this
 	# is computed on demand rather than read from a pre-aggregated agent_indicators.xlsx
-	agent_indicators_by_case = Dict(case => PostAnalysisCommon.CalculateCaseIndicators(case_paths, case; time_range=time_range)[2] for case in cases)
+	agent_indicators_by_case = Dict(case => PostAnalysisCommon.CalculateCaseIndicators(case_paths, case; time_range=time_range).agent_indicators for case in cases)
 
 	df = BuildChurnTable(agent_indicators_by_case, cases)
 

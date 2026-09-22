@@ -48,7 +48,7 @@ function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, out
 
 	# fresh per-case economic indicators (one row each) - see PostAnalysisCommon.CalculateCaseIndicators
 	# for why this is computed on demand rather than read from a pre-aggregated economic_indicators.xlsx
-	indicators_by_case = Dict(case => PostAnalysisCommon.CalculateCaseIndicators(case_paths, case; time_range=time_range, imbalance_agents=PostAnalysisCommon.DEFAULT_IMBALANCE_AGENTS)[1] for case in cases)
+	indicators_by_case = Dict(case => PostAnalysisCommon.CalculateCaseIndicators(case_paths, case; time_range=time_range, imbalance_agents=PostAnalysisCommon.DEFAULT_IMBALANCE_AGENTS).economic_indicators for case in cases)
 
 	mid_vs_short_col = "$mid vs $short % Difference"
 	long_vs_mid_col = "$long vs $mid % Difference"

@@ -22,7 +22,7 @@ function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisO
 
 	# fresh per-case agent indicators - see PostAnalysisCommon.CalculateCaseIndicators for why this
 	# is computed on demand rather than read from a pre-aggregated agent_indicators.xlsx
-	agent_indicators_by_case = Dict(case => PostAnalysisCommon.CalculateCaseIndicators(case_paths, case; time_range=time_range)[2] for case in CASES)
+	agent_indicators_by_case = Dict(case => PostAnalysisCommon.CalculateCaseIndicators(case_paths, case; time_range=time_range).agent_indicators for case in CASES)
 
 	AnalyzeQuantities(agent_indicators_by_case, analysis_dir_path)
 	AnalyzeSurpluses(agent_indicators_by_case, analysis_dir_path)
