@@ -251,7 +251,17 @@ function Transactions(marketresult, previous_dispatch, market_name, resultset, m
 	for row in eachrow(marketresult.DecisionVariables)
 		for d in marketresult.AgentMap[AGENT_DEMAND]
 			times_cleared = has_last_result ? mtu_times_cleared(resultset, row["mtu"]) : 1
-			if m.ext[:data_storage][:ex_post_transactions]
+			# demand_adjust:false leaves Qd_adj unconstrained (see e.g. latest_model.jl's
+			# build_market_clearing!, which only ties Qd_adj to Qd - Qd_prev when demand_adjust is
+			# on) - the solver then reports it as 0 for every row since nothing else references it,
+			# so the "$(d)_adj" branch below would silently produce zero demand transactions
+			# regardless of what demand actually cleared. Fall back to the ex-post diff-from-
+			# previous-dispatch method for demand whenever demand_adjust is off, independent of the
+			# model-wide ex_post_transactions flag (which still governs generators, whose Qg_adj is
+			# always properly constrained). get(...) defaults to true for older models that never
+			# populate :demand_adjust at all (they define the demand_adjustments constraint
+			# unconditionally, so Qd_adj is always meaningful there).
+			if m.ext[:data_storage][:ex_post_transactions] || !get(m.ext[:data_storage], :demand_adjust, true)
 				last_qs_at_time = has_last_result ? previous_dispatch[previous_dispatch.mtu .== row["mtu"], d] : [] # if we don't have any old data
 				adjust_from_q = length(last_qs_at_time) > 0 ? last_qs_at_time[1] : 0.0 # if we don't have data for this row
 				adjustment_q = row[d] - adjust_from_q
