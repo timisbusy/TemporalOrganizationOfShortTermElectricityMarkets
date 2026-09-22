@@ -466,7 +466,7 @@ function GetEconomicIndicatorsForRange(market_result_container,time_range; imbal
 	transactions = GetTransactionsForRange(market_result_container,time_range)
 
 	if length(market_result_container.Results) < 1
-		return (economic_indicators, agent_indicators, transactions, finalDispatchDecisions, mtu_economic_indicators)
+		return (economic_indicators=economic_indicators, agent_indicators=agent_indicators, transactions=transactions, final_dispatch_decisions=finalDispatchDecisions, mtu_economic_indicators=mtu_economic_indicators)
 	end
 
 	# handle gens and demands
@@ -668,7 +668,7 @@ function CalculateEconomicIndicators(finalDispatchDecisions, transactions, agent
 	TableHeaderRenaming.RenameDataFrameHeaders!(mtu_economic_indicators, "economic_indicators")
 
 
-	return (economic_indicators, agent_indicators, transactions, finalDispatchDecisions, mtu_economic_indicators)
+	return (economic_indicators=economic_indicators, agent_indicators=agent_indicators, transactions=transactions, final_dispatch_decisions=finalDispatchDecisions, mtu_economic_indicators=mtu_economic_indicators)
 end
 
 # CO2e emissions from conventional (dispatchable) generators over a range of mtus, based on

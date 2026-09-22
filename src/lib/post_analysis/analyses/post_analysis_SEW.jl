@@ -37,8 +37,8 @@ function PerformAnalysis(case_paths; cases=("Fixed Horizon", "Rolling Horizon"),
 	# computed on demand rather than read from a pre-aggregated economic_indicators.xlsx
 	indicators_by_case = Dict(case => PostAnalysisCommon.CalculateCaseIndicators(case_paths, case; time_range=time_range, imbalance_agents=PostAnalysisCommon.DEFAULT_IMBALANCE_AGENTS) for case in cases)
 
-	a = indicators_by_case[case_a][1]
-	b = indicators_by_case[case_b][1]
+	a = indicators_by_case[case_a].economic_indicators
+	b = indicators_by_case[case_b].economic_indicators
 
 	diff_col = "$case_b % Difference"
 	final_indicators_df = DataFrame("Indicator"=>String[], case_a=>Float64[], case_b=>Float64[], diff_col=>String[])
@@ -54,9 +54,9 @@ function PerformAnalysis(case_paths; cases=("Fixed Horizon", "Rolling Horizon"),
 	# post_analysis_laura_kpis.jl): Q_6G_Wind is the model's available-capacity time series for
 	# wind (m.ext[:timeseries][:Q_gen], exported via helper_model_results.jl's "Q_$agent" column -
 	# NOT the dispatched quantity), so Q_6G_Wind - 6G_Wind is exactly how much available wind went
-	# undispatched each MTU. finalDispatchDecisions (indicators_by_case[case][4]) is already scoped
-	# to time_range by CalculateCaseIndicators/CalculateEconomicIndicators.
-	WindCurtailed(case) = sum(indicators_by_case[case][4][!, Symbol("Q_6G_Wind")] .- indicators_by_case[case][4][!, Symbol("6G_Wind")])
+	# undispatched each MTU. final_dispatch_decisions is already scoped to time_range by
+	# CalculateCaseIndicators/CalculateEconomicIndicators.
+	WindCurtailed(case) = sum(indicators_by_case[case].final_dispatch_decisions[!, Symbol("Q_6G_Wind")] .- indicators_by_case[case].final_dispatch_decisions[!, Symbol("6G_Wind")])
 	a_curtailed = WindCurtailed(case_a)
 	b_curtailed = WindCurtailed(case_b)
 	push!(final_indicators_df, ["Wind Curtailed (MWh)", a_curtailed, b_curtailed, PostAnalysisCommon.PercentDiffString(b_curtailed, a_curtailed)])
