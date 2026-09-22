@@ -7,8 +7,8 @@ using DataFrames
 using XLSX
 using Printf
 
-include("./post_analysis_common.jl")
-include("./agent_renaming.jl")
+include("../post_analysis_common.jl")
+include("../agent_renaming.jl")
 
 CASES = PostAnalysisCommon.CASES
 

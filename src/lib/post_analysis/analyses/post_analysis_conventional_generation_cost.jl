@@ -14,7 +14,7 @@ module PostAnalysisConventionalGenerationCost
 
 using Plots, DataFrames, XLSX, YAML, Statistics
 
-include("./post_analysis_common.jl")
+include("../post_analysis_common.jl")
 include("./post_analysis_daily.jl")
 
 # Base/Shoulder/Peak only - Wind/Solar are zero-bid variable generators, excluded from

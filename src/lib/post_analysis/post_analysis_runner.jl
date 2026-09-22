@@ -1,15 +1,15 @@
 module PostAnalysisRunner
 
 include("./post_analysis_common.jl")
-include("./post_analysis_lead_time.jl")
-include("./post_analysis_quantities_by_agent.jl")
-include("./post_analysis_SEW.jl")
-include("./post_analysis_storage.jl")
-include("./post_analysis_prices.jl")
-include("./post_analysis_daily.jl")
-include("./post_analysis_physical_indicators.jl")
-include("./post_analysis_auction_snapshots.jl")
-include("./post_analysis_storage_revenue_reconciliation.jl")
+include("./analyses/post_analysis_lead_time.jl")
+include("./analyses/post_analysis_quantities_by_agent.jl")
+include("./analyses/post_analysis_SEW.jl")
+include("./analyses/post_analysis_storage.jl")
+include("./analyses/post_analysis_prices.jl")
+include("./analyses/post_analysis_daily.jl")
+include("./analyses/post_analysis_physical_indicators.jl")
+include("./analyses/post_analysis_auction_snapshots.jl")
+include("./analyses/post_analysis_storage_revenue_reconciliation.jl")
 
 # Fixed 36h/Rolling 36h high-storage counterpart of PostAnalysisCommon.DEFAULT_CASE_PATHS - same
 # no_cap_1d_spinup runs, re-run with the high-storage agent config. Lets Run's `case_paths` be

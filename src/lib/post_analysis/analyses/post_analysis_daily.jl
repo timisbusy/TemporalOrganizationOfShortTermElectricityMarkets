@@ -8,8 +8,8 @@ using XLSX
 using Distributions
 using Latexify
 
-include("./post_analysis_common.jl")
-include("./agent_renaming.jl")
+include("../post_analysis_common.jl")
+include("../agent_renaming.jl")
 
 CASES = PostAnalysisCommon.CASES
 

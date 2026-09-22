@@ -9,7 +9,7 @@ module PostAnalysisPriceByHour
 
 using Plots, DataFrames, XLSX, Statistics
 
-include("./post_analysis_common.jl")
+include("../post_analysis_common.jl")
 include("./post_analysis_daily.jl")
 include("./post_analysis_conventional_generation_cost.jl")
 

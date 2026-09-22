@@ -2,8 +2,8 @@ module PostAnalysisLeadTime
 
 using XLSX, DataFrames, Plots, Statistics, StatsPlots, Latexify
 
-include("./post_analysis_common.jl")
-include("./agent_renaming.jl")
+include("../post_analysis_common.jl")
+include("../agent_renaming.jl")
 
 mtuSymbol = Symbol("Market Time Unit")
 clearingMTUSymbol = Symbol("Clearing MTU")

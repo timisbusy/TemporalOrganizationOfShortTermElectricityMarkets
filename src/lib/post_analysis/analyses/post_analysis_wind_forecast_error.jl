@@ -22,8 +22,8 @@ module PostAnalysisWindForecastError
 
 using XLSX, DataFrames, YAML, Dates, Statistics, Latexify
 
-include("./post_analysis_common.jl")
-include("../helpers/helper_input_data.jl")
+include("../post_analysis_common.jl")
+include("../../helpers/helper_input_data.jl")
 
 const WIND_AGENT = "6G_Wind"
 const windQuantitySymbol = Symbol("Q_$WIND_AGENT")

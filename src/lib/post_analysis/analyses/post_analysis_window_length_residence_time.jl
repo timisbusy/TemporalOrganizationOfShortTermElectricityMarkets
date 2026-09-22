@@ -28,7 +28,7 @@ module PostAnalysisWindowLengthResidenceTime
 
 using DataFrames, Plots, XLSX, YAML
 
-include("./post_analysis_common.jl")
+include("../post_analysis_common.jl")
 include("./post_analysis_conventional_generation_cost.jl")
 
 const DEFAULT_CASE_PATHS = PostAnalysisConventionalGenerationCost.DEFAULT_CASE_PATHS

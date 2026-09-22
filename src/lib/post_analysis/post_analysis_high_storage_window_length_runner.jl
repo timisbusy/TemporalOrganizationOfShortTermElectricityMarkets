@@ -9,13 +9,13 @@
 module PostAnalysisHighStorageWindowLengthRunner
 
 include("./post_analysis_common.jl")
-include("./post_analysis_conventional_generation_cost.jl")
-include("./post_analysis_price_by_hour.jl")
-include("./post_analysis_window_length_kpis.jl")
-include("./post_analysis_window_length_storage_kpis.jl")
-include("./post_analysis_window_length_residence_time.jl")
-include("./post_analysis_rolling_horizon_churn.jl")
-include("./post_analysis_wind_forecast_error.jl")
+include("./analyses/post_analysis_conventional_generation_cost.jl")
+include("./analyses/post_analysis_price_by_hour.jl")
+include("./analyses/post_analysis_window_length_kpis.jl")
+include("./analyses/post_analysis_window_length_storage_kpis.jl")
+include("./analyses/post_analysis_window_length_residence_time.jl")
+include("./analyses/post_analysis_rolling_horizon_churn.jl")
+include("./analyses/post_analysis_wind_forecast_error.jl")
 
 const DEFAULT_CASE_PATHS = Dict{String,String}(
 	"36h" => "results/1789748893_rolling_36_no_cap_1d_spinup_high_storage",
