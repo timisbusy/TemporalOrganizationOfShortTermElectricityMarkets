@@ -8,7 +8,7 @@
 
 module PostAnalysisCommon
 
-using XLSX, DataFrames, YAML, Dates, Printf
+using XLSX, DataFrames, YAML, Dates, Printf, Statistics
 
 include("../helpers.jl")
 using .Helpers.HelperModelResults
@@ -37,7 +37,7 @@ const DEFAULT_AGENT_MAP = Dict{HelperModelResults.AgentTypeEnum,Vector{String}}(
 # CalculateCaseIndicators) since most callers in this suite don't need imbalance at all.
 const DEFAULT_IMBALANCE_AGENTS = ("6G_Wind", "5G_Peak")
 
-# D1-D28 delivered-MTU window: a clean 28 days, excluding a full day of spin-up at the start and
+# D1-D28 final-auction-MTU window: a clean 28 days, excluding a full day of spin-up at the start and
 # the samplePeriodExcludeEnd=2 days of tail clearings at the end (MTU 24*1 to 24*(31-2)-1). This
 # used to be 12:672 (D0.5-D28, matching the Laura KPI validation's own comparable_delivery_hours
 # range exactly) before samplePeriodExcludeSpinUp moved from 0 to 1 day, so this suite's own
@@ -135,6 +135,24 @@ function EscapeForLatex(df)
 	return escaped
 end
 
+# Some tables in this suite latexify with a single table-wide integer fmt (e.g. "%'d", thousands-
+# separated - suits big €/€-per-day totals) that would truncate a smaller-magnitude intensive
+# indicator row (a €/MWh price, say) to a bare integer, since Latexify's PrintfNumberFormatter
+# applies the same fmt to every Number cell with no per-row override (latextabular.jl:
+# `x isa Number ? formatter(x) : x`). Since a non-Number cell passes through untouched, this
+# pre-formats just the named row's case-value cells as "%.2f" strings on a copy - never the
+# original df - sidestepping the shared fmt for that row without touching any other row's display.
+function FormatIndicatorRowForLatex(df, indicator, case_columns)
+	out = copy(df)
+	row_idx = findfirst(==(indicator), out.Indicator)
+	row_idx === nothing && return out
+	for col in case_columns
+		out[!, col] = Vector{Any}(out[!, col])
+		out[row_idx, col] = Printf.@sprintf("%.2f", df[row_idx, col])
+	end
+	return out
+end
+
 const PERCENT_FORMAT = Ref(Printf.Format("%0.3f%%"))
 
 # "rolling vs fixed" percent-difference string, formatted like "12.345%" - or "—" when fixed is
@@ -152,6 +170,19 @@ end
 
 function LoadCaseFile(case_paths, case, filename)
 	return LoadFile(joinpath(case_paths[case], filename))
+end
+
+# shared by PostAnalysisSEW and PostAnalysisWindowLengthKPIs so their two copies can't drift apart
+# the way PostAnalysisConventionalGenerationCost/PriceByHour's own case_paths defaults once did.
+const MEAN_FINAL_AUCTION_PRICE_INDICATOR = "Mean Final Auction Price (€/MWh)"
+
+# Mean Final Auction Price (€/MWh) over time_range for one case - rounded to the hundredths place,
+# since it's a price meant to read like one, not a many-significant-figure aggregate like the
+# totals it's usually reported alongside.
+function LoadMeanFinalAuctionPrice(case_path, time_range)
+	dd = LoadFile(joinpath(case_path, "final_dispatch_decisions.xlsx"))
+	dd = dd[time_range.start .<= dd.mtu .<= time_range.stop, :]
+	return round(mean(dd.FinalAuctionPrice); digits=2)
 end
 
 # Fresh per-case economic/agent indicators, computed directly from each case's own

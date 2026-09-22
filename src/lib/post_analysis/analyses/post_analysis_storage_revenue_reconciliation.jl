@@ -1,7 +1,7 @@
 # Compares two different definitions of "storage revenue" against each other, across an arbitrary
 # set of named cases (not the fixed "Fixed Horizon"/"Rolling Horizon" pair the rest of this
 # directory is built around - storage revenue accounting doesn't depend on that comparison, only on
-# how many times a market re-clears before an MTU is finally delivered, so this is written to take
+# how many times a market re-clears before an MTU has its final auction, so this is written to take
 # any Dict{String,String} of case name -> run directory).
 #
 # Background: MarketDataStorage.CalculateEconomicIndicators' "Storage Revenue (€)" values storage's
@@ -109,7 +109,7 @@ end
 # longer look-aheads, where many re-clearings smooth out into a net-favorable trading history); a
 # big negative delta (rare, but see the fixed_36 high-storage case) means the opposite - a large,
 # early, capacity-capped trade got locked in at a price the market later drifted away from before
-# that MTU was finally delivered, with storage never getting the chance to trade again at the new
+# that MTU had its final auction, with storage never getting the chance to trade again at the new
 # price.
 function MostDivergentMTUs(case_paths, case, time_range; top_n=15)
 	(fdd, tx) = LoadCaseData(case_paths, case, time_range)

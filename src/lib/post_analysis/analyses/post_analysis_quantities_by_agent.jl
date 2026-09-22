@@ -72,11 +72,11 @@ function AnalyzeSurpluses(agent_indicators_by_case, analysis_dir_path)
 end
 
 # Gross Traded Volume: sum(|quantity|) across every adjustment leg from every clearing that
-# touched a delivered MTU, i.e. including the speculative, never-delivered tail of each clearing's
+# touched a final-auction MTU, i.e. including the speculative, never-delivered tail of each clearing's
 # own look-ahead window - matches Laura's calculate_generator_revenues_full (costs.jl), the same
 # definition post_analysis_laura_kpis.jl uses. That module gets away with summing the whole
 # transactions.xlsx unfiltered only because lastAuctionMTU bounded the entire file to time_range
-# already; scoped here to time_range explicitly by Market Time Unit (the delivered MTU, not
+# already; scoped here to time_range explicitly by Market Time Unit (the final-auction MTU, not
 # Clearing MTU) so it stays consistent with every other metric in this suite regardless of whether
 # the run being analyzed has that cap.
 function AnalyzeGrossTradedVolume(case_paths, time_range, analysis_dir_path)

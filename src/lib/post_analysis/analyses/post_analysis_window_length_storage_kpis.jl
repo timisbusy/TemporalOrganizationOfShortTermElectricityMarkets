@@ -47,8 +47,8 @@ function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, out
 
 	storage_kpis_by_case = Dict(case => CalculateStorageKPIs(case_paths[case], time_range) for case in cases)
 
-	mid_vs_short_col = "$mid vs $short % Difference"
-	long_vs_mid_col = "$long vs $mid % Difference"
+	mid_vs_short_col = "$mid vs $short"
+	long_vs_mid_col = "$long vs $mid"
 
 	final_indicators_df = DataFrame("Indicator"=>String[], short=>Float64[], mid=>Float64[], long=>Float64[], mid_vs_short_col=>String[], long_vs_mid_col=>String[])
 

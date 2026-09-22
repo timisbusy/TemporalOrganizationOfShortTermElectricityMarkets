@@ -1,7 +1,7 @@
 # Wind forecast-error-at-first-entry comparison, generalized over any marketSequence shape - a
 # single rolling market (36h/48h/72h) or a Fixed Horizon design's 24 separate named markets (one
 # per hour-of-day, each with its own clockTimeBegin/optimizationWindow - see fixed_laura.yaml).
-# For every delivered MTU in time_range, finds the earliest clearing (across every named market in
+# For every final-auction MTU in time_range, finds the earliest clearing (across every named market in
 # the sequence) that ever considered that MTU - see EarliestClearingMTUForMTU - reads Wind's own
 # bid quantity for that MTU from that clearing's RAW export (Q_6G_Wind - Wind bids its full
 # forecast availability at price 0, so this *is* its bid), and compares it against the true
