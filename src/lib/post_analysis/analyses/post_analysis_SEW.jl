@@ -4,11 +4,11 @@ using XLSX, DataFrames, Plots, Statistics, Latexify
 
 include("../post_analysis_common.jl")
 
-# All of CalculateCaseIndicators' own indicators are extensive (totals over time_range), so this is
-# currently empty - kept for parity with PostAnalysisWindowLengthKPIs/StorageKPIs (whose own
-# Mean Final Auction Price/Avg Charging/Discharging Price are already €/MWh rates) in case an
-# intensive indicator is ever added here too.
-const INTENSIVE_INDICATORS = Set{String}()
+# Mean Final Auction Price is already an intensive €/MWh average (like
+# PostAnalysisWindowLengthStorageKPIs' Avg Charging/Discharging Price), not a total over
+# time_range, so it passes through the daily_average sheet unscaled rather than being divided by
+# days like every other (extensive) indicator in this table.
+const INTENSIVE_INDICATORS = Set([PostAnalysisCommon.MEAN_FINAL_AUCTION_PRICE_INDICATOR])
 
 # "Name (Unit)" -> "Name (Unit/day)" for the daily-average table, so its row labels can't be
 # mistaken for the same totals reported in the "totals" sheet just by glancing at the Indicator
@@ -61,6 +61,10 @@ function PerformAnalysis(case_paths; cases=("Fixed Horizon", "Rolling Horizon"),
 	b_curtailed = WindCurtailed(case_b)
 	push!(final_indicators_df, ["Wind Curtailed (MWh)", a_curtailed, b_curtailed, PostAnalysisCommon.PercentDiffString(b_curtailed, a_curtailed)])
 
+	a_price = PostAnalysisCommon.LoadMeanFinalAuctionPrice(case_paths[case_a], time_range)
+	b_price = PostAnalysisCommon.LoadMeanFinalAuctionPrice(case_paths[case_b], time_range)
+	push!(final_indicators_df, [PostAnalysisCommon.MEAN_FINAL_AUCTION_PRICE_INDICATOR, a_price, b_price, PostAnalysisCommon.PercentDiffString(b_price, a_price)])
+
 	println(final_indicators_df)
 
 	# average daily value = total / MTU count in time_range * 24 (MTU per day) - % difference is
@@ -80,8 +84,10 @@ function PerformAnalysis(case_paths; cases=("Fixed Horizon", "Rolling Horizon"),
 
 	XLSX.writetable("$analysis_dir_path/sew_details.xlsx", "totals" => final_indicators_df, "daily_average" => daily_avg_df; overwrite=true)
 
-	totals_tex = latexify(PostAnalysisCommon.EscapeForLatex(final_indicators_df); env = :table, booktabs = true, snakecase=true, latex=false,fmt="%'\''d\n")
-	daily_avg_tex = latexify(PostAnalysisCommon.EscapeForLatex(daily_avg_df); env = :table, booktabs = true, snakecase=true, latex=false,fmt="%'\''d\n")
+	totals_tex_df = PostAnalysisCommon.FormatIndicatorRowForLatex(PostAnalysisCommon.EscapeForLatex(final_indicators_df), PostAnalysisCommon.MEAN_FINAL_AUCTION_PRICE_INDICATOR, [case_a, case_b])
+	daily_avg_tex_df = PostAnalysisCommon.FormatIndicatorRowForLatex(PostAnalysisCommon.EscapeForLatex(daily_avg_df), PostAnalysisCommon.MEAN_FINAL_AUCTION_PRICE_INDICATOR, [case_a, case_b])
+	totals_tex = latexify(totals_tex_df; env = :table, booktabs = true, snakecase=true, latex=false,fmt="%'\''d\n")
+	daily_avg_tex = latexify(daily_avg_tex_df; env = :table, booktabs = true, snakecase=true, latex=false,fmt="%'\''d\n")
 
 	open("$analysis_dir_path/sew_details.tex", "w") do io
 		println(io, totals_tex)

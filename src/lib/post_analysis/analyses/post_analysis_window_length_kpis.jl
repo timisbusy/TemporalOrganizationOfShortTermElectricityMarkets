@@ -8,7 +8,7 @@
 
 module PostAnalysisWindowLengthKPIs
 
-using XLSX, DataFrames, Latexify, Statistics, Printf
+using XLSX, DataFrames, Latexify, Statistics
 
 include("../post_analysis_common.jl")
 include("./post_analysis_conventional_generation_cost.jl")
@@ -16,13 +16,11 @@ include("./post_analysis_conventional_generation_cost.jl")
 const DEFAULT_CASE_PATHS = PostAnalysisConventionalGenerationCost.DEFAULT_CASE_PATHS
 const DEFAULT_CASES = PostAnalysisConventionalGenerationCost.DEFAULT_CASES
 
-const MEAN_PRICE_INDICATOR = "Mean Final Auction Price (€/MWh)"
-
 # Mean Final Auction Price is already an intensive €/MWh average (like
 # PostAnalysisWindowLengthStorageKPIs' Avg Charging/Discharging Price), not a total over
 # time_range, so it passes through the daily_average sheet unscaled rather than being divided by
 # days like every other (extensive) indicator in this table.
-const INTENSIVE_INDICATORS = Set([MEAN_PRICE_INDICATOR])
+const INTENSIVE_INDICATORS = Set([PostAnalysisCommon.MEAN_FINAL_AUCTION_PRICE_INDICATOR])
 
 # "Name (Unit)" -> "Name (Unit/day)" for the daily-average table, so its row labels can't be
 # mistaken for the same totals reported in the "totals" sheet just by glancing at the Indicator
@@ -32,32 +30,6 @@ function DailyIndicatorLabel(indicator)
 	m = match(r"^(.*)\(([^()]*)\)$", indicator)
 	m === nothing && return "$indicator (per day)"
 	return "$(m.captures[1])($(m.captures[2])/day)"
-end
-
-# rounded to the hundredths place - this is a €/MWh price meant to read like one, not a
-# many-significant-figure aggregate like the totals it sits alongside in this table.
-function LoadMeanFinalAuctionPrice(case_path, time_range)
-	dd = PostAnalysisCommon.LoadFile(joinpath(case_path, "final_dispatch_decisions.xlsx"))
-	dd = dd[time_range.start .<= dd.mtu .<= time_range.stop, :]
-	return round(mean(dd.FinalAuctionPrice); digits=2)
-end
-
-# The shared "%'d" (integer, thousands-separated) fmt below suits this table's big €/day totals
-# but would truncate MEAN_PRICE_INDICATOR's already-small €/MWh value to a bare integer -
-# Latexify's PrintfNumberFormatter applies the same fmt to every Number cell in the table
-# (latextabular.jl: `x isa Number ? formatter(x) : x`), with no per-row override. Since a non-
-# Number cell passes through untouched, pre-formatting just this row's case-value cells as "%.2f"
-# strings - on a copy, never final_indicators_df/daily_avg_df themselves - sidesteps that without
-# touching every other row's integer display.
-function FormatMeanPriceRowForLatex(df, cases)
-	out = copy(df)
-	row_idx = findfirst(==(MEAN_PRICE_INDICATOR), out.Indicator)
-	row_idx === nothing && return out
-	for case in cases
-		out[!, case] = Vector{Any}(out[!, case])
-		out[row_idx, case] = Printf.@sprintf("%.2f", df[row_idx, case])
-	end
-	return out
 end
 
 function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=PostAnalysisConventionalGenerationCost.DefaultLabel(case_paths, cases)), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE)
@@ -84,8 +56,8 @@ function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, out
 		push!(final_indicators_df, [indicator, short_v, mid_v, long_v, PostAnalysisCommon.PercentDiffString(mid_v, short_v), PostAnalysisCommon.PercentDiffString(long_v, mid_v)])
 	end
 
-	mean_price_by_case = Dict(case => LoadMeanFinalAuctionPrice(case_paths[case], time_range) for case in cases)
-	push!(final_indicators_df, [MEAN_PRICE_INDICATOR, mean_price_by_case[short], mean_price_by_case[mid], mean_price_by_case[long],
+	mean_price_by_case = Dict(case => PostAnalysisCommon.LoadMeanFinalAuctionPrice(case_paths[case], time_range) for case in cases)
+	push!(final_indicators_df, [PostAnalysisCommon.MEAN_FINAL_AUCTION_PRICE_INDICATOR, mean_price_by_case[short], mean_price_by_case[mid], mean_price_by_case[long],
 		PostAnalysisCommon.PercentDiffString(mean_price_by_case[mid], mean_price_by_case[short]),
 		PostAnalysisCommon.PercentDiffString(mean_price_by_case[long], mean_price_by_case[mid])])
 
@@ -108,8 +80,10 @@ function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, out
 
 	XLSX.writetable("$analysis_dir_path/window_length_kpis.xlsx", "totals" => final_indicators_df, "daily_average" => daily_avg_df; overwrite=true)
 
-	totals_tex = latexify(FormatMeanPriceRowForLatex(PostAnalysisCommon.EscapeForLatex(final_indicators_df), cases); env = :table, booktabs = true, snakecase=true, latex=false, fmt="%'\''d\n")
-	daily_avg_tex = latexify(FormatMeanPriceRowForLatex(PostAnalysisCommon.EscapeForLatex(daily_avg_df), cases); env = :table, booktabs = true, snakecase=true, latex=false, fmt="%'\''d\n")
+	totals_tex_df = PostAnalysisCommon.FormatIndicatorRowForLatex(PostAnalysisCommon.EscapeForLatex(final_indicators_df), PostAnalysisCommon.MEAN_FINAL_AUCTION_PRICE_INDICATOR, [short, mid, long])
+	daily_avg_tex_df = PostAnalysisCommon.FormatIndicatorRowForLatex(PostAnalysisCommon.EscapeForLatex(daily_avg_df), PostAnalysisCommon.MEAN_FINAL_AUCTION_PRICE_INDICATOR, [short, mid, long])
+	totals_tex = latexify(totals_tex_df; env = :table, booktabs = true, snakecase=true, latex=false, fmt="%'\''d\n")
+	daily_avg_tex = latexify(daily_avg_tex_df; env = :table, booktabs = true, snakecase=true, latex=false, fmt="%'\''d\n")
 
 	open("$analysis_dir_path/window_length_kpis.tex", "w") do io
 		println(io, totals_tex)
