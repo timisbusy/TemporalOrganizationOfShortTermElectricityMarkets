@@ -4,13 +4,11 @@ using XLSX, DataFrames, Plots, Statistics, Latexify
 
 include("../post_analysis_common.jl")
 
-CASES = PostAnalysisCommon.CASES
-
-function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths))
+function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths))
 
 	analysis_dir_path = "$output_base/post_analysis_storage"
 
-	dispatch_decision_paths = Dict(case => joinpath(case_paths[case], "final_dispatch_decisions.xlsx") for case in CASES)
+	dispatch_decision_paths = Dict(case => joinpath(case_paths[case], "final_dispatch_decisions.xlsx") for case in cases)
 
 	println("starting analysis")
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
@@ -36,8 +34,13 @@ function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisO
 		storage_analysis_df[!,Symbol(case)] = [charge_per_day,discharge_per_day,discharge_per_day-charge_per_day,charge_per_day+discharge_per_day]
 	end
 
-	storage_analysis_df[!, Symbol("Change")] = storage_analysis_df[!, Symbol("Rolling Horizon")] .- storage_analysis_df[!, Symbol("Fixed Horizon")]
-	storage_analysis_df[!, Symbol("% Change")] = PostAnalysisCommon.PercentDiffString.(storage_analysis_df[!, Symbol("Rolling Horizon")], storage_analysis_df[!, Symbol("Fixed Horizon")])
+	# one "{case} Change"/"{case} % Change" pair per non-baseline case, measured against cases[1]
+	# (matches this suite's existing Rolling-relative-to-Fixed convention, generalized to N cases).
+	baseline = cases[1]
+	for case in cases[2:end]
+		storage_analysis_df[!, Symbol("$case Change")] = storage_analysis_df[!, Symbol(case)] .- storage_analysis_df[!, Symbol(baseline)]
+		storage_analysis_df[!, Symbol("$case % Change")] = PostAnalysisCommon.PercentDiffString.(storage_analysis_df[!, Symbol(case)], storage_analysis_df[!, Symbol(baseline)])
+	end
 
 	println(storage_analysis_df)
 
@@ -46,7 +49,7 @@ function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisO
 	storage_analysis_tex = latexify(PostAnalysisCommon.EscapeForLatex(storage_analysis_df); env = :table, booktabs = true, snakecase=true, latex=false,fmt="%'\''d\n")
 	write("$analysis_dir_path/storage_details.tex",storage_analysis_tex)
 
-	NetDischargePerHour(dds, analysis_dir_path)
+	NetDischargePerHour(dds, cases, analysis_dir_path)
 end
 
 function PrintStorageDetails(case, dd)
@@ -63,7 +66,7 @@ function PrintStorageDetails(case, dd)
 	return discharge_total,charge_total,discharge_per_day,charge_per_day
 end
 
-function NetDischargePerHour(dds, analysis_dir_path)
+function NetDischargePerHour(dds, cases, analysis_dir_path)
 	xPlotIndicator = 0:23
     pNetDischarge = Plots.plot(xlabel="Hour of Day", ylabel="Mean Net Discharge (MWh)",
                             title="Mean Net Discharge (MWh)")
@@ -71,7 +74,7 @@ function NetDischargePerHour(dds, analysis_dir_path)
     pNetDischargeStdDev = Plots.plot(xlabel="Hour of Day", ylabel="Mean Net Discharge St Dev (MWh)",
                             title="Std Dev Net Discharge (MWh)")
 
-	for case in CASES
+	for case in cases
 		dd = dds[case]
 		hourly_dd = groupby(dd,:Hour)
 		# show(hourly_dd, allgroups=true)

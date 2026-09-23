@@ -51,9 +51,13 @@ end
 # case name -> trailing directory name, own leading "{unix_timestamp}_" stripped (it's already
 # redundant with NewAnalysisOutputDir's own timestamp prefix, and every extra character here
 # tightens the margin against Windows' 260-char MAX_PATH once a deeply-nested output file name is
-# built on top of it), in CASES order, joined - e.g. "fresh_validate_fixed_36_vs_fresh_validate_rolling_36"
-function DefaultAnalysisLabel(case_paths)
-	names = [replace(basename(case_paths[c]), r"^\d+_" => "") for c in CASES if haskey(case_paths, c)]
+# built on top of it), in `cases` order, joined - e.g. "fresh_validate_fixed_36_vs_fresh_validate_rolling_36"
+# `cases` defaults to CASES (Fixed/Rolling) rather than always iterating case_paths' own keys -
+# passing a 3+ case case_paths without also passing the matching `cases` order here would otherwise
+# silently drop the extra case from the label instead of erroring, producing a directory name
+# indistinguishable from a 2-case run's.
+function DefaultAnalysisLabel(case_paths, cases=CASES)
+	names = [replace(basename(case_paths[c]), r"^\d+_" => "") for c in cases if haskey(case_paths, c)]
 	return join(names, "_vs_")
 end
 
