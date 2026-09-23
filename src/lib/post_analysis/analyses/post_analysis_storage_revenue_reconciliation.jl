@@ -10,24 +10,32 @@
 # storage_revenue in market_data_storage.jl) made for parity with an external validation reference,
 # not to represent what storage actually earned. Storage in a rolling design gets its position
 # revised at every clearing that includes an MTU in its look-ahead window, each revision settled at
-# THAT clearing's own price via the transactions table (same convention as generators). Summing
-# those real per-clearing trades ("true cumulative" here) is what storage actually got paid; the
+# THAT clearing's own price via the transactions table (same convention as generators), so the
 # final-price convention discards that whole trading history and prices only the last net position.
 #
-# The two can diverge a lot, and the divergence grows with look-ahead distance, because a longer
-# look-ahead means more re-clearings touch each MTU before final delivery, i.e. more chances for
-# storage to lock in a trade at one price while the market keeps moving for unrelated reasons before
-# that MTU is finally settled. See MostDivergentMTUs below for the per-MTU drill-down that makes
-# this concrete (e.g. a single MTU where storage traded once, early, at a low price, then the market
-# drifted to a much higher final settlement price without storage ever trading again).
+# The other side of the comparison is ImpliedStorageRevenue: not a direct sum of storage's own
+# recorded transactions, but the residual of the whole-market money-balance identity (demand
+# payments = generator revenue + storage revenue) - i.e. DemandPayments(tx) - GeneratorRevenue(tx).
+# The two land on the same number whenever storage's own bookkeeping is correct (this identity is
+# exactly what motivated the demand_adjust:false fix in helper_model_results.jl's Transactions(),
+# and the cases this module defaults to were re-run after that fix specifically so this comparison
+# would hold), but the conceptual difference matters: ImpliedStorageRevenue never reads a single
+# Storage-tagged row, so it's an independent check on whatever number storage's own transactions
+# would report, not a restatement of them - if Storage's bookkeeping were ever broken again, this
+# comparison would still correctly show what storage was implicitly paid, rather than reproducing
+# the same bug.
 #
-# This reconciliation only works if storage's OWN transactions are actually recorded - which
-# requires the fix in helper_model_results.jl's Transactions() (demand_adjust:false no longer
-# leaves Qd_adj/Qg_adj-style bookkeeping broken) to be in place; it doesn't affect storage's own
-# transactions directly, but the cases this module defaults to were re-run after that fix so the
-# whole-market money-balance identity (demand payments == generator revenue + true cumulative
-# storage revenue) can be cross-checked at the same time - see TrueCumulativeStorageRevenue's use
-# below and PostAnalysisSEW/PostAnalysisCommon.CalculateCaseIndicators for the demand/generator side.
+# The final-price convention and ImpliedStorageRevenue can diverge a lot, and the divergence grows
+# with look-ahead distance, because a longer look-ahead means more re-clearings touch each MTU
+# before final delivery, i.e. more chances for storage to lock in a trade at one price while the
+# market keeps moving for unrelated reasons before that MTU is finally settled. See
+# MostDivergentMTUs below for the per-MTU drill-down that makes this concrete (e.g. a single MTU
+# where storage traded once, early, at a low price, then the market drifted to a much higher final
+# settlement price without storage ever trading again) - unlike the summary comparison above, that
+# drill-down is specifically about storage's own recorded per-MTU trades (there is no per-MTU
+# analogue of "demand payments minus generator revenue" that isolates storage's own behavior the
+# way summing its own transactions does), so it still depends on storage's own bookkeeping being
+# correct.
 
 module PostAnalysisStorageRevenueReconciliation
 
@@ -77,26 +85,43 @@ end
 # other indicators (agent quantities, SEW, ...) this module has no use for.
 FinalPriceConventionRevenue(fdd) = sum(skipmissing((fdd.StorageDischarge .- fdd.StorageCharge) .* fdd.FinalAuctionPrice))
 
-# Sum of every recorded Storage transaction's own Payments/Revenues (€) - each one already priced
-# at whatever that specific clearing's own settlement price was, so this is genuinely what storage
-# was paid/charged across its whole trading history for these MTUs, not an approximation.
-TrueCumulativeStorageRevenue(tx) = sum(tx[tx.Agent .== "Storage", "Payments/Revenues (€)"])
+# Payments/Revenues (€) is Quantity (MWh) * Price (€/MWh) for every transaction row regardless of
+# agent - MarketDataStorage.CalculateEconomicIndicators' AgentEconomicMetrics just labels the same
+# column "payments" for demand and "revenue" for generators (see PostAnalysisCommon.DEFAULT_AGENT_MAP
+# for the two agent lists), so these two sums are the demand/generator halves of the same
+# whole-market money balance ImpliedStorageRevenue below computes the residual of.
+function DemandPayments(tx)
+	demand_agents = PostAnalysisCommon.DEFAULT_AGENT_MAP[PostAnalysisCommon.AGENT_DEMAND]
+	return sum(tx[[a in demand_agents for a in tx.Agent], "Payments/Revenues (€)"])
+end
+
+function GeneratorRevenue(tx)
+	generator_agents = PostAnalysisCommon.DEFAULT_AGENT_MAP[PostAnalysisCommon.AGENT_GENERATOR]
+	return sum(tx[[a in generator_agents for a in tx.Agent], "Payments/Revenues (€)"])
+end
+
+# Storage's revenue implied by the whole-market money-balance identity (demand payments = generator
+# revenue + storage revenue) - see this module's header comment for why this, rather than summing
+# storage's own recorded transactions directly, is the more meaningful side of the reconciliation:
+# it never reads a single Storage-tagged transaction row, so it's an independent check on what
+# storage was implicitly paid rather than a restatement of its own bookkeeping.
+ImpliedStorageRevenue(tx) = DemandPayments(tx) - GeneratorRevenue(tx)
 
 function Reconcile(case_paths, case, time_range)
 	(fdd, tx) = LoadCaseData(case_paths, case, time_range)
 	storage_tx = tx[tx.Agent .== "Storage", :]
 
 	final_price = FinalPriceConventionRevenue(fdd)
-	true_cumulative = TrueCumulativeStorageRevenue(tx)
+	implied = ImpliedStorageRevenue(tx)
 	net_final_position = sum(skipmissing(fdd.StorageDischarge .- fdd.StorageCharge))
 	gross_traded_volume = sum(abs.(storage_tx[!, "Quantity (MWh)"]))
 
 	return (
 		Case=case,
 		FinalPriceConventionRevenue=final_price,
-		TrueCumulativeRevenue=true_cumulative,
-		Delta=true_cumulative - final_price,
-		DeltaPct=final_price == 0 ? NaN : 100 * (true_cumulative - final_price) / final_price,
+		ImpliedStorageRevenue=implied,
+		Delta=implied - final_price,
+		DeltaPct=final_price == 0 ? NaN : 100 * (implied - final_price) / final_price,
 		NetFinalPositionMWh=net_final_position,
 		GrossTradedVolumeMWh=gross_traded_volume,
 		NStorageTrades=nrow(storage_tx),
@@ -135,10 +160,10 @@ end
 
 function SummaryPlot(summary_df, cases, analysis_dir_path)
 	x = 1:length(cases)
-	p = Plots.plot(xlabel="Case", ylabel="Storage Revenue (€)", title="Storage revenue: final-price convention vs true cumulative",
+	p = Plots.plot(xlabel="Case", ylabel="Storage Revenue (€)", title="Storage revenue: final-price convention vs implied (demand - generator)",
 		xticks=(x, cases), xrotation=30, legend=:topright, size=(900, 550), left_margin=10Plots.mm, bottom_margin=25Plots.mm)
 	Plots.bar!(p, x .- 0.15, summary_df.FinalPriceConventionRevenue, bar_width=0.3, label="Final-price convention")
-	Plots.bar!(p, x .+ 0.15, summary_df.TrueCumulativeRevenue, bar_width=0.3, label="True cumulative (sum of actual trades)")
+	Plots.bar!(p, x .+ 0.15, summary_df.ImpliedStorageRevenue, bar_width=0.3, label="Implied (demand payments - generator revenue)")
 	display(p)
 	savefig(p, "$analysis_dir_path/storage_revenue_reconciliation.png")
 end
