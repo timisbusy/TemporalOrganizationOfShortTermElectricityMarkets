@@ -22,16 +22,16 @@ const HIGH_STORAGE_CASE_PATHS = Dict{String,String}(
 # Fixed/Rolling/Auction Only - the third, historical "status quo" market design (status_quo.yaml:
 # once-daily DayAhead + Intraday1/2/3, no rolling re-clearing) brought back alongside the Fixed/
 # Rolling Horizon pair. PostAnalysisLeadTime, PostAnalysisQuantitiesByAgent, PostAnalysisStorage,
-# and PostAnalysisAuctionSnapshots are wired to Run's own `cases` kwarg below and support any
-# number of cases (baseline-relative %diff columns, measured against cases[1], generalizing the
-# old fixed "Rolling Horizon % Diff" shape). PostAnalysisSEW/PostAnalysisPhysicalIndicators are
-# pairwise-only by design (a `cases::Tuple` of exactly 2) and PostAnalysisDaily/
-# PostAnalysisStorageRevenueReconciliation still only know about "Fixed Horizon"/"Rolling Horizon"
-# internally - passing THREE_WAY_CASE_PATHS as `case_paths` without a matching `cases` override
-# leaves Auction Only silently absent from those specific tables rather than erroring (the extra
-# dict key is simply never looked up). PostAnalysisPrices is deliberately excluded even when
-# `cases` is overridden - see the comment on its own call in Run for why. Generalizing
-# PostAnalysisDaily is tracked as follow-up work, not done here.
+# PostAnalysisDaily, and PostAnalysisAuctionSnapshots are wired to Run's own `cases` kwarg below
+# and support any number of cases (baseline-relative diffs/plots, measured against cases[1],
+# generalizing what used to be a single hardcoded "Rolling Horizon - Fixed Horizon" comparison into
+# one per non-baseline case). PostAnalysisSEW/PostAnalysisPhysicalIndicators are pairwise-only by
+# design (a `cases::Tuple` of exactly 2) and PostAnalysisStorageRevenueReconciliation still only
+# knows about "Fixed Horizon"/"Rolling Horizon" internally - passing THREE_WAY_CASE_PATHS as
+# `case_paths` without a matching `cases` override leaves Auction Only silently absent from those
+# specific tables rather than erroring (the extra dict key is simply never looked up).
+# PostAnalysisPrices is deliberately excluded even when `cases` is overridden - see the comment on
+# its own call in Run for why.
 const THREE_WAY_CASE_PATHS = Dict{String,String}(
 	"Fixed Horizon" => "results/1789748124_fixed_36_no_cap_1d_spinup",
 	"Rolling Horizon" => "results/1789748169_rolling_36_no_cap_1d_spinup",
@@ -64,7 +64,7 @@ function Run(case_paths=PostAnalysisCommon.DEFAULT_CASE_PATHS; cases=PostAnalysi
 
 	PostAnalysisQuantitiesByAgent.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
 	PostAnalysisSEW.PerformAnalysis(case_paths; output_base=output_base)
-	PostAnalysisDaily.PerformAnalysis(case_paths; output_base=output_base)
+	PostAnalysisDaily.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
 	# PostAnalysisPrices is deliberately NOT given `cases` here - its "5 evolving forecast vintages
 	# for the same delivery period" concept assumes a near-every-MTU clearing cadence (true for
 	# Fixed/Rolling) with no meaningful analog for a sparser design like Auction Only (4 clearings/

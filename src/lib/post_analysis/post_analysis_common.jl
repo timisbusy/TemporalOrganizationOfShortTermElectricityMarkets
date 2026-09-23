@@ -168,6 +168,11 @@ function PercentDiffString(rolling, fixed)
 	return Printf.format(PERCENT_FORMAT[], 100*(rolling - fixed)/fixed)
 end
 
+# filesystem/filename-safe case name - shared so this doesn't drift into slightly different local
+# copies across modules (post_analysis_auction_snapshots.jl and post_analysis_prices.jl each used
+# to define their own before this).
+CaseSlug(case) = lowercase(replace(case, " " => "_"))
+
 function LoadFile(filepath)
 	return DataFrame(XLSX.readtable(filepath, "data"))
 end
