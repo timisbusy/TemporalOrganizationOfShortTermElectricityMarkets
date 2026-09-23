@@ -19,6 +19,22 @@ const HIGH_STORAGE_CASE_PATHS = Dict{String,String}(
 	"Rolling Horizon" => "results/1789748893_rolling_36_no_cap_1d_spinup_high_storage",
 )
 
+# Fixed/Rolling/Auction Only - the third, historical "status quo" market design (status_quo.yaml:
+# once-daily DayAhead + Intraday1/2/3, no rolling re-clearing) brought back alongside the Fixed/
+# Rolling Horizon pair. Only PostAnalysisAuctionSnapshots is actually wired to Run's own `cases`
+# kwarg below - every other submodule here still only knows about "Fixed Horizon"/"Rolling Horizon"
+# internally, so passing THREE_WAY_CASE_PATHS as `case_paths` without also passing THREE_WAY_CASES
+# leaves Auction Only silently absent from those tables rather than erroring (the extra dict key is
+# simply never looked up). PostAnalysisPrices in particular is deliberately excluded even when
+# `cases` is overridden - see the comment on its own call in Run for why. Generalizing the rest of
+# the suite to include Auction Only is tracked as follow-up work, not done here.
+const THREE_WAY_CASE_PATHS = Dict{String,String}(
+	"Fixed Horizon" => "results/1789748124_fixed_36_no_cap_1d_spinup",
+	"Rolling Horizon" => "results/1789748169_rolling_36_no_cap_1d_spinup",
+	"Auction Only" => "results/1790178290_auction_only_no_cap_1d_spinup",
+)
+const THREE_WAY_CASES = ["Fixed Horizon", "Rolling Horizon", "Auction Only"]
+
 # PostAnalysisStorageRevenueReconciliation.DEFAULT_CASE_PATHS spans both storage levels at once (it
 # needs a Fixed Horizon case alongside Rolling 36h/48h/72h, which is why it's wired in here rather
 # than into PostAnalysisWindowLengthRunner/PostAnalysisHighStorageWindowLengthRunner - those only
@@ -36,7 +52,7 @@ const HIGH_STORAGE_STORAGE_REVENUE_CASE_PATHS = Dict{String,String}(k => v for (
 # modules write into one shared, never-overwritten results/post_analysis/{timestamp}_{label}/
 # directory for this Run call (see PostAnalysisCommon.NewAnalysisOutputDir) - label defaults to one
 # derived from case_paths itself.
-function Run(case_paths=PostAnalysisCommon.DEFAULT_CASE_PATHS; label=PostAnalysisCommon.DefaultAnalysisLabel(case_paths),
+function Run(case_paths=PostAnalysisCommon.DEFAULT_CASE_PATHS; cases=PostAnalysisCommon.CASES, label=PostAnalysisCommon.DefaultAnalysisLabel(case_paths),
 	storage_revenue_case_paths=REGULAR_STORAGE_REVENUE_CASE_PATHS)
 	output_base = PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=label)
 
@@ -45,10 +61,15 @@ function Run(case_paths=PostAnalysisCommon.DEFAULT_CASE_PATHS; label=PostAnalysi
 	PostAnalysisQuantitiesByAgent.PerformAnalysis(case_paths; output_base=output_base)
 	PostAnalysisSEW.PerformAnalysis(case_paths; output_base=output_base)
 	PostAnalysisDaily.PerformAnalysis(case_paths; output_base=output_base)
+	# PostAnalysisPrices is deliberately NOT given `cases` here - its "5 evolving forecast vintages
+	# for the same delivery period" concept assumes a near-every-MTU clearing cadence (true for
+	# Fixed/Rolling) with no meaningful analog for a sparser design like Auction Only (4 clearings/
+	# day), so it always runs against its own default 2-case pair regardless of what `cases` this
+	# Run call was given.
 	PostAnalysisPrices.PerformAnalysis(case_paths; output_base=output_base)
 	PostAnalysisStorage.PerformAnalysis(case_paths; output_base=output_base)
 	PostAnalysisPhysicalIndicators.PerformAnalysis(case_paths; output_base=output_base)
-	PostAnalysisAuctionSnapshots.PerformAnalysis(case_paths; output_base=output_base)
+	PostAnalysisAuctionSnapshots.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
 	PostAnalysisStorageRevenueReconciliation.PerformAnalysis(storage_revenue_case_paths; output_base=output_base)
 
 	return output_base

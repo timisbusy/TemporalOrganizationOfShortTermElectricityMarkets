@@ -10,14 +10,18 @@ using Printf
 include("../post_analysis_common.jl")
 include("../agent_renaming.jl")
 
-CASES = PostAnalysisCommon.CASES
-
 quantitySymbol = Symbol("Quantity (MWh)")
 
+# extend with an entry for any new case name used as `cases` - a case missing here falls back to
+# CaseSlug(case) (post_analysis_auction_snapshots.jl's own "lowercase, spaces to underscores"
+# convention) rather than erroring, so an unlisted case still gets a usable (if less polished)
+# filename instead of a KeyError.
 case_shortname = Dict{String,String}(
     "Fixed Horizon" => "fixed",
     "Rolling Horizon" => "rolling",
+    "Auction Only" => "auction",
 )
+CaseShortname(case) = get(case_shortname, case, lowercase(replace(case, " " => "_")))
 
 # raw_dispatch_prefix maps case -> per-clearing RAW decisionvariables_<experiment name>_ prefix -
 # tied to the run's own experiment name, so it doesn't follow generically from case_paths. Left as
@@ -28,10 +32,10 @@ case_shortname = Dict{String,String}(
 # 31*24-36=708), but not for the lastAuctionMTU-capped fixed_36/rolling_36 pair (max MTU 672).
 # Left as nothing, day 28 is used when every case's RAW export actually reaches that far,
 # otherwise falling back to 26 (which fits the capped pair too); pass an explicit day to override.
-function PerformAnalysis(case_paths, raw_dispatch_prefix=nothing; illustrative_day=nothing, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths))
+function PerformAnalysis(case_paths, raw_dispatch_prefix=nothing; cases=PostAnalysisCommon.CASES, illustrative_day=nothing, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths))
     raw_dispatch_prefix = raw_dispatch_prefix === nothing ? PostAnalysisCommon.DiscoverRawDispatchPrefixes(case_paths) : raw_dispatch_prefix
 
-    illustrative_day = illustrative_day !== nothing ? illustrative_day : (DayFits(28, raw_dispatch_prefix) ? 28 : 26)
+    illustrative_day = illustrative_day !== nothing ? illustrative_day : (DayFits(28, raw_dispatch_prefix, cases) ? 28 : 26)
 
     analysis_dir_path = "$output_base/post_analysis_prices"
 
@@ -41,16 +45,16 @@ function PerformAnalysis(case_paths, raw_dispatch_prefix=nothing; illustrative_d
 
     illustrative_interval = (illustrative_day*24):((illustrative_day + 1)*24 - 1)
 
-    for case in CASES
+    for case in cases
         CreatePlots(case, illustrative_plus_interval, illustrative_interval, raw_dispatch_prefix, analysis_dir_path)
     end
 end
 
 # whether every case has its own RAW clearing for day's last MTU, i.e. whether the illustrative
 # window for that day can actually be drawn at all
-function DayFits(day, raw_dispatch_prefix)
+function DayFits(day, raw_dispatch_prefix, cases)
     last_mtu = (day + 1)*24 - 1
-    return all(isfile("$(raw_dispatch_prefix[case])$(last_mtu).xlsx") for case in CASES)
+    return all(isfile("$(raw_dispatch_prefix[case])$(last_mtu).xlsx") for case in cases)
 end
 
 function CreatePlots(case, interval, highlight_interval, raw_decision_variables_paths, analysis_dir_path)
@@ -110,7 +114,7 @@ function plotPrices(dvs, case, interval, highlight_interval, analysis_dir_path)
     xlims!(pPrices, interval.start - 0.5, interval.stop + 5 + 0.5)
 
     display(pPrices)
-    savefig(pPrices, "$analysis_dir_path/prices_$(case_shortname[case])_day$(highlight_interval.start ÷ 24).png")
+    savefig(pPrices, "$analysis_dir_path/prices_$(CaseShortname(case))_day$(highlight_interval.start ÷ 24).png")
 
 end
 
@@ -137,7 +141,7 @@ function plotTrades(dvs, case, interval, highlight_interval, agent, analysis_dir
         Plots.plot!(pTrades, adj_quantity_df.mtu, adj_quantity_df[!, adj_col], label="MTU $mtu")
     end
     display(pTrades)
-    savefig(pTrades, "$analysis_dir_path/trades_$(case_shortname[case])_$(agent).png")
+    savefig(pTrades, "$analysis_dir_path/trades_$(CaseShortname(case))_$(agent).png")
 
     y_tick_labels = vcat(["p_prev"], selected_auctions)
     p_gen = plot(
@@ -198,7 +202,7 @@ function plotTrades(dvs, case, interval, highlight_interval, agent, analysis_dir
         xlims!(p_gen, interval.start - 0.5, interval.stop + 5 + 0.5)
 
         display(p_gen)
-        savefig(p_gen, "$analysis_dir_path/trade_blocks_$(case_shortname[case])_$(agent).png")
+        savefig(p_gen, "$analysis_dir_path/trade_blocks_$(CaseShortname(case))_$(agent).png")
 
 
 end
