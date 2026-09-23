@@ -50,16 +50,9 @@ function PerformAnalysis(case_paths; cases=("Fixed Horizon", "Rolling Horizon"),
 		push!(final_indicators_df, [indicator, a_v, b_v, pct_diff])
 	end
 
-	# Wind Curtailment, matching Laura's "Total Wind Curtailed (MWh)" (see
-	# post_analysis_laura_kpis.jl): Q_6G_Wind is the model's available-capacity time series for
-	# wind (m.ext[:timeseries][:Q_gen], exported via helper_model_results.jl's "Q_$agent" column -
-	# NOT the dispatched quantity), so Q_6G_Wind - 6G_Wind is exactly how much available wind went
-	# undispatched each MTU. final_dispatch_decisions is already scoped to time_range by
-	# CalculateCaseIndicators/CalculateEconomicIndicators.
-	WindCurtailed(case) = sum(indicators_by_case[case].final_dispatch_decisions[!, Symbol("Q_6G_Wind")] .- indicators_by_case[case].final_dispatch_decisions[!, Symbol("6G_Wind")])
-	a_curtailed = WindCurtailed(case_a)
-	b_curtailed = WindCurtailed(case_b)
-	push!(final_indicators_df, ["Wind Curtailed (MWh)", a_curtailed, b_curtailed, PostAnalysisCommon.PercentDiffString(b_curtailed, a_curtailed)])
+	a_curtailed = PostAnalysisCommon.WindCurtailed(indicators_by_case[case_a].final_dispatch_decisions)
+	b_curtailed = PostAnalysisCommon.WindCurtailed(indicators_by_case[case_b].final_dispatch_decisions)
+	push!(final_indicators_df, [PostAnalysisCommon.WIND_CURTAILED_INDICATOR, a_curtailed, b_curtailed, PostAnalysisCommon.PercentDiffString(b_curtailed, a_curtailed)])
 
 	a_price = PostAnalysisCommon.LoadMeanFinalAuctionPrice(case_paths[case_a], time_range)
 	b_price = PostAnalysisCommon.LoadMeanFinalAuctionPrice(case_paths[case_b], time_range)
