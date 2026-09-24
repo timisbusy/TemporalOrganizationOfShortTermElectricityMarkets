@@ -9,7 +9,7 @@
 
 module PostAnalysisSolverComparison
 
-using XLSX, DataFrames, Plots, StatsPlots
+using XLSX, DataFrames, Plots, StatsPlots, Statistics
 
 results_path_base = "results/analysis"
 
@@ -128,6 +128,63 @@ function TradingVolumeDataFrame(case, result_dirs)
 	return df
 end
 
+# Rolling vs Fixed Total Gross Traded Volume, per solver/method category (plus the Laura
+# reference row) - both the raw Fixed/Rolling totals, their difference (Rolling - Fixed), and
+# their ratio (Rolling/Fixed), so the question "does the rolling/fixed relationship hold
+# uniformly, or is it itself solver-sensitive" can be read directly off one column. Per-generator
+# ratio columns are included alongside the Total ratio for the same reason - a consistent Total
+# ratio could still hide generator-level divergence that only shows up solver-by-solver.
+function TradingVolumeRatioDataFrame(fixed_df, rolling_df)
+	pairs = Any["Configuration" => String[], "Fixed Total (MWh)" => Float64[], "Rolling Total (MWh)" => Float64[],
+		"Difference (MWh)" => Float64[], "Ratio (Rolling/Fixed)" => Float64[]]
+	append!(pairs, ["$gen Ratio (Rolling/Fixed)" => Float64[] for gen in generators])
+	df = DataFrame(pairs...)
+
+	for cat in category_order
+		fixed_row = fixed_df[fixed_df.Configuration .== cat, :][1, :]
+		rolling_row = rolling_df[rolling_df.Configuration .== cat, :][1, :]
+
+		fixed_total = fixed_row.Total
+		rolling_total = rolling_row.Total
+		difference = rolling_total - fixed_total
+		ratio = fixed_total > 0 ? rolling_total / fixed_total : NaN
+
+		row = Any[cat, fixed_total, rolling_total, difference, ratio]
+		for gen in generators
+			gsym = Symbol(gen)
+			push!(row, fixed_row[gsym] > 0 ? rolling_row[gsym] / fixed_row[gsym] : NaN)
+		end
+		push!(df, row)
+	end
+
+	return df
+end
+
+# Bar chart of the Total Ratio (Rolling/Fixed) per solver/method category, with a dashed line at
+# the mean ratio across categories - the visual read for "is the ratio consistent across
+# variations": bars hugging the line say yes, a wide spread says the fixed/rolling relationship is
+# itself solver-dependent.
+function PlotTradingVolumeRatio(ratio_df)
+	ratios = ratio_df[!, "Ratio (Rolling/Fixed)"]
+	mean_ratio = mean(ratios)
+
+	p = bar(
+		1:nrow(ratio_df), ratios,
+		xticks = (1:nrow(ratio_df), ratio_df.Configuration),
+		xrotation = 20,
+		ylabel = "Total Trading Volume Ratio (Rolling / Fixed)",
+		title = "Rolling vs Fixed 36h trading volume ratio by solver / method",
+		label = "Ratio",
+		size = (900, 550),
+		left_margin = 10Plots.mm,
+		bottom_margin = 20Plots.mm,
+	)
+	hline!(p, [mean_ratio], linestyle = :dash, color = :red, linewidth = 2,
+		label = "mean = $(round(mean_ratio, digits=4))", legend = :outertopright)
+
+	return p
+end
+
 function PlotTradingVolumeComparison(case, df)
 	# groupedbar's :stack draws the first column on top and the last column at the bottom,
 	# so feed columns in reverse of the desired bottom-to-top order (Base, Shoulder, Peak,
@@ -176,7 +233,19 @@ function PerformAnalysis()
 	XLSX.writetable("$results_path_base/trading_volume_details.xlsx", "data" => combined_df; overwrite=true)
 	println("saved: $results_path_base/trading_volume_details.xlsx")
 
-	return (p_fixed, p_rolling, combined_df)
+	ratio_df = TradingVolumeRatioDataFrame(fixed_df, rolling_df)
+	println(ratio_df)
+	ratios = ratio_df[!, "Ratio (Rolling/Fixed)"]
+	println("Total ratio (Rolling/Fixed) across solver/method permutations: mean=$(round(mean(ratios), digits=4)), std=$(round(std(ratios), digits=4)), min=$(round(minimum(ratios), digits=4)), max=$(round(maximum(ratios), digits=4))")
+
+	p_ratio = PlotTradingVolumeRatio(ratio_df)
+	savefig(p_ratio, "$results_path_base/trading_volume_ratio_rolling_vs_fixed.png")
+	println("saved: $results_path_base/trading_volume_ratio_rolling_vs_fixed.png")
+
+	XLSX.writetable("$results_path_base/trading_volume_ratio_rolling_vs_fixed.xlsx", "data" => ratio_df; overwrite=true)
+	println("saved: $results_path_base/trading_volume_ratio_rolling_vs_fixed.xlsx")
+
+	return (p_fixed, p_rolling, combined_df, p_ratio, ratio_df)
 end
 
 end;
