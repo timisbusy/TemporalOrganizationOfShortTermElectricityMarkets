@@ -12,19 +12,20 @@ timesClearedSymbol = Symbol("Times Cleared")
 quantitySymbol = Symbol("Quantity (MWh)")
 priceSymbol = Symbol("Price (€/MWh)")
 
-CASES = PostAnalysisCommon.CASES
-
-colors = [:steelblue3 :darkorange2]
+# one color per case - extend this if a 4th case is ever added (offsets in SellAndBuybackPrices
+# below already special-case exactly 2 vs. anything else, so that part is fine up to 3; a 4th case
+# would need its own offsets branch too).
+colors = [:steelblue3 :darkorange2 :seagreen]
 
 function CleanDirectory(path)
 	mkpath(path)
 end
 
-function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths))
+function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths))
 
 	analysis_dir_path = "$output_base/lead_time_analysis"
 
-	transaction_paths = Dict(case => joinpath(case_paths[case], "transactions.xlsx") for case in CASES)
+	transaction_paths = Dict(case => joinpath(case_paths[case], "transactions.xlsx") for case in cases)
 
 	println("starting analysis")
 	CleanDirectory(analysis_dir_path)
@@ -63,17 +64,23 @@ function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisO
 	transaction_details_df = transaction_details_df[transaction_details_df[!,:Agent] .!= "1D_HighBid",:]
 	transaction_details_df = transaction_details_df[transaction_details_df[!,:Agent] .!= "2D_ModerateBid",:]
 	transaction_details_df = sort(transaction_details_df,[:Agent])
-	push!(transaction_details_df,["Total",sum(transaction_details_df[!,2]),sum(transaction_details_df[!,3]),sum(transaction_details_df[!,4]),sum(transaction_details_df[!,5])])
+	# sum every non-Agent column (2 per case - Gross Traded, Net Energy Contracted - regardless of
+	# how many cases there are), rather than hardcoding column indices 2:5 (exactly right for 2
+	# cases, silently wrong/out-of-bounds for any other count). skipmissing: an agent that never
+	# traded at all in some case (e.g. Peak in a sparser design like Auction Only) leftjoins to
+	# `missing` for that case's columns - sum() would otherwise propagate that into a useless
+	# `missing` Total for every case, not just the one actually missing data.
+	push!(transaction_details_df, ["Total"; [sum(skipmissing(transaction_details_df[!, col])) for col in names(transaction_details_df)[2:end]]])
 	println(transaction_details_df)
 	XLSX.writetable("$analysis_dir_path/transaction_details.xlsx", "data" => transaction_details_df; overwrite=true)
 
 	transaction_details_tex = latexify(transaction_details_df; env = :table, booktabs = true, snakecase=true, latex=false,fmt="%'\''d\n")
 	write("$analysis_dir_path/transaction_details.tex",transaction_details_tex)
 
-	AgentSellPriceByLeadTime(transactions_by_case, "3G_Base", analysis_dir_path)
-	AgentSellPriceByLeadTime(transactions_by_case, "6G_Wind", analysis_dir_path)
+	AgentSellPriceByLeadTime(transactions_by_case, "3G_Base", analysis_dir_path, cases)
+	AgentSellPriceByLeadTime(transactions_by_case, "6G_Wind", analysis_dir_path, cases)
 
-	SellAndBuybackPrices(transactions_by_case, analysis_dir_path)
+	SellAndBuybackPrices(transactions_by_case, analysis_dir_path, cases)
 end
 
 function GetTransactionDetails(case, ts)
@@ -94,16 +101,16 @@ function GetTransactionDetails(case, ts)
 	return details
 end
 
-function AgentSellPriceByLeadTime(transactions_by_case,agent, analysis_dir_path)
+function AgentSellPriceByLeadTime(transactions_by_case,agent, analysis_dir_path, cases)
 	groupRanges = [1:12, 13:24, 25:36]
 	groupNames = ["1-12", "13-24", "25-36"]
 
 
-    volume = zeros(Float64, length(groupNames), length(CASES))
-    price = zeros(Float64, length(groupNames), length(CASES))
+    volume = zeros(Float64, length(groupNames), length(cases))
+    price = zeros(Float64, length(groupNames), length(cases))
 
 
-    for (i,groupName) in enumerate(groupNames), (j, case) in enumerate(CASES)
+    for (i,groupName) in enumerate(groupNames), (j, case) in enumerate(cases)
 		case_ts = transactions_by_case[case]
 		case_ts = case_ts[(case_ts.Agent .== agent .&& case_ts[!,quantitySymbol] .>= 0),:]
 		case_ts[:,:LeadTime] = case_ts[!,mtuSymbol] .- case_ts[!,clearingMTUSymbol]
@@ -124,7 +131,7 @@ function AgentSellPriceByLeadTime(transactions_by_case,agent, analysis_dir_path)
     agentSalesLeadTime = plot(groupedbar(
         groupNames,
         volume,
-        label = reshape(CASES, 1, :),
+        label = reshape(cases, 1, :),
         bar_position = :dodge,
         color = colors,
         ylabel = "Sold volume (m MWh)",
@@ -140,7 +147,7 @@ function AgentSellPriceByLeadTime(transactions_by_case,agent, analysis_dir_path)
     agentSellPrice = plot(groupedbar(
         groupNames,
         price,
-        label = reshape(CASES, 1, :),
+        label = reshape(cases, 1, :),
         bar_position = :dodge,
         color = colors,
         ylabel = "Avg sell price (EUR/MWh)",
@@ -163,14 +170,14 @@ end
 
 
 
-function SellAndBuybackPrices(transactions_by_case, analysis_dir_path)
+function SellAndBuybackPrices(transactions_by_case, analysis_dir_path, cases)
 	agents = ["3G_Base","6G_Wind","7G_Solar"]
 
 
-    sell_prices = zeros(Float64, length(agents), length(CASES))
-    buyback_prices = zeros(Float64, length(agents), length(CASES))
+    sell_prices = zeros(Float64, length(agents), length(cases))
+    buyback_prices = zeros(Float64, length(agents), length(cases))
 
-    for (i,agent) in enumerate(agents), (j, case) in enumerate(CASES)
+    for (i,agent) in enumerate(agents), (j, case) in enumerate(cases)
 		case_ts = transactions_by_case[case]
 		case_ts = case_ts[(case_ts.Agent .== agent),:]
 		sales_ts = case_ts[case_ts[!,quantitySymbol] .> 0,:]
@@ -199,8 +206,8 @@ function SellAndBuybackPrices(transactions_by_case, analysis_dir_path)
         # bottom_margin = 14mm,
     )
 
-    offsets = length(CASES) == 2 ? [-0.09, 0.09] : [-0.18, 0.0, 0.18]
-    for (j, case_name) in enumerate(CASES)
+    offsets = length(cases) == 2 ? [-0.09, 0.09] : [-0.18, 0.0, 0.18]
+    for (j, case_name) in enumerate(cases)
         xpos = (1:length(agents)) .+ offsets[j]
         scatter!(p, xpos, sell_prices[:, j], marker=:circle, markersize=10,
                  color=colors[j], label="$case_name sell")

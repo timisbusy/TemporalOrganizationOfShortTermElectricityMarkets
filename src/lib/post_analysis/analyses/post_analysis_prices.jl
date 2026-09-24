@@ -13,15 +13,14 @@ include("../agent_renaming.jl")
 quantitySymbol = Symbol("Quantity (MWh)")
 
 # extend with an entry for any new case name used as `cases` - a case missing here falls back to
-# CaseSlug(case) (post_analysis_auction_snapshots.jl's own "lowercase, spaces to underscores"
-# convention) rather than erroring, so an unlisted case still gets a usable (if less polished)
-# filename instead of a KeyError.
+# PostAnalysisCommon.CaseSlug(case) rather than erroring, so an unlisted case still gets a usable
+# (if less polished) filename instead of a KeyError.
 case_shortname = Dict{String,String}(
     "Fixed Horizon" => "fixed",
     "Rolling Horizon" => "rolling",
     "Auction Only" => "auction",
 )
-CaseShortname(case) = get(case_shortname, case, lowercase(replace(case, " " => "_")))
+CaseShortname(case) = get(case_shortname, case, PostAnalysisCommon.CaseSlug(case))
 
 # raw_dispatch_prefix maps case -> per-clearing RAW decisionvariables_<experiment name>_ prefix -
 # tied to the run's own experiment name, so it doesn't follow generically from case_paths. Left as

@@ -11,15 +11,13 @@ using Latexify
 include("../post_analysis_common.jl")
 include("../agent_renaming.jl")
 
-CASES = PostAnalysisCommon.CASES
-
 quantitySymbol = Symbol("Quantity (MWh)")
 
-function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths))
+function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths))
 
     analysis_dir_path = "$output_base/post_analysis_daily"
 
-    dispatch_decision_paths = Dict(case => joinpath(case_paths[case], "final_dispatch_decisions.xlsx") for case in CASES)
+    dispatch_decision_paths = Dict(case => joinpath(case_paths[case], "final_dispatch_decisions.xlsx") for case in cases)
 
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 
@@ -28,7 +26,7 @@ function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisO
     may_4_interval = 3*24:(4*24 - 1)
     may_5_interval = 4*24:(5*24 - 1)
 
-    print_cases = CASES
+    print_cases = cases
 
 	dds = GetDispatchDecisions(print_cases, dispatch_decision_paths)
     mtu_economic_indicators = GetMTUEconomicIndicators(print_cases, case_paths)
@@ -125,7 +123,7 @@ function AnalyzeDailySEW(print_cases, mtu_economic_indicators, dds, analysis_dir
 
 
     AnalyzeDrivers(print_cases, mtu_economic_indicators, dds, daily_sews, analysis_dir_path)
-    CreateComparisonStats(mtu_economic_indicators, daily_sews, analysis_dir_path)
+    CreateComparisonStats(print_cases, daily_sews, analysis_dir_path)
 
 end
 
@@ -151,35 +149,50 @@ function AlignedXY(x_diff_df, y_diff_df)
     return joined.X, joined.Y
 end
 
-function CreateComparisonStats(mtu_economic_indicators, daily_sews, analysis_dir_path)
+# one row per non-baseline case (cases[1] is the baseline, matching this suite's existing
+# Rolling-relative-to-Fixed convention generalized to N cases) - was a single hardcoded
+# "Rolling Horizon - Fixed Horizon" row.
+function CreateComparisonStats(cases, daily_sews, analysis_dir_path)
 
-    comparisonStats = Dict{String,Any}()
-
-    sew_diffs = DiffByDay(daily_sews["Rolling Horizon"], daily_sews["Fixed Horizon"], sewSymbol).Diff
-
-    comparisonStats["Mean"] = mean(sew_diffs)
-    comparisonStats["Std Dev"] = std(sew_diffs)
-    comparisonStats["Median"] = median(sew_diffs)
-    comparisonStats["Days"] = length(sew_diffs)
-
-    alpha = 0.05
-    d = TDist(comparisonStats["Days"] - 1)
-    margin = quantile(d, 1 - alpha / 2) * (comparisonStats["Std Dev"] / sqrt(comparisonStats["Days"]))
-
-    ci = (round(comparisonStats["Mean"] - margin), round(comparisonStats["Mean"] + margin))
-    comparisonStats["95 Confidence Interval"] = ci
-
-    comparisonStats["Positive Days"] = count(i->(i>0),sew_diffs)
-    println(comparisonStats)
-
+    baseline = cases[1]
     comparisonDF = DataFrame()
-    comparisonDF[!,"Daily Difference"] = ["Rolling Horizon - Fixed Horizon"]
-    comparisonDF[!,"Days"] = [comparisonStats["Days"]]
-    comparisonDF[!,"Mean"] = [comparisonStats["Mean"]]
-    comparisonDF[!,"Median"] = [comparisonStats["Median"]]
-    comparisonDF[!,"Std. Dev."] = [comparisonStats["Std Dev"]]
-    comparisonDF[!,"95% CI mean"] = ["$(comparisonStats["95 Confidence Interval"])"]
-    comparisonDF[!,"Positive Days"] = ["$(comparisonStats["Positive Days"])/$(comparisonStats["Days"])"]
+    comparisonDF[!,"Daily Difference"] = String[]
+    comparisonDF[!,"Days"] = Int[]
+    comparisonDF[!,"Mean"] = Float64[]
+    comparisonDF[!,"Median"] = Float64[]
+    comparisonDF[!,"Std. Dev."] = Float64[]
+    comparisonDF[!,"95% CI mean"] = String[]
+    comparisonDF[!,"Positive Days"] = String[]
+
+    for case in cases[2:end]
+        sew_diffs = DiffByDay(daily_sews[case], daily_sews[baseline], sewSymbol).Diff
+
+        comparisonStats = Dict{String,Any}()
+        comparisonStats["Mean"] = mean(sew_diffs)
+        comparisonStats["Std Dev"] = std(sew_diffs)
+        comparisonStats["Median"] = median(sew_diffs)
+        comparisonStats["Days"] = length(sew_diffs)
+
+        alpha = 0.05
+        d = TDist(comparisonStats["Days"] - 1)
+        margin = quantile(d, 1 - alpha / 2) * (comparisonStats["Std Dev"] / sqrt(comparisonStats["Days"]))
+
+        ci = (round(comparisonStats["Mean"] - margin), round(comparisonStats["Mean"] + margin))
+        comparisonStats["95 Confidence Interval"] = ci
+
+        comparisonStats["Positive Days"] = count(i->(i>0),sew_diffs)
+        println(comparisonStats)
+
+        push!(comparisonDF, [
+            "$case - $baseline",
+            comparisonStats["Days"],
+            comparisonStats["Mean"],
+            comparisonStats["Median"],
+            comparisonStats["Std Dev"],
+            "$(comparisonStats["95 Confidence Interval"])",
+            "$(comparisonStats["Positive Days"])/$(comparisonStats["Days"])",
+        ])
+    end
 
     println(comparisonDF)
 
@@ -247,38 +260,37 @@ function AnalyzeDrivers(print_cases, mtu_economic_indicators, dispatch_decisions
         daily_demand_utilities[marketConfiguration] = daily_demand_utility
     end
 
-    sew_diffs = DiffByDay(daily_sews["Rolling Horizon"], daily_sews["Fixed Horizon"], sewSymbol)
-    net_discharge_diffs = DiffByDay(daily_net_discharges["Rolling Horizon"], daily_net_discharges["Fixed Horizon"], Symbol("Net Discharge"))
+    # one set of 4 driver plots per non-baseline case (cases[1] is the baseline, matching this
+    # suite's existing Rolling-relative-to-Fixed convention generalized to N cases) - was a single
+    # hardcoded "Rolling Horizon - Fixed Horizon" set. File/title suffixes disambiguate which pair
+    # a plot shows once there's more than one non-baseline case.
+    baseline = print_cases[1]
+    for case in print_cases[2:end]
+        suffix = PostAnalysisCommon.CaseSlug(case)
+        pair_label = "$case - $baseline"
 
-    shoulder_peak_dispatch_diffs = DiffByDay(daily_shoulder_peak_dispatches["Rolling Horizon"], daily_shoulder_peak_dispatches["Fixed Horizon"], shoulderPeakDispatchSymbol)
+        sew_diffs = DiffByDay(daily_sews[case], daily_sews[baseline], sewSymbol)
+        net_discharge_diffs = DiffByDay(daily_net_discharges[case], daily_net_discharges[baseline], Symbol("Net Discharge"))
+        shoulder_peak_dispatch_diffs = DiffByDay(daily_shoulder_peak_dispatches[case], daily_shoulder_peak_dispatches[baseline], shoulderPeakDispatchSymbol)
+        imbalance_diffs = DiffByDay(daily_imbalances[case], daily_imbalances[baseline], imbalanceSymbol)
+        demand_utility_diffs = DiffByDay(daily_demand_utilities[case], daily_demand_utilities[baseline], demandUtilitySymbol)
 
-    imbalance_diffs = DiffByDay(daily_imbalances["Rolling Horizon"], daily_imbalances["Fixed Horizon"], imbalanceSymbol)
+        spec = (feature = :delta_net_storage_discharge_mwh, title = "Net storage discharge ($pair_label)", xlabel = "Delta net storage discharge [MWh]", filepath = "$analysis_dir_path/net_storage_driver_$suffix.png")
+        (x, y) = AlignedXY(net_discharge_diffs, sew_diffs)
+        PlotDriver(spec, x, y)
 
-    demand_utility_diffs = DiffByDay(daily_demand_utilities["Rolling Horizon"], daily_demand_utilities["Fixed Horizon"], demandUtilitySymbol)
+        spec = (feature = :delta_mid_peak_dispatch_mwh, title = "Shoulder + peak dispatch ($pair_label)", xlabel = "Delta Mid + Peak dispatch [MWh]", filepath = "$analysis_dir_path/shoulder_peak_dispatch_driver_$suffix.png")
+        (x, y) = AlignedXY(shoulder_peak_dispatch_diffs, sew_diffs)
+        PlotDriver(spec, x, y)
 
+        spec = (feature = :delta_imbalance_energy_mwh, title = "Imbalance energy ($pair_label)", xlabel = "Delta imbalance energy [MWh]", filepath = "$analysis_dir_path/imbalance_driver_$suffix.png")
+        (x, y) = AlignedXY(imbalance_diffs, sew_diffs)
+        PlotDriver(spec, x, y)
 
-
-    spec = (feature = :delta_net_storage_discharge_mwh, title = "Net storage discharge", xlabel = "Delta net storage discharge [MWh]", filepath = "$analysis_dir_path/net_storage_driver.png")
-    (x, y) = AlignedXY(net_discharge_diffs, sew_diffs)
-
-    PlotDriver(spec, x, y)
-
-    spec = (feature = :delta_mid_peak_dispatch_mwh, title = "Shoulder + peak dispatch", xlabel = "Delta Mid + Peak dispatch [MWh]", filepath = "$analysis_dir_path/shoulder_peak_dispatch_driver.png")
-    (x, y) = AlignedXY(shoulder_peak_dispatch_diffs, sew_diffs)
-
-    PlotDriver(spec, x, y)
-
-    spec = (feature = :delta_imbalance_energy_mwh, title = "Imbalance energy", xlabel = "Delta imbalance energy [MWh]", filepath = "$analysis_dir_path/imbalance_driver.png")
-    (x, y) = AlignedXY(imbalance_diffs, sew_diffs)
-
-    PlotDriver(spec, x, y)
-
-    spec = (feature = :delta_demand_utility_eur, title = "Demand utility", xlabel = "Delta demand utility [EUR]", filepath = "$analysis_dir_path/demand_utility_driver.png")
-    (x, y) = AlignedXY(demand_utility_diffs, sew_diffs)
-
-    PlotDriver(spec, x, y)
-
-
+        spec = (feature = :delta_demand_utility_eur, title = "Demand utility ($pair_label)", xlabel = "Delta demand utility [EUR]", filepath = "$analysis_dir_path/demand_utility_driver_$suffix.png")
+        (x, y) = AlignedXY(demand_utility_diffs, sew_diffs)
+        PlotDriver(spec, x, y)
+    end
 end
 
 function PlotDriver(spec, x, y)
@@ -345,17 +357,20 @@ function plotSEWDifference(mtu_economic_indicators, interval, print_cases, print
         case_xs[case] = case_x
     end
 
-    rolling_fixed_diff = case_xs["Rolling Horizon"] .- case_xs["Fixed Horizon"]
-
+    # one bar chart per non-baseline case (cases[1] is the baseline) - was a single hardcoded
+    # "Rolling Horizon - Fixed Horizon" chart.
+    baseline = print_cases[1]
     xPlotIndicator = interval
-    # pSEWDiff = Plots.plot(xlabel="MTU", ylabel="Rolling - Fixed Δ SEW [EUR]", title="Rolling - Fixed Horizon SEW on $print_date")
+    for case in print_cases[2:end]
+        diff = case_xs[case] .- case_xs[baseline]
+        suffix = PostAnalysisCommon.CaseSlug(case)
 
+        pSEWDiff = bar(xPlotIndicator, diff; xlabel="MTU", ylabel="$case - $baseline Δ SEW [EUR]",
+                                title="$case - $baseline SEW on $print_date")
 
-    pSEWDiff = bar(xPlotIndicator, rolling_fixed_diff;xlabel="MTU", ylabel="Rolling - Fixed Δ SEW [EUR]",
-                            title="Rolling - Fixed Horizon SEW on $print_date")
-
-    display(pSEWDiff)
-    savefig(pSEWDiff, "$analysis_dir_path/SEW_roll_fix_diff_$(print_date).png")
+        display(pSEWDiff)
+        savefig(pSEWDiff, "$analysis_dir_path/SEW_$(suffix)_diff_$(print_date).png")
+    end
 end
 
 end;

@@ -31,8 +31,6 @@ GEN_COLORS = [:steelblue, :lightgreen, :red, :lightyellow, :gold, :purple]
 # fixed_laura.yaml's full 36-MTU window): MTU 84-86 (day 3) and MTU 660-662 (day 27).
 DEFAULT_CLEARING_MTUS = [84, 85, 86, 660, 661, 662]
 
-CaseSlug(case) = lowercase(replace(case, " " => "_"))
-
 function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), clearing_mtus=DEFAULT_CLEARING_MTUS)
 
 	analysis_dir_path = "$output_base/auction_snapshots"
@@ -102,7 +100,7 @@ function PlotAuctionStack(dvs, case, clearing_mtu, analysis_dir_path)
 		label="Demand + Charging", color=:black, lw=3, ls=:dash)
 
 	display(p)
-	savefig(p, "$analysis_dir_path/auction_stack_$(CaseSlug(case))_mtu$(clearing_mtu).png")
+	savefig(p, "$analysis_dir_path/auction_stack_$(PostAnalysisCommon.CaseSlug(case))_mtu$(clearing_mtu).png")
 end
 
 end;
