@@ -6,12 +6,18 @@
 # definition validated against her economic_summary.xlsx (Clearing MTU capped to 12:672,
 # matching calculate_generator_revenues_full in her costs.jl) - see post_analysis_laura_kpis.jl
 # and the Clearing-MTU fix in MarketDataStorage.CalculateEconomicIndicators for the full story.
+#
+# PerformAnalysis writes into its own results/post_analysis/{timestamp}_{label}/solver_comparison/
+# directory (see PostAnalysisCommon.NewAnalysisOutputDir), same never-overwritten convention as
+# the rest of this suite, rather than the fixed results/analysis/ path this module used to write.
+# Pass include_reference=false to drop Laura's own reference data (GrossTradedVolumeForLaura) from
+# every table/plot, leaving just our own solver/method permutations.
 
 module PostAnalysisSolverComparison
 
 using XLSX, DataFrames, Plots, StatsPlots, Statistics
 
-results_path_base = "results/analysis"
+include("../post_analysis_common.jl")
 
 # result directories for each solver/method permutation, keyed by config label.
 # All Fixed runs are pinned to demand_adjust=false, ex_post_transactions=false so this case is
@@ -50,12 +56,27 @@ generator_agent_names = Dict{String,String}(
 
 time_range = 12:672
 
-# x-axis ordering: Laura first, then HiGHS variants, then Gurobi variants
-category_order = ["Reference (HiGHS + default)", "HiGHS + simplex", "HiGHS + IPM", "Gurobi + simplex", "Gurobi + dual_simplex", "Gurobi + IPM"]
+const REFERENCE_LABEL = "Reference (HiGHS + default)"
 
-function CleanDirectory(path)
-	mkpath(path)
-end
+# x-axis ordering: Laura first, then HiGHS variants, then Gurobi variants
+category_order = [REFERENCE_LABEL, "HiGHS + simplex", "HiGHS + IPM", "Gurobi + simplex", "Gurobi + dual_simplex", "Gurobi + IPM"]
+
+# category_order with the Laura reference row dropped when include_reference=false - shared by
+# every function below that iterates categories, so the "exclude reference" option can't drift
+# between the volume table, the ratio table, and either plot.
+CategoriesFor(include_reference) = include_reference ? category_order : filter(!=(REFERENCE_LABEL), category_order)
+
+# Fixed + Rolling result dirs merged into one case_paths-shaped dict (prefixed by case so the two
+# sets of solver/method labels don't collide) purely for PostAnalysisCommon.NewAnalysisOutputDir's
+# metadata.yaml provenance - this module doesn't otherwise have a single case_paths dict the way
+# the rest of the suite does, since it compares two independent dicts (Fixed/Rolling) rather than
+# one dict keyed by case.
+AllResultDirs() = merge(
+	Dict("Fixed - $k" => v for (k, v) in fixed_result_dirs),
+	Dict("Rolling - $k" => v for (k, v) in rolling_result_dirs),
+)
+
+DefaultLabel(include_reference) = include_reference ? "solver_comparison" : "solver_comparison_no_reference"
 
 # Gross Traded Volume for one of our own runs: sum(|adjustment|) across every clearing in
 # time_range (by Clearing MTU, not delivery MTU), for every generator - matches Laura's
@@ -96,13 +117,15 @@ end
 # solver/method permutation) for one case, as a DataFrame with one row per category and
 # one column per generator plus a Total - this is both the plot's source data and what
 # gets exported to xlsx.
-function TradingVolumeDataFrame(case, result_dirs)
+function TradingVolumeDataFrame(case, result_dirs; include_reference=true)
 	println("computing gross traded volume for case: $case")
 
 	all_volumes = Dict{String,Dict{String,Float64}}()
 
-	println("  loading: Laura (reference)")
-	all_volumes["Reference (HiGHS + default)"] = GrossTradedVolumeForLaura(case)
+	if include_reference
+		println("  loading: Laura (reference)")
+		all_volumes[REFERENCE_LABEL] = GrossTradedVolumeForLaura(case)
+	end
 
 	for (config_label, dir) in result_dirs
 		println("  loading: $config_label ($dir)")
@@ -115,7 +138,7 @@ function TradingVolumeDataFrame(case, result_dirs)
 	end
 	df[!, :Total] = Float64[]
 
-	for cat in category_order
+	for cat in CategoriesFor(include_reference)
 		volumes = all_volumes[cat]
 		row = Any[case, cat]
 		for gen in generators
@@ -134,13 +157,13 @@ end
 # uniformly, or is it itself solver-sensitive" can be read directly off one column. Per-generator
 # ratio columns are included alongside the Total ratio for the same reason - a consistent Total
 # ratio could still hide generator-level divergence that only shows up solver-by-solver.
-function TradingVolumeRatioDataFrame(fixed_df, rolling_df)
+function TradingVolumeRatioDataFrame(fixed_df, rolling_df; include_reference=true)
 	pairs = Any["Configuration" => String[], "Fixed Total (MWh)" => Float64[], "Rolling Total (MWh)" => Float64[],
 		"Difference (MWh)" => Float64[], "Ratio (Rolling/Fixed)" => Float64[]]
 	append!(pairs, ["$gen Ratio (Rolling/Fixed)" => Float64[] for gen in generators])
 	df = DataFrame(pairs...)
 
-	for cat in category_order
+	for cat in CategoriesFor(include_reference)
 		fixed_row = fixed_df[fixed_df.Configuration .== cat, :][1, :]
 		rolling_row = rolling_df[rolling_df.Configuration .== cat, :][1, :]
 
@@ -216,36 +239,37 @@ function PlotTradingVolumeComparison(case, df)
 	return p
 end
 
-function PerformAnalysis()
-	CleanDirectory(results_path_base)
+function PerformAnalysis(; include_reference::Bool=true, output_base=PostAnalysisCommon.NewAnalysisOutputDir(AllResultDirs(); label=DefaultLabel(include_reference)))
+	analysis_dir_path = "$output_base/solver_comparison"
+	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 
-	fixed_df = TradingVolumeDataFrame("Fixed", fixed_result_dirs)
+	fixed_df = TradingVolumeDataFrame("Fixed", fixed_result_dirs; include_reference=include_reference)
 	p_fixed = PlotTradingVolumeComparison("Fixed", fixed_df)
-	savefig(p_fixed, "$results_path_base/trading_volume_fixed36h.png")
-	println("saved: $results_path_base/trading_volume_fixed36h.png")
+	savefig(p_fixed, "$analysis_dir_path/trading_volume_fixed36h.png")
+	println("saved: $analysis_dir_path/trading_volume_fixed36h.png")
 
-	rolling_df = TradingVolumeDataFrame("Rolling", rolling_result_dirs)
+	rolling_df = TradingVolumeDataFrame("Rolling", rolling_result_dirs; include_reference=include_reference)
 	p_rolling = PlotTradingVolumeComparison("Rolling", rolling_df)
-	savefig(p_rolling, "$results_path_base/trading_volume_rolling36h.png")
-	println("saved: $results_path_base/trading_volume_rolling36h.png")
+	savefig(p_rolling, "$analysis_dir_path/trading_volume_rolling36h.png")
+	println("saved: $analysis_dir_path/trading_volume_rolling36h.png")
 
 	combined_df = vcat(fixed_df, rolling_df)
-	XLSX.writetable("$results_path_base/trading_volume_details.xlsx", "data" => combined_df; overwrite=true)
-	println("saved: $results_path_base/trading_volume_details.xlsx")
+	XLSX.writetable("$analysis_dir_path/trading_volume_details.xlsx", "data" => combined_df; overwrite=true)
+	println("saved: $analysis_dir_path/trading_volume_details.xlsx")
 
-	ratio_df = TradingVolumeRatioDataFrame(fixed_df, rolling_df)
+	ratio_df = TradingVolumeRatioDataFrame(fixed_df, rolling_df; include_reference=include_reference)
 	println(ratio_df)
 	ratios = ratio_df[!, "Ratio (Rolling/Fixed)"]
 	println("Total ratio (Rolling/Fixed) across solver/method permutations: mean=$(round(mean(ratios), digits=4)), std=$(round(std(ratios), digits=4)), min=$(round(minimum(ratios), digits=4)), max=$(round(maximum(ratios), digits=4))")
 
 	p_ratio = PlotTradingVolumeRatio(ratio_df)
-	savefig(p_ratio, "$results_path_base/trading_volume_ratio_rolling_vs_fixed.png")
-	println("saved: $results_path_base/trading_volume_ratio_rolling_vs_fixed.png")
+	savefig(p_ratio, "$analysis_dir_path/trading_volume_ratio_rolling_vs_fixed.png")
+	println("saved: $analysis_dir_path/trading_volume_ratio_rolling_vs_fixed.png")
 
-	XLSX.writetable("$results_path_base/trading_volume_ratio_rolling_vs_fixed.xlsx", "data" => ratio_df; overwrite=true)
-	println("saved: $results_path_base/trading_volume_ratio_rolling_vs_fixed.xlsx")
+	XLSX.writetable("$analysis_dir_path/trading_volume_ratio_rolling_vs_fixed.xlsx", "data" => ratio_df; overwrite=true)
+	println("saved: $analysis_dir_path/trading_volume_ratio_rolling_vs_fixed.xlsx")
 
-	return (p_fixed, p_rolling, combined_df, p_ratio, ratio_df)
+	return (p_fixed, p_rolling, combined_df, p_ratio, ratio_df, output_base)
 end
 
 end;
