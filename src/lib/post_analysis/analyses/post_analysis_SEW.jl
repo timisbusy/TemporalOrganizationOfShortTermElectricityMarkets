@@ -73,12 +73,18 @@ function PerformAnalysis(case_paths; cases=("Fixed Horizon", "Rolling Horizon"),
 	end
 	push!(daily_avg_df, ["Days in Test Range", days, days, "—"])
 
+	# Imbalance Energy (MWh)/days rarely lands on a clean number - round it to the hundredths place
+	# on this daily table specifically (the totals table's own whole-MWh Imbalance Energy is left
+	# as-is), same treatment as PostAnalysisWindowLengthKPIs.
+	daily_imbalance_energy_label = DailyIndicatorLabel("Imbalance Energy (MWh)")
+	PostAnalysisCommon.RoundIndicatorRow!(daily_avg_df, daily_imbalance_energy_label, [case_a, case_b])
+
 	println(daily_avg_df)
 
 	XLSX.writetable("$analysis_dir_path/sew_details.xlsx", "totals" => final_indicators_df, "daily_average" => daily_avg_df; overwrite=true)
 
 	totals_tex_df = PostAnalysisCommon.FormatIndicatorRowForLatex(PostAnalysisCommon.EscapeForLatex(final_indicators_df), PostAnalysisCommon.MEAN_FINAL_AUCTION_PRICE_INDICATOR, [case_a, case_b])
-	daily_avg_tex_df = PostAnalysisCommon.FormatIndicatorRowForLatex(PostAnalysisCommon.EscapeForLatex(daily_avg_df), PostAnalysisCommon.MEAN_FINAL_AUCTION_PRICE_INDICATOR, [case_a, case_b])
+	daily_avg_tex_df = PostAnalysisCommon.FormatIndicatorRowsForLatex(PostAnalysisCommon.EscapeForLatex(daily_avg_df), [PostAnalysisCommon.MEAN_FINAL_AUCTION_PRICE_INDICATOR, daily_imbalance_energy_label], [case_a, case_b])
 	totals_tex = latexify(totals_tex_df; env = :table, booktabs = true, snakecase=true, latex=false,fmt="%'\''d\n")
 	daily_avg_tex = latexify(daily_avg_tex_df; env = :table, booktabs = true, snakecase=true, latex=false,fmt="%'\''d\n")
 
