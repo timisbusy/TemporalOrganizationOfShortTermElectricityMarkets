@@ -13,8 +13,6 @@ using Plots, DataFrames
 include("../post_analysis_common.jl")
 include("../agent_renaming.jl")
 
-CASES = PostAnalysisCommon.CASES
-
 # same stacking order/colors as PlotGenerationStack.plot (src/lib/plots/market_results/), and the
 # same generator/demand agent lists as PostAnalysisCommon.DEFAULT_AGENT_MAP - hardcoded here
 # (rather than reading DEFAULT_AGENT_MAP's own AgentTypeEnum-keyed dict) because that dict's keys
@@ -35,17 +33,25 @@ DEFAULT_CLEARING_MTUS = [84, 85, 86, 660, 661, 662]
 
 CaseSlug(case) = lowercase(replace(case, " " => "_"))
 
-function PerformAnalysis(case_paths; output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), clearing_mtus=DEFAULT_CLEARING_MTUS)
+function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), clearing_mtus=DEFAULT_CLEARING_MTUS)
 
 	analysis_dir_path = "$output_base/auction_snapshots"
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 
 	raw_dispatch_prefixes = PostAnalysisCommon.DiscoverRawDispatchPrefixes(case_paths)
 
-	for case in CASES
+	for case in cases
 		prefix = raw_dispatch_prefixes[case]
 		for clearing_mtu in clearing_mtus
-			dvs = PostAnalysisCommon.LoadFile("$(prefix)$(clearing_mtu).xlsx")
+			path = "$(prefix)$(clearing_mtu).xlsx"
+			# DEFAULT_CLEARING_MTUS assumes an hourly-or-finer cadence (true for Fixed/Rolling, both
+			# of which clear every MTU) - a sparser design (e.g. Auction Only's 4 markets/day) won't
+			# have a clearing at every one of these MTUs, so skip rather than error on a missing file.
+			if !isfile(path)
+				println("no RAW clearing for $case at MTU $clearing_mtu - skipping")
+				continue
+			end
+			dvs = PostAnalysisCommon.LoadFile(path)
 			PlotAuctionStack(dvs, case, clearing_mtu, analysis_dir_path)
 		end
 	end
