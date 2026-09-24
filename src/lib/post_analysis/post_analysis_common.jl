@@ -153,6 +153,29 @@ function FormatIndicatorRowForLatex(df, indicator, case_columns)
 	return out
 end
 
+# FormatIndicatorRowForLatex for several indicator rows at once, folding the copy-and-reformat over
+# each in turn.
+function FormatIndicatorRowsForLatex(df, indicators, case_columns)
+	out = df
+	for indicator in indicators
+		out = FormatIndicatorRowForLatex(out, indicator, case_columns)
+	end
+	return out
+end
+
+# Rounds the named row's case-value cells to `digits` places, in place - for a daily-average
+# indicator whose raw division rarely lands on a clean number (e.g. Imbalance Energy (MWh)/days).
+# Complements FormatIndicatorRowForLatex, which only fixes the LaTeX-only truncation problem for a
+# row like this; this actually changes the stored value, so console/xlsx output round the same way.
+function RoundIndicatorRow!(df, indicator, case_columns; digits=2)
+	row_idx = findfirst(==(indicator), df.Indicator)
+	row_idx === nothing && return df
+	for col in case_columns
+		df[row_idx, col] = round(df[row_idx, col]; digits=digits)
+	end
+	return df
+end
+
 const PERCENT_FORMAT = Ref(Printf.Format("%0.3f%%"))
 
 # "rolling vs fixed" percent-difference string, formatted like "12.345%" - or "—" when fixed is
@@ -183,6 +206,18 @@ function LoadMeanFinalAuctionPrice(case_path, time_range)
 	dd = LoadFile(joinpath(case_path, "final_dispatch_decisions.xlsx"))
 	dd = dd[time_range.start .<= dd.mtu .<= time_range.stop, :]
 	return round(mean(dd.FinalAuctionPrice); digits=2)
+end
+
+const WIND_CURTAILED_INDICATOR = "Wind Curtailed (MWh)"
+
+# Wind Curtailment over time_range for one case, matching Laura's "Total Wind Curtailed (MWh)"
+# (see post_analysis_laura_kpis.jl): Q_6G_Wind is the model's available-capacity time series for
+# wind (m.ext[:timeseries][:Q_gen], exported via helper_model_results.jl's "Q_$agent" column - NOT
+# the dispatched quantity), so Q_6G_Wind - 6G_Wind is exactly how much available wind went
+# undispatched each MTU. `final_dispatch_decisions` should already be scoped to time_range (e.g.
+# CalculateCaseIndicators' own return value) so this is just the sum, not a re-filter.
+function WindCurtailed(final_dispatch_decisions)
+	return sum(final_dispatch_decisions[!, Symbol("Q_6G_Wind")] .- final_dispatch_decisions[!, Symbol("6G_Wind")])
 end
 
 # Fresh per-case economic/agent indicators, computed directly from each case's own
