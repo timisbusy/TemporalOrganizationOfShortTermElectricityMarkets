@@ -22,7 +22,7 @@ include("../market_clearers/clear_market.jl")
 const MOI = MathOptInterface
 
 # Splits a JuMP-generated variable name like "Qg[7G_Solar,372]" or "SOC[372]" into
-# its (family, asset, mtu) parts, so degenerate variables can be grouped by
+# its (family, asset, mtu) parts, so non-unique variables can be grouped by
 # generator/demand segment and by which part of the optimization window they fall
 # in. `asset` is `missing` for variables indexed only by MTU (e.g. storage).
 function _parse_variable_name(v::String)
@@ -72,7 +72,7 @@ function AnalyzeAlternateOptima(m::Model; obj_tol::Float64=1e-6, value_tol::Floa
         width = hi - lo
         vname = name(x)
         parsed = _parse_variable_name(vname)
-        push!(rows, (variable=vname, family=parsed.family, asset=parsed.asset, var_mtu=parsed.mtu, lo=lo, hi=hi, width=width, degenerate=width > value_tol))
+        push!(rows, (variable=vname, family=parsed.family, asset=parsed.asset, var_mtu=parsed.mtu, lo=lo, hi=hi, width=width, non_unique=width > value_tol))
     end
 
     delete(m, pin)
@@ -82,17 +82,17 @@ function AnalyzeAlternateOptima(m::Model; obj_tol::Float64=1e-6, value_tol::Floa
     return DataFrame(rows)
 end
 
-# Breaks down the degenerate (width > value_tol) rows of an AnalyzeAlternateOptima
+# Breaks down the non-unique (width > value_tol) rows of an AnalyzeAlternateOptima
 # result by variable family (Qg, Qg_adj, Qd, Qch, Qdis, SOC, ...) and, where the
 # family is indexed by asset (generator/demand segment), by asset too - along with
 # the MTU range within the optimization window where each shows up and, for
 # family-level rows, the widest single range found.
 function SummarizeDegeneracy(df::DataFrame)
-    degen = filter(r -> r.degenerate, df)
+    non_unique_rows = filter(r -> r.non_unique, df)
 
     family_rows = NamedTuple[]
-    for fam in unique(degen.family)
-        sub = filter(r -> r.family == fam, degen)
+    for fam in unique(non_unique_rows.family)
+        sub = filter(r -> r.family == fam, non_unique_rows)
         push!(family_rows, (
             family=fam,
             count=nrow(sub),
@@ -105,7 +105,7 @@ function SummarizeDegeneracy(df::DataFrame)
     sort!(family_summary, :count, rev=true)
 
     asset_rows = NamedTuple[]
-    for r in eachrow(filter(r -> !ismissing(r.asset), degen))
+    for r in eachrow(filter(r -> !ismissing(r.asset), non_unique_rows))
         push!(asset_rows, (family=r.family, asset=r.asset, mtu=r.var_mtu, width=r.width))
     end
     asset_detail = isempty(asset_rows) ? DataFrame(family=String[], asset=String[], mtu=Int[], width=Float64[]) : DataFrame(asset_rows)
@@ -141,8 +141,8 @@ function _analyze_and_write!(summaries, m, market_name, t, results_dir, obj_tol,
         "data" => df, "by_family" => family_summary, "by_asset" => asset_summary,
     )
 
-    n_degenerate = count(df.degenerate)
-    println("  -> $n_degenerate / $(nrow(df)) variables have alternate optimal values (value_tol=$value_tol)")
+    n_non_unique = count(df.non_unique)
+    println("  -> $n_non_unique / $(nrow(df)) variables are non-unique (value_tol=$value_tol)")
     for r in eachrow(family_summary)
         println("     $(r.family): $(r.count) (MTU $(r.min_mtu)-$(r.max_mtu), widest=$(round(r.max_width, digits=2)))")
     end

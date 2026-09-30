@@ -53,7 +53,7 @@ function PerformAnalysis(auction_path, analysis_dir_path=dirname(auction_path); 
 	mtus = sort(unique(ranges.var_mtu))
 	entities = [e for (e, _) in ENTITY_COLORS if any(r -> r.entity == e && r.range_mwh > value_tol, eachrow(ranges))]
 	if isempty(entities)
-		println("no degenerate variables in auction $auction - nothing to plot")
+		println("no non-unique variables in auction $auction - nothing to plot")
 		return ranges
 	end
 
@@ -73,7 +73,7 @@ const Y_MAX_MWH = 12000
 
 function PlotRangeLines(mtus, matrix, entities, auction, analysis_dir_path)
 	p = Plots.plot(xlabel="MTU for which energy is traded", ylabel="Single-variable range (MWh)",
-					title="Alternate-Optimal Range by Traded MTU - Auction at MTU $auction",
+					title="Non-Unique Variable Range by Traded MTU - Auction at MTU $auction",
 					xticks=first(mtus):3:last(mtus), ylims=(0, Y_MAX_MWH), yformatter=:plain,
 					legend=:outertopright, grid=:y, framestyle=:axes,
 					size=(1100, 600), left_margin=10Plots.mm, bottom_margin=8Plots.mm)

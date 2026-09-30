@@ -1,5 +1,5 @@
 # Plots a DegeneracyScan combined summary (degeneracy_summary.xlsx): one point per scanned auction
-# showing its total count of degenerate variables, restricted to the same families as
+# showing its total count of non-unique variables, restricted to the same families as
 # PlotDegeneracySingleAuction's single-auction plots (Qg, Qd, Qch, Qdis) so the two views agree -
 # Qg_adj is excluded (tied to Qg by an equality constraint, so it would double count), and so is SOC
 # (a state, not a traded quantity). Qd_adj is assumed already excluded from the summary itself (see
@@ -17,10 +17,10 @@ asbool(x) = x isa AbstractString ? parse(Bool, x) : Bool(x)
 
 function CountsByAuction(summary_path)
 	df = DataFrame(XLSX.readtable(summary_path, "data"))
-	df.degenerate = asbool.(df.degenerate)
+	df.non_unique = asbool.(df.non_unique)
 	df.mtu = asint.(df.mtu)
 	df = df[in.(df.family, Ref(TRADED_FAMILIES)), :]
-	counts = combine(groupby(df, :mtu), :degenerate => sum => :n_degenerate, nrow => :n_variables)
+	counts = combine(groupby(df, :mtu), :non_unique => sum => :n_non_unique, nrow => :n_variables)
 	return sort(counts, :mtu)
 end
 
@@ -34,17 +34,17 @@ end
 
 function PlotByAuction(counts, analysis_dir_path)
 	first_auction, last_auction = first(counts.mtu), last(counts.mtu)
-	p = Plots.plot(counts.mtu, counts.n_degenerate,
-					xlabel="Auction MTU", ylabel="Degenerate variables",
-					title="Degenerate Variables by Auction - MTU $first_auction-$last_auction",
+	p = Plots.plot(counts.mtu, counts.n_non_unique,
+					xlabel="Auction MTU", ylabel="Non-unique variables",
+					title="Non-Unique Variables by Auction - MTU $first_auction-$last_auction",
 					marker=:circle, markersize=4, linewidth=2, color="#2a78d6", label=false,
-					xticks=first_auction:2:last_auction, ylims=(0, maximum(counts.n_degenerate) * 1.1),
+					xticks=first_auction:2:last_auction, ylims=(0, maximum(counts.n_non_unique) * 1.1),
 					grid=:y, framestyle=:axes, size=(1000, 600), left_margin=10Plots.mm, bottom_margin=8Plots.mm)
-	savefig(p, "$analysis_dir_path/degenerate_variables_by_auction.png")
+	savefig(p, "$analysis_dir_path/non_unique_variables_by_auction.png")
 end
 
 function WriteCountsTable(counts, analysis_dir_path)
-	XLSX.writetable("$analysis_dir_path/degenerate_variables_by_auction.xlsx", "data" => counts; overwrite=true)
+	XLSX.writetable("$analysis_dir_path/non_unique_variables_by_auction.xlsx", "data" => counts; overwrite=true)
 end
 
 end;
