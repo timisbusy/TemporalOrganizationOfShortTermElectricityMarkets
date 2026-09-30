@@ -132,7 +132,7 @@ function PerformAnalysis()
 		# to her "SOCIAL WELFARE" figures - those come from finalDispatchDecisions and each agent's
 		# own bid price, not from transactions. Payments/Revenue/Surplus in agent_indicators below
 		# are NOT comparable to her "Producer Revenues (Executed-only)" though: they're summed from
-		# transactions, which (like Traded Volume) nets every adjustment leg from every clearing
+		# transactions, which (like Traded Volume) nets every adjustment transaction from every clearing
 		# that touched a final-auction MTU, not just the one that actually executed it - see the
 		# Executed-only Revenue/Payments block further down for the figures that do match her sheet.
 		# imbalance_agents: matches Laura's own definition (the "Imbalance" section below the main
@@ -248,11 +248,11 @@ function PerformAnalysis()
 		# Storage revenue, matching Laura's calculate_storage_revenue (costs.jl): discharge_mw*price
 		# and charge_mw*price summed over EXECUTED hours only, using the price the clearing that
 		# executed each MTU actually settled at - not the "Storage Revenue (€)" figure from
-		# CalculateEconomicIndicators above, which nets quantity*price across every adjustment leg
+		# CalculateEconomicIndicators above, which nets quantity*price across every adjustment transaction
 		# from every clearing that ever touched an MTU (the same executed-vs-gross distinction as
 		# generator Traded Volume). mtu1_dvs.FinalAuctionPrice (backfilled above) already carries
 		# this price for every MTU regardless of whether any agent's adjustment was nonzero -
-		# unlike pulling price from transactions.xlsx, which only records a leg when an agent's
+		# unlike pulling price from transactions.xlsx, which only records a transaction when an agent's
 		# adjustment is nonzero and so silently drops ~17% of MTUs in the rolling case.
 		discharge_revenue = sum(mtu1_dvs.StorageDischarge .* mtu1_dvs.FinalAuctionPrice)
 		charging_cost = sum(mtu1_dvs.StorageCharge .* mtu1_dvs.FinalAuctionPrice)

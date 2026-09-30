@@ -1,6 +1,6 @@
 # Rolling-horizon churn comparison: for the 36h/48h/72h rolling-horizon optimizationWindow
 # configs, compares each generator's Gross Traded Volume (sum(|quantity|) across every
-# adjustment leg from every clearing that touched a final-auction MTU, including the speculative,
+# adjustment transaction from every clearing that touched a final-auction MTU, including the speculative,
 # never-delivered tail of each clearing's own look-ahead window - see
 # PostAnalysisQuantitiesByAgent.AnalyzeGrossTradedVolume for the same definition) against its
 # Contracted Energy Quantity (the quantity actually dispatched at delivery), and reports the

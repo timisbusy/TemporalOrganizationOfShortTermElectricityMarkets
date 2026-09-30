@@ -57,7 +57,7 @@ function LoadLauraSummary(case)
 
 	# "PRODUCER REVENUES (Executed-only)" section - Energy (MWh) column, rows 11-15 per generator
 	# plus row 16's Total - the executed-only physical dispatch quantity, distinct from the
-	# Net/Gross Traded columns in "TOTAL FINANCIAL REVENUE" below (those sum adjustment legs
+	# Net/Gross Traded columns in "TOTAL FINANCIAL REVENUE" below (those sum adjustment transactions
 	# across every clearing that touched an MTU, not just the one that executed it).
 	dispatch_quantity_row = Dict("Base" => 11, "Shoulder" => 12, "Peak" => 13, "Solar" => 14, "Wind" => 15)
 	for gen in generators
