@@ -43,6 +43,10 @@ function AnomaliesDataFrame(case, result_dirs, time_range)
 	return df
 end
 
+# shared across Fixed/Rolling so the two plots are directly comparable at a glance - 5000 covers
+# both cases' tallest bar (Rolling's Gurobi+IPM, ~4565) with a little headroom.
+const Y_MAX_INSTANCES = 5000
+
 # Bar chart of instance counts per solver/method category - the "frequency" question this
 # comparison is asked for. The overlapping-MWh figure (a very different unit/scale) is kept in the
 # table outputs only, not force-fit onto the same axis.
@@ -52,12 +56,14 @@ function PlotAnomalyFrequency(case, df)
 		xticks = (1:nrow(df), df.Configuration),
 		xrotation = 20,
 		ylabel = "Simultaneous charge/discharge instances",
+		ylims = (0, Y_MAX_INSTANCES),
 		title = "$case 36h - storage anomaly frequency by solver / method",
 		label = false,
 		color = "#2a78d6",
 		size = (900, 550),
 		left_margin = 10Plots.mm,
 		bottom_margin = 20Plots.mm,
+		top_margin = 8Plots.mm,
 	)
 	return p
 end
