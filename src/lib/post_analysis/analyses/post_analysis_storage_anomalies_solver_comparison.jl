@@ -116,6 +116,13 @@ function PlotAnomalyFrequencyPercent(case, df)
 		bottom_margin = 20Plots.mm,
 		top_margin = 8Plots.mm,
 	)
+
+	# fixed offset (not proportional to bar height) so the label for a near-zero bar (e.g. HiGHS +
+	# simplex, ~0.02%) stays legibly above it rather than sitting on/under it.
+	for (i, pct) in enumerate(df[!, "Instances (% of Potential Transactions)"])
+		annotate!(p, i, pct + 2.5, text("$(round(pct, digits=2))%", 9, :black, :center))
+	end
+
 	return p
 end
 
