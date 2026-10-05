@@ -420,6 +420,7 @@ end
 	price_symbol = Symbol("Price (€/MWh)")
 	payrev_symbol = Symbol("Payments/Revenues (€)")
 	mtu_symbol = Symbol("Market Time Unit")
+	clearing_mtu_symbol = Symbol("Clearing MTU")
 
 
 # snaps values within atol of zero to exactly 0.0, so downstream near-zero float noise doesn't get reported as a nonzero indicator
@@ -446,13 +447,39 @@ end
 # opposite in sign - i.e. the balancing generator absorbed a shortfall/surplus in the variable
 # generator's delivered output - the imbalance is however much of that shortfall/surplus got
 # absorbed, signed by the balancing generator's own adjustment direction. Zero otherwise (no
-# counterbalancing happened, or one/both adjustments were exactly zero).
+# counterbalancing happened, or one/both adjustments were exactly zero). The two deltas passed in
+# should be same-hour-only adjustments (see SameHourAdjustmentByMTU) - a delta from a clearing held
+# well ahead of delivery is a normal look-ahead revision, not something that happened "in the
+# imbalance" sense this function is named for.
 function CounterbalancedImbalance(variable_delta, balancing_delta; atol=1e-6)
 	if abs(variable_delta) > atol && abs(balancing_delta) > atol && sign(variable_delta) == -sign(balancing_delta)
 		return sign(balancing_delta) * min(abs(balancing_delta), abs(variable_delta))
 	else
 		return 0.0
 	end
+end
+
+# Per-MTU adjustment quantity for one agent, counting only a transaction from a clearing held
+# in the delivery hour itself (Clearing MTU == Market Time Unit, i.e. lead time 0) - as opposed to
+# finalDispatchDecisions' own "$(agent)_adj" column, which reflects whichever clearing was the LAST
+# to touch that MTU, regardless of how far ahead of delivery that revision was made. A clearing
+# held hours ahead of delivery is an ordinary look-ahead planning update, not something that
+# happened "in the hour the auction was held" for that MTU, so it shouldn't be counted as an
+# imbalance correction. transactions already carries both MTU columns needed for this (see
+# clearing_mtu_symbol above), so no new export/column is required.
+#
+# Returns a Dict{Int,Float64} (MTU -> summed same-hour quantity for this agent); look up a given
+# MTU with `get(result, mtu, 0.0)`, which is also the right default for an MTU the Dict has no
+# entry for. A market design with no lead-time-0 market in its own sequence (e.g. status_quo.yaml's
+# DayAhead/Intraday1/2/3, whose shortest lookAheadDistance is 2) never has a matching row for any
+# MTU, so every lookup against its Dict here is 0.0 - the imbalance metric then correctly reports
+# that design as having no imbalance activity to measure, rather than silently reporting whatever
+# its last (still hours-ahead-of-delivery) revision happened to be.
+function SameHourAdjustmentByMTU(transactions, agent)
+	same_hour = transactions[(transactions.Agent .== agent) .& (transactions[!, mtu_symbol] .== transactions[!, clearing_mtu_symbol]), :]
+	nrow(same_hour) == 0 && return Dict{Int,Float64}()
+	grouped = combine(groupby(same_hour, mtu_symbol), quantity_symbol => sum => quantity_symbol)
+	return Dict(zip(grouped[!, mtu_symbol], grouped[!, quantity_symbol]))
 end
 
 function GetEconomicIndicatorsForRange(market_result_container,time_range; imbalance_agents::Union{Nothing,Tuple{String,String}}=nothing)
@@ -525,7 +552,7 @@ function CalculateEconomicIndicators(finalDispatchDecisions, transactions, agent
 	# storage revenue = final dispatched (discharge - charge) for each MTU, priced at that MTU's own
 	# FinalAuctionPrice - matching the validation definition (the settlement price of the auction
 	# that actually delivered the MTU), NOT the transactions-based sum(quantity*price) across every
-	# speculative adjustment leg from every clearing that ever touched an MTU (that "gross across
+	# speculative adjustment transaction from every clearing that ever touched an MTU (that "gross across
 	# the full look-ahead window" quantity is what Gross Traded Volume reports for generators).
 	storage_revenue = sum(skipmissing((finalDispatchDecisions.StorageDischarge .- finalDispatchDecisions.StorageCharge) .* finalDispatchDecisions.FinalAuctionPrice))
 	# like this we report out the sum quantity of energy charged and discharged - the difference is also interesting
@@ -604,9 +631,17 @@ function CalculateEconomicIndicators(finalDispatchDecisions, transactions, agent
 	# imbalance_agents is opt-in (nothing by default) - CalculateEconomicIndicators otherwise
 	# knows nothing about which generator is "the uncertain one" vs "the one absorbing its
 	# forecast error", that distinction lives in the experiment's own agent config, not agentMap.
-	imbalance_energy = if imbalance_agents !== nothing
+	# variable_by_mtu/balancing_by_mtu (SameHourAdjustmentByMTU) are computed once here and reused
+	# by the per-MTU loop below instead of being recomputed per MTU.
+	(variable_by_mtu, balancing_by_mtu) = if imbalance_agents !== nothing
 		(variable_agent, balancing_agent) = imbalance_agents
-		snap0(sum(CounterbalancedImbalance.(finalDispatchDecisions[!, Symbol("$(variable_agent)_adj")], finalDispatchDecisions[!, Symbol("$(balancing_agent)_adj")])))
+		(SameHourAdjustmentByMTU(transactions, variable_agent), SameHourAdjustmentByMTU(transactions, balancing_agent))
+	else
+		(nothing, nothing)
+	end
+
+	imbalance_energy = if imbalance_agents !== nothing
+		snap0(sum(CounterbalancedImbalance(get(variable_by_mtu, mtu, 0.0), get(balancing_by_mtu, mtu, 0.0)) for mtu in finalDispatchDecisions.mtu; init=0.0))
 	else
 		0.0
 	end
@@ -633,8 +668,7 @@ function CalculateEconomicIndicators(finalDispatchDecisions, transactions, agent
 			0.0
 		end
 		mtu_imbalance_energy = if imbalance_agents !== nothing && nrow(mtu_finalDispatchDecisions) > 0
-			(variable_agent, balancing_agent) = imbalance_agents
-			snap0(CounterbalancedImbalance(mtu_finalDispatchDecisions[1, Symbol("$(variable_agent)_adj")], mtu_finalDispatchDecisions[1, Symbol("$(balancing_agent)_adj")]))
+			snap0(CounterbalancedImbalance(get(variable_by_mtu, mtu, 0.0), get(balancing_by_mtu, mtu, 0.0)))
 		else
 			0.0
 		end

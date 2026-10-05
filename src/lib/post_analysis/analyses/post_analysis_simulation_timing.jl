@@ -47,11 +47,11 @@ function SimulationTimingFor(config_path)
 	test_range_stop = config[:timePeriodsPerDay] * (config[:clearForDays] - config[:samplePeriodExcludeEnd]) - 1
 
 	# the two ranges post_analysis_laura_kpis.jl actually analyzes: "executed hours" is the h=1
-	# leg of every auction (skip_early_auctions:last_mtu_simulation - identical to the auctions-run
-	# span itself, e.g. her hardcoded time_range = 12:672), while "all traded hours" additionally
-	# covers the speculative look-ahead tail of the LAST auction's own window (matching her Gross
-	# Traded Volume / Total Financial Revenue sections, which sum every leg of every clearing's
-	# full optimizationWindow+lookAheadDistance, not just the executed one)
+	# transaction of every auction (skip_early_auctions:last_mtu_simulation - identical to the
+	# auctions-run span itself, e.g. her hardcoded time_range = 12:672), while "all traded hours"
+	# additionally covers the speculative look-ahead tail of the LAST auction's own window (matching
+	# her Gross Traded Volume / Total Financial Revenue sections, which sum every transaction of
+	# every clearing's full optimizationWindow+lookAheadDistance, not just the executed one)
 	executed_hours_stop = last_mtu_simulation
 	all_traded_hours_stop = last_mtu_simulation + longest_market_window - 1
 

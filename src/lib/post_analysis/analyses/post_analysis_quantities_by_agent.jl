@@ -41,23 +41,26 @@ function WriteComparisonTable(df, xlsx_path, tex_path)
 	write(tex_path, tex)
 end
 
-# One row per agent: "{case} {metric_label}" for every case, then "{case} % Diff" for every
-# non-baseline case (cases[1] is the baseline every %Diff is measured against, matching this
-# suite's existing Rolling-relative-to-Fixed convention) - `value_for` is (case, agent) -> Float64.
-# Shared by AnalyzeQuantities/AnalyzeSurpluses/AnalyzeGrossTradedVolume below, which differ only in
-# their agent list and per-case value source.
+# One row per agent: "{case} {metric_label}" for every case (in `cases` order), then "{subject} vs
+# {base} % Diff" for every base case - cases[end] is the "subject" design (e.g. Rolling Horizon)
+# compared against each preceding case individually, the same subject-relative convention as
+# PostAnalysisSEW (see its own PerformAnalysis docstring) rather than all cases sharing one
+# baseline. `value_for` is (case, agent) -> Float64. Shared by
+# AnalyzeQuantities/AnalyzeSurpluses/AnalyzeGrossTradedVolume below, which differ only in their
+# agent list and per-case value source.
 function BuildAgentComparisonTable(agents, cases, metric_label, value_for)
-	baseline = cases[1]
+	subject = cases[end]
+	base_cases = cases[1:end-1]
 	pairs = Any["Agent" => String[]]
 	append!(pairs, ["$case $metric_label" => Float64[] for case in cases])
-	append!(pairs, ["$case % Diff" => String[] for case in cases[2:end]])
+	append!(pairs, ["$subject vs $base % Diff" => String[] for base in base_cases])
 	df = DataFrame(pairs...)
 
 	for agent in agents
 		values = Dict(case => value_for(case, agent) for case in cases)
 		row = Any[AgentRenaming.DisplayName(agent)]
 		append!(row, [values[case] for case in cases])
-		append!(row, [PostAnalysisCommon.PercentDiffString(values[case], values[baseline]) for case in cases[2:end]])
+		append!(row, [PostAnalysisCommon.PercentDiffString(values[subject], values[base]) for base in base_cases])
 		push!(df, row)
 	end
 
@@ -76,7 +79,7 @@ function AnalyzeSurpluses(agent_indicators_by_case, cases, analysis_dir_path)
 	WriteComparisonTable(df, "$analysis_dir_path/agent_surplus_details.xlsx", "$analysis_dir_path/agent_surpluses.tex")
 end
 
-# Gross Traded Volume: sum(|quantity|) across every adjustment leg from every clearing that
+# Gross Traded Volume: sum(|quantity|) across every adjustment transaction from every clearing that
 # touched a final-auction MTU, i.e. including the speculative, never-delivered tail of each clearing's
 # own look-ahead window - matches Laura's calculate_generator_revenues_full (costs.jl), the same
 # definition post_analysis_laura_kpis.jl uses. That module gets away with summing the whole

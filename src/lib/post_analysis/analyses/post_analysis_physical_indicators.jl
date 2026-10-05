@@ -17,12 +17,19 @@ INTERVAL_INDICATORS = [
 	(symbol=Symbol("Imbalance Energy (MWh)"), label="Imbalance Energy (MWh)", file="imbalance_energy"),
 ]
 
-# cases is (case_a, case_b) - any two case_paths keys, not just the module-default "Rolling
-# Horizon"/"Fixed Horizon" pair. Diff plots (PlotDiffByDay) are case_a - case_b - the default order
-# matches the previous hardcoded "Rolling Horizon" - "Fixed Horizon" behavior.
-function PerformAnalysis(case_paths; cases=("Rolling Horizon", "Fixed Horizon"), output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE, imbalance_agents=PostAnalysisCommon.DEFAULT_IMBALANCE_AGENTS)
+# cases is any N case_paths keys (not just the module-default "Fixed Horizon"/"Rolling Horizon"
+# pair) - cases[end] is the "subject" design (e.g. Rolling Horizon) compared against each
+# preceding case individually, the same subject-relative convention as PostAnalysisSEW (see its
+# own PerformAnalysis docstring) rather than one hardcoded pair. Diff plots (PlotDiffByDay) are
+# subject - base, one (unsorted + sorted) pair per base case, file names suffixed with the base
+# case's own slug to disambiguate once there's more than one - for N=2 this is unchanged in
+# substance (subject=cases[2]=Rolling Horizon, the sole base=cases[1]=Fixed Horizon, matching the
+# previous hardcoded "Rolling Horizon" - "Fixed Horizon" behavior), only the file names gained a
+# suffix they didn't need before.
+function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE, imbalance_agents=PostAnalysisCommon.DEFAULT_IMBALANCE_AGENTS)
 
-	case_a, case_b = cases
+	subject = cases[end]
+	base_cases = cases[1:end-1]
 
 	# kept short ("physical_indicators", not "post_analysis_physical_indicators") - this nests under
 	# an already long {timestamp}_{label} output_base, and Windows' 260-char MAX_PATH doesn't leave
@@ -49,8 +56,11 @@ function PerformAnalysis(case_paths; cases=("Rolling Horizon", "Fixed Horizon"),
 	for ind in INTERVAL_INDICATORS
 		daily_values = Dict(case => DailyValue(mtu_economic_indicators, case, ind.symbol) for case in cases)
 		PlotByDay(daily_values, ind.label, ind.symbol, ind.file, analysis_dir_path, cases)
-		PlotDiffByDay(daily_values, ind.label, ind.symbol, ind.file, analysis_dir_path, case_a, case_b; sorted=false)
-		PlotDiffByDay(daily_values, ind.label, ind.symbol, ind.file, analysis_dir_path, case_a, case_b; sorted=true)
+		for base in base_cases
+			diff_file_label = "$(ind.file)_$(PostAnalysisCommon.CaseSlug(base))"
+			PlotDiffByDay(daily_values, ind.label, ind.symbol, diff_file_label, analysis_dir_path, subject, base; sorted=false)
+			PlotDiffByDay(daily_values, ind.label, ind.symbol, diff_file_label, analysis_dir_path, subject, base; sorted=true)
+		end
 	end
 end
 
@@ -68,8 +78,8 @@ function PlotByDay(daily_values, label, value_symbol, file_label, analysis_dir_p
 	savefig(p, "$analysis_dir_path/by_day_$(file_label).png")
 end
 
-function PlotDiffByDay(daily_values, label, value_symbol, file_label, analysis_dir_path, case_a, case_b; sorted=false)
-	diff_df = PostAnalysisDaily.DiffByDay(daily_values[case_a], daily_values[case_b], value_symbol)
+function PlotDiffByDay(daily_values, label, value_symbol, file_label, analysis_dir_path, subject, base; sorted=false)
+	diff_df = PostAnalysisDaily.DiffByDay(daily_values[subject], daily_values[base], value_symbol)
 	diffs = diff_df.Diff
 	x = diff_df.Day
 	if sorted
@@ -78,7 +88,7 @@ function PlotDiffByDay(daily_values, label, value_symbol, file_label, analysis_d
 	end
 
 	p = Plots.plot(xlabel = sorted ? "Rank" : "Day", ylabel=label,
-					title="$label: $case_a - $case_b")
+					title="$label: $subject - $base")
 	Plots.plot!(p, x, diffs, label="Difference in $label", t=:bar)
 	display(p)
 	savefig(p, "$analysis_dir_path/diff_by_day_$(sorted ? "sorted_" : "")$(file_label).png")

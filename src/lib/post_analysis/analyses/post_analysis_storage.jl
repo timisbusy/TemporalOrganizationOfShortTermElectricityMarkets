@@ -34,12 +34,15 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 		storage_analysis_df[!,Symbol(case)] = [charge_per_day,discharge_per_day,discharge_per_day-charge_per_day,charge_per_day+discharge_per_day]
 	end
 
-	# one "{case} Change"/"{case} % Change" pair per non-baseline case, measured against cases[1]
-	# (matches this suite's existing Rolling-relative-to-Fixed convention, generalized to N cases).
-	baseline = cases[1]
-	for case in cases[2:end]
-		storage_analysis_df[!, Symbol("$case Change")] = storage_analysis_df[!, Symbol(case)] .- storage_analysis_df[!, Symbol(baseline)]
-		storage_analysis_df[!, Symbol("$case % Change")] = PostAnalysisCommon.PercentDiffString.(storage_analysis_df[!, Symbol(case)], storage_analysis_df[!, Symbol(baseline)])
+	# one "{subject} vs {base} Change"/"{subject} vs {base} % Change" pair per base case - cases[end]
+	# is the "subject" design (e.g. Rolling Horizon) compared against each preceding case
+	# individually, the same subject-relative convention as PostAnalysisSEW (see its own
+	# PerformAnalysis docstring) rather than all cases sharing one baseline.
+	subject = cases[end]
+	base_cases = cases[1:end-1]
+	for base in base_cases
+		storage_analysis_df[!, Symbol("$subject vs $base Change")] = storage_analysis_df[!, Symbol(subject)] .- storage_analysis_df[!, Symbol(base)]
+		storage_analysis_df[!, Symbol("$subject vs $base % Change")] = PostAnalysisCommon.PercentDiffString.(storage_analysis_df[!, Symbol(subject)], storage_analysis_df[!, Symbol(base)])
 	end
 
 	println(storage_analysis_df)
