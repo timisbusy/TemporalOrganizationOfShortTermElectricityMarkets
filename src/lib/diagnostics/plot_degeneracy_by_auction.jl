@@ -32,14 +32,20 @@ function PerformAnalysis(summary_path, analysis_dir_path=dirname(summary_path))
 	return counts
 end
 
+# Spaces xticks so a scan of any length (24 auctions for a one-day sample, ~700 for a
+# full-period scan) ends up with roughly target_ticks labels instead of an unreadably dense
+# (small scans) or absent (large scans, under the old hardcoded step of 2) set of ticks.
+xtick_step(first_a, last_a; target_ticks=40) = max(2, round(Int, (last_a - first_a) / target_ticks))
+
 function PlotByAuction(counts, analysis_dir_path)
 	first_auction, last_auction = first(counts.mtu), last(counts.mtu)
+	width = max(1000, 2 * length(counts.mtu))
 	p = Plots.plot(counts.mtu, counts.n_non_unique,
 					xlabel="Auction MTU", ylabel="Non-unique variables",
 					title="Non-Unique Variables by Auction - MTU $first_auction-$last_auction",
 					marker=:circle, markersize=4, linewidth=2, color="#2a78d6", label=false,
-					xticks=first_auction:2:last_auction, ylims=(0, maximum(counts.n_non_unique) * 1.1),
-					grid=:y, framestyle=:axes, size=(1000, 600), left_margin=10Plots.mm, bottom_margin=8Plots.mm)
+					xticks=first_auction:xtick_step(first_auction, last_auction):last_auction, ylims=(0, maximum(counts.n_non_unique) * 1.1),
+					grid=:y, framestyle=:axes, size=(width, 600), left_margin=10Plots.mm, bottom_margin=8Plots.mm)
 	savefig(p, "$analysis_dir_path/non_unique_variables_by_auction.png")
 end
 

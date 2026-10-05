@@ -16,7 +16,9 @@ instantiate
 ```
 Then run JupyterLab from the repo root and open `UseExcelInput.ipynb` or `TemporalOrganizationExperiments.ipynb`.
 
-`Project.toml` declares `YAML`, `XLSX`, `Gurobi`, and `MathOptInterface` as direct deps (needed by `data_importer.jl`, `clear_market.jl`, and `src/lib/models/latest_model.jl` respectively), so a plain `instantiate` is sufficient. Note `Gurobi` requires a working Gurobi license to actually solve — `HiGHS` is also declared as a license-free alternative solver, but `latest_model.jl` hardcodes `USE_GUROBI = true` at module scope, so switching solvers currently means editing that constant.
+For diagnostics that use multiple Julia threads (e.g. `DegeneracyScan.RunScan`'s parallel analysis workers over a `:full_period` scan), register a multi-threaded kernel once — `using IJulia; IJulia.installkernel("Julia (4 threads)", env=Dict("JULIA_NUM_THREADS"=>"4"))` — then select that kernel for the notebook; thread count can't be changed after a kernel starts.
+
+`Project.toml` declares `YAML`, `XLSX`, `Gurobi`, and `MathOptInterface` as direct deps (needed by `data_importer.jl`, `clear_market.jl`, and `src/lib/models/latest_model.jl` respectively), so a plain `instantiate` is sufficient. Note `Gurobi` requires a working Gurobi license to actually solve — `HiGHS` is also declared as a license-free alternative solver. Solver choice is config-driven: `latest_model.jl`'s `select_optimizer` reads `data[:optimizationModelConfig]["solver"]` ("gurobi" or "highs"), defaulting to `DEFAULT_SOLVER = "gurobi"` if unset — no code edit needed to switch. Every Gurobi-backed model in a process shares one module-level `gurobi_env = Gurobi.Env()`; HiGHS has no equivalent shared state, which matters when running anything concurrently against this codebase's models (e.g. `src/lib/diagnostics/degeneracy_scan.jl`'s parallel analysis workers — see that file's docstrings).
 
 ## Running an experiment
 

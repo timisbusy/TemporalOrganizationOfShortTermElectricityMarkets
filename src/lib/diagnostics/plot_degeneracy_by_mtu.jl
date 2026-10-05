@@ -6,6 +6,13 @@
 # drawn in a second panel sharing the x-axis - a separate panel rather than a second y-axis, since
 # the two measures have different units. Same output shape as the post_analysis modules: a PNG
 # alongside an XLSX of the plotted values.
+#
+# Best suited to small scans (roughly <=30 scanned auctions, e.g. the original one-day-sample
+# use of DegeneracyScan.RunScan) - it draws one line per auction, and the 10-step AUCTION_RAMP
+# color gradient can't visually discriminate many more than that. For a DegeneracyScan.RunScan
+# :full_period scan (hundreds of auctions), use PlotDegeneracyHeatmap or
+# PlotDegeneracyByLeadTime instead - both plot against lead_time (bounded by the market's
+# window length) rather than one line per auction, so they stay readable at any scan length.
 
 module PlotDegeneracyByMTU
 
