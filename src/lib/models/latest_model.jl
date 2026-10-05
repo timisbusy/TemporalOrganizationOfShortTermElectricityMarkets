@@ -379,9 +379,14 @@ function build_market_clearing!(m::Model, time_period::Int, marketresults, initi
     end
 
 
+    # optional small penalty (EUR/MWh) on storage discharge, to break ties between otherwise-equivalent
+    # optima; set via optimizationModelConfig.storage_discharge_penalty (default 0 = no penalty)
+    discharge_penalty = haskey(data, :optimizationModelConfig) && haskey(data[:optimizationModelConfig], "storage_discharge_penalty") ? Float64(data[:optimizationModelConfig]["storage_discharge_penalty"]) : 0.0
+
     m.ext[:objective] = @objective(m, Max,
         sum(Pr_dem[(String(d),t)] * Qd[d,t] for d in ID, t in OW) -
-        sum(Pr_gen[(String(g),t)] * Qg[g,t] for g in IG, t in OW)
+        sum(Pr_gen[(String(g),t)] * Qg[g,t] for g in IG, t in OW) -
+        discharge_penalty * sum(Qdis[t] for t in OW)
     )
 
 
