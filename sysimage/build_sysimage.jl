@@ -4,8 +4,12 @@
 # project's own src/lib modules are `include`d scripts, not a package, so they are still
 # compiled on first use.
 #
-# Measured on a 16 GB Windows machine, Julia 1.12 (packages-only image, -O1):
-#   startup through first solves: ~97 s -> ~32 s; memory footprint is NOT reduced.
+# Measured on a 16 GB Windows machine, Julia 1.12 (packages-only image, -O1), 36-auction
+# single-worker HiGHS scan, 2 runs each with a warm precompile cache:
+#   without image: 85 s wall / 72.6 s scan / 1436 MB peak    with image: 85-93 s wall / 69-79 s scan / ~1400 MB peak
+# i.e. NO measurable benefit once Julia's normal package precompile cache is warm - the image only
+# helps the very first cold run. Memory footprint is not reduced. Kept as an optional tool, not a
+# recommended default; it needs ~9 GB free RAM to build.
 #
 # Setup + build (from the repo root; needs ~9 GB of free RAM for the compile step - close other
 # apps and Julia sessions, and expect 5-10 min):
