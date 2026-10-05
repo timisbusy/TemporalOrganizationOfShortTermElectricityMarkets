@@ -3,3 +3,11 @@
 /src/lib/plots/archive
 *.sublime-workspace
 .idea/
+
+# custom Julia system image (machine-specific build output; see sysimage/build_sysimage.jl)
+/sysimage/*.dll
+/sysimage/*.so
+/sysimage/*.dylib
+/sysimage/*.log
+/sysimage/Project.toml
+/sysimage/Manifest.toml
