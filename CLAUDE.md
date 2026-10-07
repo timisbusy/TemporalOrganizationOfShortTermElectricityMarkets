@@ -29,6 +29,8 @@ TestExperiment.RunBasic("experiment_name", "src/configs/xlsx/experiments/OneIntr
 ```
 Output location is printed at the end: `results/{unix_timestamp}_{experiment_name}/`.
 
+When running Julia from a script file (e.g. a scratch `.jl` in a temp/scratchpad dir) rather than the REPL/notebook, `include("src/lib/...")` resolves relative to the *script's* directory, not the working directory, and fails with "No such file or directory". Use an absolute path to the repo's `src/lib/...` file in the `include`, or `include` from the REPL started at the repo root. Data/config paths (`src/configs/...`, `input_data/...`) are resolved relative to the working directory, so run `julia --project=.` from the repo root.
+
 Other entry points in `TestExperiment` (`src/lib/experiments/test_experiment.jl`):
 - `RunBasic(name, config_file)` — single market design.
 - `RunComparisonExperiment(name, config_file)` — config with `compare: market`, runs multiple market designs side by side (see `ClearMarket.ClearMarketComparison`).

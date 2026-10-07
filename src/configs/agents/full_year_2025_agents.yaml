@@ -1,0 +1,63 @@
+
+# Same agent parameters as validate_laura_agents.yaml, but with the full-year 2025 NED.nl timeseries
+# (input_data/2025_with_buffer/). Those files hold 8928 hourly rows, validfrom 2024-12-28 23:00 UTC
+# to 2026-01-04 22:00 UTC: 3 days of buffer before and 4 days after calendar 2025 (UTC).
+
+# Generator parameters
+dispatchableGenerators:
+ 3G_Base:
+  bidPrice: 30 # EUR/MWh
+  capacity: 6000 # MW
+  rampRateLD: 0.2 # fraction of nominal power per hour
+  initialQuantity: 4800
+  emissionFactor: 980 # kgCO2e/MWh
+
+ 4G_Shoulder:
+  bidPrice: 80 # EUR/MWh
+  capacity: 4000 # MW
+  rampRateLD: 0.5 # fraction of nominal power per hour
+  initialQuantity: 2000
+  emissionFactor: 420 # kgCO2e/MWh
+
+ 5G_Peak:
+  bidPrice: 150 # EUR/MWh
+  capacity: 5000 # MW
+  rampRateLD: 1.0 # fraction of nominal power per hour
+  initialQuantity: 0
+  emissionFactor: 420 # kgCO2e/MWh
+
+variableGenerators:
+  6G_Wind:
+    bidPrice: 0         # EUR/MWh
+    capacity: 12000        # MW
+    profile_files: ["input_data/2025_with_buffer/wind_onshore_2025_with_buffer.csv", "input_data/2025_with_buffer/wind_offshore_2025_with_buffer.csv"] # wind on and off are combined by addition
+    profile_type: quantity
+    conversionFactor: 0.00095  # Convert kW to MW and scale renewables to 95%
+  7G_Solar:
+    bidPrice: 0         # EUR/MWh
+    capacity: 29000        # MW
+    profile_file: input_data/2025_with_buffer/solar_2025_with_buffer.csv
+    profile_type: quantity
+    conversionFactor: 0.00095  # Convert kW to MW and scale renewables to 95%
+
+# Storage parameters
+batteryStorage:
+  energyCapacity: 6000 # MWh
+  powerCapacity: 2000 # MW
+  efficiency: 0.9
+  initialSOC: 0.0 # as fraction of energyCapacity
+  endSOC: 0.0 # as fraction of energyCapacity
+
+# Demand parameters
+demand:
+  segments:
+    1D_HighBid:
+      bidPrice: 300   # EUR/MWh (high willingness to pay)
+      profile_file: input_data/2025_with_buffer/demand_2025_with_buffer.csv
+      profile_type: demand_quantity
+      conversionFactor: 0.0009  # Convert kW to MW, 90% 0.001*.9 = .0009
+    2D_ModerateBid:
+      bidPrice: 50   # EUR/MWh (elastic, only if price low)
+      profile_file: input_data/2025_with_buffer/demand_2025_with_buffer.csv
+      profile_type: demand_quantity
+      conversionFactor: 0.0001  # Convert kW to MW, 10%
