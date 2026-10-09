@@ -1,5 +1,7 @@
 module PostAnalysisRunner
 
+using Dates
+
 include("./post_analysis_common.jl")
 include("./analyses/post_analysis_lead_time.jl")
 include("./analyses/post_analysis_quantities_by_agent.jl")
@@ -7,6 +9,7 @@ include("./analyses/post_analysis_SEW.jl")
 include("./analyses/post_analysis_storage.jl")
 include("./analyses/post_analysis_prices.jl")
 include("./analyses/post_analysis_daily.jl")
+include("./analyses/post_analysis_monthly.jl")
 include("./analyses/post_analysis_physical_indicators.jl")
 include("./analyses/post_analysis_auction_snapshots.jl")
 include("./analyses/post_analysis_storage_revenue_reconciliation.jl")
@@ -71,6 +74,23 @@ RollingSubjectCases(cases) = "Rolling Horizon" in cases ? [filter(!=("Rolling Ho
 const REGULAR_STORAGE_REVENUE_CASE_PATHS = Dict{String,String}(k => v for (k, v) in PostAnalysisStorageRevenueReconciliation.DEFAULT_CASE_PATHS if !occursin("high storage", k))
 const HIGH_STORAGE_STORAGE_REVENUE_CASE_PATHS = Dict{String,String}(k => v for (k, v) in PostAnalysisStorageRevenueReconciliation.DEFAULT_CASE_PATHS if occursin("high storage", k))
 
+# Run keyword arguments for the full-year 2025 fixed_36/rolling_36 pair (rolling_36_full_year_2025.yaml/
+# fixed_36_full_year_2025.yaml: startDate 2024-12-29, so day index 3 = 2025-01-01 and MTU 72 = its first
+# hour; analysis window = all of 2025). Use as
+#   PostAnalysisRunner.Run(my_case_paths; FullYear2025Window...)
+# with storage_revenue_case_paths = Dict("Fixed 36h" => fixed_dir, "Rolling 36h" => rolling_dir).
+# Highlighted days are 2025-01-15 and 2025-07-15; auction snapshots are day-ahead-aligned clearings
+# (MTU % 24 == 12) on those same days.
+const FullYear2025Window = (
+	time_range = 72:8831,
+	day_range = 3:367,
+	storage_day_range = 3:367,
+	highlight_days = [("Jan 15", 17), ("Jul 15", 17 + 181)],
+	illustrative_day = 17,
+	clearing_mtus = [17*24 - 12, 17*24 - 11, 17*24 - 10, 198*24 - 12, 198*24 - 11, 198*24 - 10],
+	monthly_start_date = Date(2024, 12, 29),
+)
+
 # case_paths maps "Fixed Horizon"/"Rolling Horizon" to each design's own single-design run
 # directory (see PostAnalysisCommon.DEFAULT_CASE_PATHS) - defaults to the latest validated
 # fixed_36/rolling_36 pair. storage_revenue_case_paths defaults to the matching regular-storage
@@ -79,25 +99,39 @@ const HIGH_STORAGE_STORAGE_REVENUE_CASE_PATHS = Dict{String,String}(k => v for (
 # modules write into one shared, never-overwritten results/post_analysis/{timestamp}_{label}/
 # directory for this Run call (see PostAnalysisCommon.NewAnalysisOutputDir) - label defaults to one
 # derived from case_paths itself.
+# The window keywords default to the 31-day run layout (the values these modules used to hardcode);
+# pass them for a different run length - see FullYear2025Window below for the full-year 2025 runs:
+#   time_range - MTU analysis window (see PostAnalysisCommon.DEFAULT_TIME_RANGE)
+#   day_range - delivery-day indices for the lead-time/storage analyses
+#   highlight_days - (label, day index) pairs PostAnalysisDaily plots hour-by-hour
+#   illustrative_day - day PostAnalysisPrices plots price evolution for (nothing = its own default)
+#   clearing_mtus - clearings PostAnalysisAuctionSnapshots plots
+#   monthly_start_date - the experiment's startDate; when given, also runs PostAnalysisMonthly
+#     (month-by-month roll-up) - left as nothing for the 31-day runs, which span a single month
 function Run(case_paths=PostAnalysisCommon.DEFAULT_CASE_PATHS; cases=PostAnalysisCommon.CASES, label=PostAnalysisCommon.DefaultAnalysisLabel(case_paths, cases),
-	storage_revenue_case_paths=REGULAR_STORAGE_REVENUE_CASE_PATHS)
+	storage_revenue_case_paths=REGULAR_STORAGE_REVENUE_CASE_PATHS,
+	time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE, day_range=2:30, storage_day_range=2:29, highlight_days=[("May 4", 3), ("May 5", 4)],
+	illustrative_day=nothing, clearing_mtus=PostAnalysisAuctionSnapshots.DEFAULT_CLEARING_MTUS, monthly_start_date=nothing)
 	output_base = PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=label)
 
-	PostAnalysisLeadTime.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base)
+	PostAnalysisLeadTime.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base, day_range=day_range)
 
-	PostAnalysisQuantitiesByAgent.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base)
-	PostAnalysisSEW.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base)
-	PostAnalysisDaily.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base)
+	PostAnalysisQuantitiesByAgent.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base, time_range=time_range)
+	PostAnalysisSEW.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base, time_range=time_range)
+	PostAnalysisDaily.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base, time_range=time_range, highlight_days=highlight_days)
 	# PostAnalysisPrices is deliberately NOT given `cases` here - its "5 evolving forecast vintages
 	# for the same delivery period" concept assumes a near-every-MTU clearing cadence (true for
 	# Fixed/Rolling) with no meaningful analog for a sparser design like Auction Only (4 clearings/
 	# day), so it always runs against its own default 2-case pair regardless of what `cases` this
 	# Run call was given.
-	PostAnalysisPrices.PerformAnalysis(case_paths; output_base=output_base)
-	PostAnalysisStorage.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base)
-	PostAnalysisPhysicalIndicators.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base)
-	PostAnalysisAuctionSnapshots.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
-	PostAnalysisStorageRevenueReconciliation.PerformAnalysis(storage_revenue_case_paths; output_base=output_base)
+	PostAnalysisPrices.PerformAnalysis(case_paths; output_base=output_base, illustrative_day=illustrative_day)
+	PostAnalysisStorage.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base, day_range=storage_day_range)
+	PostAnalysisPhysicalIndicators.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base, time_range=time_range)
+	PostAnalysisAuctionSnapshots.PerformAnalysis(case_paths; cases=cases, output_base=output_base, clearing_mtus=clearing_mtus)
+	PostAnalysisStorageRevenueReconciliation.PerformAnalysis(storage_revenue_case_paths; output_base=output_base, time_range=time_range)
+	if monthly_start_date !== nothing
+		PostAnalysisMonthly.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base, time_range=time_range, start_date=monthly_start_date)
+	end
 
 	return output_base
 end

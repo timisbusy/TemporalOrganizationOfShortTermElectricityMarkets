@@ -1,0 +1,45 @@
+# general parameters
+
+name: rolling_36_full_year_2025 # descriptive name for experiment
+
+# Set temporal parameters for experiment - granularity and duration
+timePeriodsPerDay: 24 # number of time periods in a day
+
+# The input data (agent config full_year_2025_agents.yaml) covers 2024-12-29 .. 2026-01-04 (UTC
+# days, 372 days): 3 days of buffer, all of 2025, 4 days of buffer. MTU 0 = 2024-12-29 00:00 UTC.
+startDate: 2024-12-29
+clearForDays: 372
+# the data's last row is 2026-01-04 22:00 UTC (MTU 8926), one hour short of 372*24 = 8928, so cap the
+# last clearing at 8891 (its 36 MTU window ends at MTU 8926) rather than the default 8928-36 = 8892
+lastAuctionMTU: 8891
+# analysis window = MTU 72 .. 24*(372-4)-1 = 8831, i.e. exactly 2025-01-01 00:00 .. 2025-12-31 23:00 UTC
+# (the 95 MTU of data after it exceed the 36 MTU look-ahead, so every 2025 hour gets a full-length clearing)
+samplePeriodExcludeSpinUp: 3
+samplePeriodExcludeEnd: 4
+# clearing starts at MTU 0 (the 3 buffer days serve as spin-up); the 12 MTU skip in the 31-day
+# configs only existed to align with the reference (LLD) simulation
+skipEarlyAuctions: 0
+
+# set the uncertainty in renewable generation
+noiseLevel: 0.2
+windOffset: 0 # the 31-day configs use 11 to align with the reference simulation; not needed here
+
+# The shared scenario file (input_data/laura/wind_forecast_error_shared_final_20260502.csv) only
+# covers ~800 hours. This one is generated on first use for the full year (same seed, same
+# error process) and then reused.
+windNoiseScenarioPath: input_data/wind_forecast_error_2025_full_year.csv
+
+# choose a market configuration from the markets directory
+marketConfig: rolling_laura.yaml # rolling 36: clear every MTU, 36 MTU optimization window, no look-ahead
+
+# choose an agent configuration from the agents directory
+agentConfig: full_year_2025_agents.yaml
+
+# for optimization model customization
+optimizationModelConfig:
+  model: latest
+  solver: highs
+  solver_method: simplex
+  demand_adjust: false
+  ex_post_transactions: false
+  restrict_mtu1_trading: true
