@@ -26,16 +26,18 @@ const DEFAULT_CASES = ["36h", "48h", "72h"]
 
 DefaultLabel(case_paths, cases) = "high_storage_" * PostAnalysisConventionalGenerationCost.DefaultLabel(case_paths, cases)
 
-function Run(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, label=DefaultLabel(case_paths, cases))
+# time_range: MTU analysis window, defaulting to the 31-day runs' (PostAnalysisCommon.DEFAULT_TIME_RANGE);
+# pass e.g. 72:8831 for the full-year 2025 runs (PostAnalysisRunner.FullYear2025Window.time_range)
+function Run(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, label=DefaultLabel(case_paths, cases), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE)
 	output_base = PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=label)
 
-	PostAnalysisConventionalGenerationCost.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
-	PostAnalysisPriceByHour.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
-	PostAnalysisWindowLengthKPIs.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
-	PostAnalysisWindowLengthStorageKPIs.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
-	PostAnalysisWindowLengthResidenceTime.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
-	PostAnalysisRollingHorizonChurn.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
-	PostAnalysisWindForecastError.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
+	PostAnalysisConventionalGenerationCost.PerformAnalysis(case_paths; cases=cases, output_base=output_base, time_range=time_range)
+	PostAnalysisPriceByHour.PerformAnalysis(case_paths; cases=cases, output_base=output_base, time_range=time_range)
+	PostAnalysisWindowLengthKPIs.PerformAnalysis(case_paths; cases=cases, output_base=output_base, time_range=time_range)
+	PostAnalysisWindowLengthStorageKPIs.PerformAnalysis(case_paths; cases=cases, output_base=output_base, time_range=time_range)
+	PostAnalysisWindowLengthResidenceTime.PerformAnalysis(case_paths; cases=cases, output_base=output_base, time_range=time_range)
+	PostAnalysisRollingHorizonChurn.PerformAnalysis(case_paths; cases=cases, output_base=output_base, time_range=time_range)
+	PostAnalysisWindForecastError.PerformAnalysis(case_paths; cases=cases, output_base=output_base, time_range=time_range)
 
 	return output_base
 end
