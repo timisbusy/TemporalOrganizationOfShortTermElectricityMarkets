@@ -4,6 +4,14 @@
 *.sublime-workspace
 .idea/
 
+# custom Julia system image (machine-specific build output; see sysimage/build_sysimage.jl)
+/sysimage/*.dll
+/sysimage/*.so
+/sysimage/*.dylib
+/sysimage/*.log
+/sysimage/Project.toml
+/sysimage/Manifest.toml
+
 # Full-year wind forecast error scenarios (seeds 20260326-20260330) - ~55 MB each, kept out of git.
 # Regenerate with HelperInputData.generate_wind_forecast_error_scenario(8892, 72, 0.2; seed) per seed, saved as
 # input_data/wind_error_scenarios_2025/wind_forecast_error_2025_full_year_seed<seed>.csv
