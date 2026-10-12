@@ -10,8 +10,8 @@
 # storage_revenue in market_data_storage.jl) made for parity with an external validation reference,
 # not to represent what storage actually earned. Storage in a rolling design gets its position
 # revised at every clearing that includes an MTU in its look-ahead window, each revision settled at
-# THAT clearing's own price via the transactions table (same convention as generators), so the
-# final-price convention discards that whole trading history and prices only the last net position.
+# THAT clearing's own price via the transactions table (same treatment as generators), so the
+# final-price valuation discards that whole trading history and prices only the last net position.
 #
 # The other side of the comparison is StorageRent: not a direct sum of storage's own recorded
 # transactions, but the residual of the whole-market money-balance identity (demand payments =
@@ -24,7 +24,7 @@
 # a restatement of them - if Storage's bookkeeping were ever broken again, this comparison would
 # still correctly show what storage was actually paid, rather than reproducing the same bug.
 #
-# The final-price convention and StorageRent can diverge a lot, and the divergence grows
+# The final-price revenue and StorageRent can diverge a lot, and the divergence grows
 # with look-ahead distance, because a longer look-ahead means more re-clearings touch each MTU
 # before final delivery, i.e. more chances for storage to lock in a trade at one price while the
 # market keeps moving for unrelated reasons before that MTU is finally settled. See
@@ -42,7 +42,7 @@ using XLSX, DataFrames, Plots, Printf
 
 include("../post_analysis_common.jl")
 
-# The 8 no_cap_1d_spinup designs (4 market designs x standard/high storage) re-run after the
+# The 10 no_cap_1d_spinup runs (5 market designs incl. Auction Only x standard/high storage) re-run after the
 # demand-transaction fix (see git history around "Add a reusable row-level cross-run validation
 # module" and the session that added this file) - a convenience default, not the only thing this
 # module can analyze. Pass your own case_paths for any other set of runs.
@@ -51,16 +51,18 @@ const DEFAULT_CASE_PATHS = Dict{String,String}(
 	"Rolling 36h" => "results/1789748169_rolling_36_no_cap_1d_spinup",
 	"Rolling 48h" => "results/1789748204_rolling_48_no_cap_1d_spinup",
 	"Rolling 72h" => "results/1789748246_rolling_72_no_cap_1d_spinup",
+	"Auction Only" => "results/1790178290_auction_only_no_cap_1d_spinup",
 	"Fixed 36h (high storage)" => "results/1789748824_fixed_36_no_cap_1d_spinup_high_storage",
 	"Rolling 36h (high storage)" => "results/1789748893_rolling_36_no_cap_1d_spinup_high_storage",
 	"Rolling 48h (high storage)" => "results/1789748945_rolling_48_no_cap_1d_spinup_high_storage",
 	"Rolling 72h (high storage)" => "results/1789749015_rolling_72_no_cap_1d_spinup_high_storage",
+	"Auction Only (high storage)" => "results/1790787155_auction_only_no_cap_1d_spinup_high_storage",
 )
 
 # order DEFAULT_CASE_PATHS prints/plots in - Dict iteration order isn't insertion order-guaranteed
 # once cases come from a caller-supplied Dict, so any case_paths gets sorted by this preferred
 # ordering where possible, falling back to alphabetical for names it doesn't recognize.
-const DEFAULT_CASE_ORDER = ["Fixed 36h", "Rolling 36h", "Rolling 48h", "Rolling 72h", "Fixed 36h (high storage)", "Rolling 36h (high storage)", "Rolling 48h (high storage)", "Rolling 72h (high storage)"]
+const DEFAULT_CASE_ORDER = ["Fixed 36h", "Rolling 36h", "Rolling 48h", "Rolling 72h", "Auction Only", "Fixed 36h (high storage)", "Rolling 36h (high storage)", "Rolling 48h (high storage)", "Rolling 72h (high storage)", "Auction Only (high storage)"]
 
 function OrderedCases(case_paths)
 	known = [c for c in DEFAULT_CASE_ORDER if haskey(case_paths, c)]
@@ -82,7 +84,7 @@ end
 # MarketDataStorage.CalculateEconomicIndicators' own definition, reproduced directly against
 # final_dispatch_decisions rather than by calling it, since that function also recomputes several
 # other indicators (agent quantities, SEW, ...) this module has no use for.
-FinalPriceConventionRevenue(fdd) = sum(skipmissing((fdd.StorageDischarge .- fdd.StorageCharge) .* fdd.FinalAuctionPrice))
+FinalPriceRevenue(fdd) = sum(skipmissing((fdd.StorageDischarge .- fdd.StorageCharge) .* fdd.FinalAuctionPrice))
 
 # Payments/Revenues (€) is Quantity (MWh) * Price (€/MWh) for every transaction row regardless of
 # agent - MarketDataStorage.CalculateEconomicIndicators' AgentEconomicMetrics just labels the same
@@ -110,14 +112,14 @@ function Reconcile(case_paths, case, time_range)
 	(fdd, tx) = LoadCaseData(case_paths, case, time_range)
 	storage_tx = tx[tx.Agent .== "Storage", :]
 
-	final_price = FinalPriceConventionRevenue(fdd)
+	final_price = FinalPriceRevenue(fdd)
 	rent = StorageRent(tx)
 	net_final_position = sum(skipmissing(fdd.StorageDischarge .- fdd.StorageCharge))
 	gross_traded_volume = sum(abs.(storage_tx[!, "Quantity (MWh)"]))
 
 	return (
 		Case=case,
-		FinalPriceConventionRevenue=final_price,
+		FinalPriceRevenue=final_price,
 		StorageRent=rent,
 		Delta=rent - final_price,
 		DeltaPct=final_price == 0 ? NaN : 100 * (rent - final_price) / final_price,
@@ -146,22 +148,22 @@ function MostDivergentMTUs(case_paths, case, time_range; top_n=15)
 	)
 
 	fdd_slim = rename(fdd[!, [:mtu, :FinalAuctionPrice, :StorageCharge, :StorageDischarge]], :mtu => "Market Time Unit")
-	fdd_slim.FinalPriceConventionRevenue = (fdd_slim.StorageDischarge .- fdd_slim.StorageCharge) .* fdd_slim.FinalAuctionPrice
+	fdd_slim.FinalPriceRevenue = (fdd_slim.StorageDischarge .- fdd_slim.StorageCharge) .* fdd_slim.FinalAuctionPrice
 	fdd_slim.NetFinalPositionMWh = fdd_slim.StorageDischarge .- fdd_slim.StorageCharge
 
 	merged = innerjoin(by_mtu, fdd_slim, on="Market Time Unit")
-	merged.Delta = merged.TrueCumulativeRevenue .- merged.FinalPriceConventionRevenue
+	merged.Delta = merged.TrueCumulativeRevenue .- merged.FinalPriceRevenue
 
 	sorted = sort(merged, :Delta, by=abs, rev=true)
 	n = min(top_n, nrow(sorted))
-	return sorted[1:n, ["Market Time Unit", "NTrades", "GrossTradedVolumeMWh", "NetFinalPositionMWh", "FinalAuctionPrice", "FinalPriceConventionRevenue", "TrueCumulativeRevenue", "Delta"]]
+	return sorted[1:n, ["Market Time Unit", "NTrades", "GrossTradedVolumeMWh", "NetFinalPositionMWh", "FinalAuctionPrice", "FinalPriceRevenue", "TrueCumulativeRevenue", "Delta"]]
 end
 
 function SummaryPlot(summary_df, cases, analysis_dir_path)
 	x = 1:length(cases)
-	p = Plots.plot(xlabel="Case", ylabel="Storage Revenue (€)", title="Storage revenue: final-price convention vs storage rent",
+	p = Plots.plot(xlabel="Case", ylabel="Storage Revenue (€)", title="Storage revenue: final-price revenue vs storage rent",
 		xticks=(x, cases), xrotation=30, legend=:outerbottom, size=(900, 480), left_margin=10Plots.mm, bottom_margin=0Plots.mm)
-	Plots.bar!(p, x .- 0.15, summary_df.FinalPriceConventionRevenue, bar_width=0.3, label="Final-price convention")
+	Plots.bar!(p, x .- 0.15, summary_df.FinalPriceRevenue, bar_width=0.3, label="Final-price revenue")
 	Plots.bar!(p, x .+ 0.15, summary_df.StorageRent, bar_width=0.3, label="Storage rent (demand payments - generator revenue)")
 	display(p)
 	savefig(p, "$analysis_dir_path/storage_revenue_reconciliation.png")

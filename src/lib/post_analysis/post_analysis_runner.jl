@@ -45,10 +45,9 @@ const HIGH_STORAGE_THREE_WAY_CASE_PATHS = Dict{String,String}(
 # PostAnalysisPhysicalIndicators are wired to RollingSubjectCases(cases) below;
 # PostAnalysisAuctionSnapshots produces one independent plot per case with no cross-case comparison
 # or ordering to get right, so it's wired to the shared `cases` unchanged.
-# PostAnalysisStorageRevenueReconciliation still only knows about "Fixed Horizon"/"Rolling Horizon"
-# internally - passing THREE_WAY_CASE_PATHS as `case_paths` without a matching `cases` override
-# leaves Auction Only silently absent from that specific table rather than erroring (the extra dict
-# key is simply never looked up). PostAnalysisPrices is deliberately excluded even when `cases` is
+# PostAnalysisStorageRevenueReconciliation takes its own `storage_revenue_case_paths` (any named
+# cases, including "Auction Only"), so add an "Auction Only" entry there to include it in that table.
+# PostAnalysisPrices is deliberately excluded even when `cases` is
 # overridden - see the comment on its own call in Run for why.
 const THREE_WAY_CASE_PATHS = Dict{String,String}(
 	"Fixed Horizon" => "results/1789748124_fixed_36_no_cap_1d_spinup",
