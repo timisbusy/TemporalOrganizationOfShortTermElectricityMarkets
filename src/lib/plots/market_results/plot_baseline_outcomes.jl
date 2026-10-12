@@ -5,11 +5,26 @@ using JuMP
 using Statistics
 using DataFrames
 using XLSX
+using CSV
 
 using ..Helpers
 
 include("../../output_data/market_data_storage.jl")
 include("../../output_data/interpretations.jl")
+
+# Excel caps a sheet at 1,048,576 rows including the header. A long-window rolling run's transaction
+# table can exceed that (the full-year 2025 rolling 72h run has ~1.47M rows), so it's written as
+# `{name}.csv` instead of `{name}.xlsx` in that case - PostAnalysisCommon.LoadCaseFile reads either.
+const EXCEL_MAX_DATA_ROWS = 1048575
+
+function write_transactions(path_without_extension, transactions)
+    if nrow(transactions) > EXCEL_MAX_DATA_ROWS
+        println("$(nrow(transactions)) transactions exceed Excel's $(EXCEL_MAX_DATA_ROWS) row limit - writing $(path_without_extension).csv instead of .xlsx")
+        CSV.write("$(path_without_extension).csv", transactions)
+    else
+        XLSX.writetable("$(path_without_extension).xlsx", "data" => transactions, "interpretation" => Interpretations.TransactionsInterpretation)
+    end
+end
 
 function plot(marketresult, config, test_range, test_id)
     # imbalance_agents hardcoded to the Wind/Peak agent config every current experiment uses -
@@ -23,11 +38,12 @@ function plot(marketresult, config, test_range, test_id)
 
     XLSX.writetable("results/$(test_id)/agent_indicators.xlsx", "data" => agent_indicators, "interpretation" => Interpretations.AgentIndicatorsInterpretation)
 
-    XLSX.writetable("results/$(test_id)/transactions.xlsx", "data" => transactions, "interpretation" => Interpretations.TransactionsInterpretation)
-
     XLSX.writetable("results/$(test_id)/final_dispatch_decisions.xlsx", "data" => final_dispatch_decisions, "interpretation" => Interpretations.DecisionVariablesInterpretation)
 
     XLSX.writetable("results/$(test_id)/mtu_economic_results.xlsx", "data" => mtu_economic_outcomes)
+
+    # written last: the only export that can exceed Excel's row limit (see write_transactions)
+    write_transactions("results/$(test_id)/transactions", transactions)
 
 end
 
@@ -52,7 +68,7 @@ function plotCompare(market_results, config, test_range, test_id)
         combined_agent_indicators = vcat(combined_agent_indicators, agent_indicators)
 
 
-        XLSX.writetable("results/$(test_id)/RAW/transactions_$(marketConfiguration).xlsx", "data" => transactions, "interpretation" => Interpretations.TransactionsInterpretation)
+        write_transactions("results/$(test_id)/RAW/transactions_$(marketConfiguration)", transactions)
 
         XLSX.writetable("results/$(test_id)/RAW/final_dispatch_decisions_$(marketConfiguration).xlsx", "data" => final_dispatch_decisions, "interpretation" => Interpretations.DecisionVariablesInterpretation)
         

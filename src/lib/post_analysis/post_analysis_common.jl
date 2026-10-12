@@ -8,7 +8,7 @@
 
 module PostAnalysisCommon
 
-using XLSX, DataFrames, YAML, Dates, Printf, Statistics
+using XLSX, DataFrames, YAML, Dates, Printf, Statistics, CSV
 
 include("../helpers.jl")
 using .Helpers.HelperModelResults
@@ -201,7 +201,15 @@ function LoadFile(filepath)
 end
 
 function LoadCaseFile(case_paths, case, filename)
-	return LoadFile(joinpath(case_paths[case], filename))
+	path = joinpath(case_paths[case], filename)
+	# a transaction table too large for one Excel sheet is exported as {name}.csv instead of
+	# {name}.xlsx (see PlotBaselineOutcomes.write_transactions) - fall back to that when the .xlsx
+	# isn't there
+	csv_path = splitext(path)[1] * ".csv"
+	if !isfile(path) && endswith(filename, ".xlsx") && isfile(csv_path)
+		return DataFrame(CSV.File(csv_path))
+	end
+	return LoadFile(path)
 end
 
 # shared by PostAnalysisSEW and PostAnalysisWindowLengthKPIs so their two copies can't drift apart
