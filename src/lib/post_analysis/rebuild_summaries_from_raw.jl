@@ -5,10 +5,10 @@
 # (PlotBaselineOutcomes.plot) failed, e.g. the full-year 2025 rolling 72h run, whose transaction table
 # exceeded Excel's row limit before PlotBaselineOutcomes.write_transactions existed.
 #
-# It repeats what ClearMarket.ClearSimple + MarketDataStorage do in memory: the final dispatch decisions
-# are every clearing's decision variables in clearing order, deduplicated by mtu keeping the last
-# (price -> FinalAuctionPrice); transactions are every clearing's transactions in clearing order; both
-# are then scoped to `test_range` and turned into indicators by MarketDataStorage.CalculateEconomicIndicators.
+# It reloads each clearing's RAW tables into a MarketResultContainer, in clearing order, and runs the same
+# MarketDataStorage.GetEconomicIndicatorsForRange PlotBaselineOutcomes.plot runs on a live run - so the
+# final-dispatch dedup (by mtu, keeping the last; price -> FinalAuctionPrice), the transaction
+# concatenation and the indicators all come from MarketDataStorage rather than a copy of it here.
 #
 # Validate on a run whose summaries did get written before trusting it on another one: Rebuild its
 # RAW into a different `output_dir` and compare against the original files.
@@ -39,21 +39,25 @@ function Rebuild(result_dir; test_range, output_dir=result_dir, imbalance_agents
 	mtus = ClearingMTUs(raw_dir)
 	println("rebuilding summaries for $result_dir from $(length(mtus)) clearings (MTU $(first(mtus)):$(last(mtus))), analysis range $test_range")
 
-	dvs = Vector{DataFrame}(undef, length(mtus))
-	txs = Vector{DataFrame}(undef, length(mtus))
+	# Refill a MarketResultContainer with just the fields the aggregation reads (TimeCleared,
+	# AgentMap, DecisionVariables, Transactions) and let MarketDataStorage do the rest, so the
+	# final-dispatch dedup, transaction concatenation and indicator calculation are the very same
+	# code PlotBaselineOutcomes.plot runs on a live run's container - no copy to drift out of sync.
+	MDS = PostAnalysisCommon.MarketDataStorage
+	container = MDS.MakeMarketResultContainer()
 	for (i, mtu) in enumerate(mtus)
-		dvs[i] = DataFrame(XLSX.readtable("$(dv_prefix)$(mtu).xlsx", "data"))
-		txs[i] = DataFrame(XLSX.readtable("$(tx_prefix)$(mtu).xlsx", "data"))
+		mr = MDS.MarketResult()
+		mr.TimeCleared = mtu
+		mr.AgentMap = agent_map
+		mr.DecisionVariables = DataFrame(XLSX.readtable("$(dv_prefix)$(mtu).xlsx", "data"))
+		mr.Transactions = DataFrame(XLSX.readtable("$(tx_prefix)$(mtu).xlsx", "data"))
+		push!(container.Results, mr)
 		i % 500 == 0 && println("  read $i / $(length(mtus)) clearings")
 	end
 
-	final_dispatch_decisions = unique!(reduce(vcat, dvs), "mtu"; keep=:last)
-	rename!(final_dispatch_decisions, :price => :FinalAuctionPrice)
-	transactions = reduce(vcat, txs)
-	dvs = nothing; txs = nothing
-
 	(indicators, agent_indicators, transactions, final_dispatch_decisions, mtu_economic_outcomes) =
-		PostAnalysisCommon.MarketDataStorage.CalculateEconomicIndicators(final_dispatch_decisions, transactions, agent_map, test_range; imbalance_agents=imbalance_agents)
+		MDS.GetEconomicIndicatorsForRange(container, test_range; imbalance_agents=imbalance_agents)
+	container = nothing
 
 	mkpath(output_dir)
 	XLSX.writetable(joinpath(output_dir, "economic_indicators.xlsx"), "data" => indicators, "interpretation" => Interpretations.EconomicIndicatorsInterpretation; overwrite=true)
