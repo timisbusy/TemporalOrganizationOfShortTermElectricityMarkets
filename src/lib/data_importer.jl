@@ -88,6 +88,15 @@ function load_input_data(path::String)
     data[:samplePeriodExcludeSpinUp] = haskey(cfg,"samplePeriodExcludeSpinUp") ? Int(cfg["samplePeriodExcludeSpinUp"]) : 2
     data[:samplePeriodExcludeEnd] = haskey(cfg,"samplePeriodExcludeEnd") ? Int(cfg["samplePeriodExcludeEnd"]) : 2
 
+    # optional wind forecast error scenario CSV (generated there if missing) and the seed used
+    # to generate it - without these, ClearMarket falls back to the shared ~800 hour scenario file
+    if haskey(cfg, "windNoiseScenarioPath")
+        data[:wind_noise_scenario_path] = String(cfg["windNoiseScenarioPath"])
+    end
+    if haskey(cfg, "noiseSeed")
+        data[:noise_seed] = Int(cfg["noiseSeed"])
+    end
+
     # track the resolved config file paths (experiment/market/agent) so a caller can copy them
     # alongside a run's results for later reference - see ClearMarket.CopyConfigFiles!
     data[:configFile] = path

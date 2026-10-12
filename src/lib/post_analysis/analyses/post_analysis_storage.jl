@@ -4,7 +4,9 @@ using XLSX, DataFrames, Plots, Statistics, Latexify
 
 include("../post_analysis_common.jl")
 
-function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths))
+# day_range: delivery-day indices (mtu ÷ 24, relative to the experiment's startDate) to include -
+# the default 2:29 suits the 31-day runs; pass e.g. 3:367 for the full-year 2025 runs
+function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), day_range=2:29)
 
 	analysis_dir_path = "$output_base/post_analysis_storage"
 
@@ -14,8 +16,8 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 	dds = Dict{String,DataFrame}()
 
-	start_day = 2
-	end_day = 29
+	start_day = day_range.start
+	end_day = day_range.stop
 
 	for(case, path) in dispatch_decision_paths
 		dd = LoadFile(path)

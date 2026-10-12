@@ -13,7 +13,11 @@ include("../agent_renaming.jl")
 
 quantitySymbol = Symbol("Quantity (MWh)")
 
-function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths))
+# time_range: MTU window the daily SEW/driver statistics cover (see PostAnalysisCommon.DEFAULT_TIME_RANGE).
+# highlight_days: (label, day index) pairs to plot hour-by-hour; day index d spans MTU [24d, 24d+23]
+# and maps to calendar date startDate + d days - with startDate: 2025-05-01 (day 0 = May 1), May 4
+# is day index 3 and May 5 is day index 4 (the default). Each highlighted day must lie inside time_range.
+function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE, highlight_days=[("May 4", 3), ("May 5", 4)])
 
     analysis_dir_path = "$output_base/post_analysis_daily"
 
@@ -21,32 +25,19 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 
-    # day index d spans MTU [24d, 24d+23] and maps to calendar date startDate + d days - with
-    # startDate: 2025-05-01 (day 0 = May 1), May 4 is day index 3 and May 5 is day index 4.
-    may_4_interval = 3*24:(4*24 - 1)
-    may_5_interval = 4*24:(5*24 - 1)
-
     print_cases = cases
 
 	dds = GetDispatchDecisions(print_cases, dispatch_decision_paths)
-    mtu_economic_indicators = GetMTUEconomicIndicators(print_cases, case_paths)
+    mtu_economic_indicators = GetMTUEconomicIndicators(print_cases, case_paths, time_range)
 
-	println("MAY 4 RESULTS")
-
-    plotPhysicalIndicator(dds, may_4_interval, Symbol("SOC"), print_cases, "May 4", analysis_dir_path)
-    plotPhysicalIndicator(dds, may_4_interval, Symbol("6G_Wind"), print_cases, "May 4", analysis_dir_path)
-    plotPhysicalIndicator(dds, may_4_interval, Symbol("2D_ModerateBid"), print_cases, "May 4", analysis_dir_path)
-    plotPhysicalIndicator(dds, may_4_interval, Symbol("4G_Shoulder"), print_cases, "May 4", analysis_dir_path)
-
-    println("MAY 5 RESULTS")
-
-    plotPhysicalIndicator(dds, may_5_interval, Symbol("SOC"), print_cases, "May 5", analysis_dir_path)
-    plotPhysicalIndicator(dds, may_5_interval, Symbol("6G_Wind"), print_cases, "May 5", analysis_dir_path)
-    plotPhysicalIndicator(dds, may_5_interval, Symbol("2D_ModerateBid"), print_cases, "May 5", analysis_dir_path)
-    plotPhysicalIndicator(dds, may_5_interval, Symbol("4G_Shoulder"), print_cases, "May 5", analysis_dir_path)
-
-    plotSEWDifference(mtu_economic_indicators, may_4_interval, print_cases, "May 4", analysis_dir_path)
-    plotSEWDifference(mtu_economic_indicators, may_5_interval, print_cases, "May 5", analysis_dir_path)
+    for (label, day) in highlight_days
+        interval = day*24:((day + 1)*24 - 1)
+        println("$(uppercase(label)) RESULTS")
+        for indicator in ["SOC", "6G_Wind", "2D_ModerateBid", "4G_Shoulder"]
+            plotPhysicalIndicator(dds, interval, Symbol(indicator), print_cases, label, analysis_dir_path)
+        end
+        plotSEWDifference(mtu_economic_indicators, interval, print_cases, label, analysis_dir_path)
+    end
 
     AnalyzeDailySEW(print_cases, mtu_economic_indicators, dds, analysis_dir_path)
 end
@@ -65,10 +56,10 @@ end
 # not read from the pre-exported mtu_economic_results.xlsx - that export was written without
 # imbalance_agents set, so it has no real Imbalance Energy figures (see AnalyzeDrivers' imbalance
 # driver plot, which needs them).
-function GetMTUEconomicIndicators(cases, case_paths)
+function GetMTUEconomicIndicators(cases, case_paths, time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE)
     inds = Dict{String,Any}()
     for case in cases
-        (economic_indicators, agent_indicators, transactions, finalDispatchDecisions, mtu_economic_indicators) = PostAnalysisCommon.CalculateCaseIndicators(case_paths, case; imbalance_agents=PostAnalysisCommon.DEFAULT_IMBALANCE_AGENTS)
+        (economic_indicators, agent_indicators, transactions, finalDispatchDecisions, mtu_economic_indicators) = PostAnalysisCommon.CalculateCaseIndicators(case_paths, case; time_range=time_range, imbalance_agents=PostAnalysisCommon.DEFAULT_IMBALANCE_AGENTS)
         inds[case] = mtu_economic_indicators
         AddDayAndHour!(inds[case], Symbol("MTU"))
     end
