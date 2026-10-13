@@ -1,0 +1,47 @@
+﻿# general parameters
+
+name: rolling_36_storage_bidding # descriptive name for experiment
+
+# Set temporal parameters for experiment - granularity and duration
+timePeriodsPerDay: 24 # number of time periods in a day
+clearForDays: 31 # number of days to clear market for - one more than the capped 36h configs so
+# lastAuctionMTU's absence still leaves room for the day-28 price-analysis window (needs MTU up
+# to 695; 31*24-36=708)
+skipEarlyAuctions: 12
+samplePeriodExcludeSpinUp: 1 # 1 full day, not 0.5 - leaves a clean 28-day analysis window
+# (MTU 24:695) instead of the 28.5-day window (MTU 12:672) that 0 days combined with
+# skipEarlyAuctions=12 produced. skipEarlyAuctions itself is unchanged (clearing still starts
+# at MTU 12) - this just widens the excluded buffer between "clearing started" and "counts as
+# analyzed data" to a full day.
+samplePeriodExcludeEnd: 2
+
+# set a start date for data to be used from incoming agent profile data
+startDate: 2025-05-01
+
+# set the uncertainty in renewable generation
+noiseLevel: 0.2
+windOffset: 11
+
+
+# choose a market configuration from the markets directory
+marketConfig: rolling_laura.yaml
+
+# choose an agent configuration from the agents directory
+agentConfig: validate_laura_agents.yaml
+
+# for optimization model customization
+optimizationModelConfig:
+  model: storage_bidding
+  solver: highs
+  solver_method: simplex
+  demand_adjust: false
+  ex_post_transactions: false
+  restrict_mtu1_trading: true
+  # storage_bidding model parameters (all required)
+  chargePremiumPct: 10 # storage bids to charge up to this % above the charge reference price (IIR average of cleared prices)
+  dischargeDiscountPct: 10 # storage offers to discharge down to this % below the discharge reference price (IIR average of cleared prices)
+  referenceSmoothing: 0.05 # IIR (exponential moving average) coefficient alpha in (0,1]; per-MTU update ref += alpha*(price-ref)
+  initialChargeReferencePrice: 40 # EUR/MWh seed for the charge reference price until price history pulls it toward recent prices
+  initialDischargeReferencePrice: 60 # EUR/MWh seed for the discharge reference price; keep above the charge seed
+
+
