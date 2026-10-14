@@ -228,7 +228,7 @@ end
 
 function PlotMonthlyDifference(cmp, subject, base, analysis_dir_path)
 	p = bar(cmp.Month, cmp[!, Symbol("Δ SEW (€)")]; legend=false, xlabel="Month", ylabel="$subject - $base Δ SEW [EUR]",
-		title="Monthly SEW difference: $subject - $base", xrotation=45, bottom_margin=8Plots.mm, left_margin=8Plots.mm)
+		title="Monthly SEW difference: $subject - $base", titlefontsize=11, guidefontsize=9, xrotation=45, bottom_margin=8Plots.mm, left_margin=8Plots.mm)
 	hline!(p, [0.0]; color=:grey, linestyle=:dash, label=false)
 	display(p)
 	savefig(p, "$analysis_dir_path/monthly_sew_diff_$(PostAnalysisCommon.CaseSlug(base)).png")
