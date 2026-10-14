@@ -17,9 +17,12 @@ include("../../output_data/interpretations.jl")
 # `{name}.csv` instead of `{name}.xlsx` in that case - PostAnalysisCommon.LoadCaseFile reads either.
 const EXCEL_MAX_DATA_ROWS = 1048575
 
-function write_transactions(path_without_extension, transactions)
-    if nrow(transactions) > EXCEL_MAX_DATA_ROWS
-        println("$(nrow(transactions)) transactions exceed Excel's $(EXCEL_MAX_DATA_ROWS) row limit - writing $(path_without_extension).csv instead of .xlsx")
+# csv_above_rows lowers that threshold (config key transactionsCsvAboveRows; 0 = always CSV) - building a large
+# .xlsx sheet in memory can exhaust RAM on full-year runs well below Excel's own limit, while CSV.write streams.
+function write_transactions(path_without_extension, transactions; csv_above_rows=EXCEL_MAX_DATA_ROWS)
+    csv_above_rows = min(csv_above_rows, EXCEL_MAX_DATA_ROWS)
+    if nrow(transactions) > csv_above_rows
+        println("$(nrow(transactions)) transactions exceed the $(csv_above_rows) row threshold (Excel's limit is $(EXCEL_MAX_DATA_ROWS)) - writing $(path_without_extension).csv instead of .xlsx")
         CSV.write("$(path_without_extension).csv", transactions)
     else
         XLSX.writetable("$(path_without_extension).xlsx", "data" => transactions, "interpretation" => Interpretations.TransactionsInterpretation)
@@ -43,7 +46,7 @@ function plot(marketresult, config, test_range, test_id)
     XLSX.writetable("results/$(test_id)/mtu_economic_results.xlsx", "data" => mtu_economic_outcomes)
 
     # written last: the only export that can exceed Excel's row limit (see write_transactions)
-    write_transactions("results/$(test_id)/transactions", transactions)
+    write_transactions("results/$(test_id)/transactions", transactions; csv_above_rows=something(get(config, :transactionsCsvAboveRows, nothing), EXCEL_MAX_DATA_ROWS))
 
 end
 

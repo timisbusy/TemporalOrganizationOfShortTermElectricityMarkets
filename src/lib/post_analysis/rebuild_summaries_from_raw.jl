@@ -32,7 +32,7 @@ function ClearingMTUs(raw_dir)
 	return sort(mtus)
 end
 
-function Rebuild(result_dir; test_range, output_dir=result_dir, imbalance_agents=("6G_Wind", "5G_Peak"), agent_map=PostAnalysisCommon.DEFAULT_AGENT_MAP)
+function Rebuild(result_dir; test_range, output_dir=result_dir, imbalance_agents=("6G_Wind", "5G_Peak"), agent_map=PostAnalysisCommon.DEFAULT_AGENT_MAP, csv_above_rows=EXCEL_MAX_DATA_ROWS)
 	raw_dir = joinpath(result_dir, "RAW")
 	dv_prefix = PostAnalysisCommon.DiscoverRawDispatchPrefix(result_dir)
 	tx_prefix = joinpath(raw_dir, replace(basename(dv_prefix), "decisionvariables_" => "transactions_"; count=1))
@@ -64,9 +64,9 @@ function Rebuild(result_dir; test_range, output_dir=result_dir, imbalance_agents
 	XLSX.writetable(joinpath(output_dir, "agent_indicators.xlsx"), "data" => agent_indicators, "interpretation" => Interpretations.AgentIndicatorsInterpretation; overwrite=true)
 	XLSX.writetable(joinpath(output_dir, "final_dispatch_decisions.xlsx"), "data" => final_dispatch_decisions, "interpretation" => Interpretations.DecisionVariablesInterpretation; overwrite=true)
 	XLSX.writetable(joinpath(output_dir, "mtu_economic_results.xlsx"), "data" => mtu_economic_outcomes; overwrite=true)
-	# same rule as PlotBaselineOutcomes.write_transactions
-	if nrow(transactions) > EXCEL_MAX_DATA_ROWS
-		println("$(nrow(transactions)) transactions exceed Excel's $(EXCEL_MAX_DATA_ROWS) row limit - writing transactions.csv")
+	# same rule as PlotBaselineOutcomes.write_transactions (csv_above_rows = the transactionsCsvAboveRows config key)
+	if nrow(transactions) > min(csv_above_rows, EXCEL_MAX_DATA_ROWS)
+		println("$(nrow(transactions)) transactions exceed the $(min(csv_above_rows, EXCEL_MAX_DATA_ROWS)) row threshold - writing transactions.csv")
 		CSV.write(joinpath(output_dir, "transactions.csv"), transactions)
 	else
 		XLSX.writetable(joinpath(output_dir, "transactions.xlsx"), "data" => transactions, "interpretation" => Interpretations.TransactionsInterpretation; overwrite=true)
