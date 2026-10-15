@@ -27,8 +27,6 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 
 	analysis_dir_path = "$output_base/lead_time_analysis"
 
-	transaction_paths = Dict(case => joinpath(case_paths[case], "transactions.xlsx") for case in cases)
-
 	println("starting analysis")
 	CleanDirectory(analysis_dir_path)
 
@@ -38,8 +36,9 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 	start_day = day_range.start
 	end_day = day_range.stop
 
-	for(case, path) in transaction_paths
-		ts = LoadFile(path)
+	for case in cases
+		# LoadCaseFile also reads transactions.csv when the table was exported as CSV instead of .xlsx
+		ts = PostAnalysisCommon.LoadCaseFile(case_paths, case, "transactions.xlsx")
 		ts[!,Symbol("Hour")] = ts[!,mtuSymbol] .% 24
 		ts[!,Symbol("Day")] = (ts[!,mtuSymbol] .- ts[!,Symbol("Hour")]) ./ 24
 		transactions_by_case[case] = ts[start_day .<= ts[!,Symbol("Day")] .<= end_day,:]

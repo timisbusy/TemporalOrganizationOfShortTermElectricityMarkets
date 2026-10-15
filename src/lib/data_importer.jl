@@ -85,6 +85,10 @@ function load_input_data(path::String)
     # itself to land on a non-integer number of days
     data[:lastAuctionMTU] = haskey(cfg,"lastAuctionMTU") ? Int(cfg["lastAuctionMTU"]) : nothing
     data[:windOffset] = haskey(cfg,"windOffset") ? Int(cfg["windOffset"]) : 0
+    # optional: write the end-of-run transactions table as transactions.csv instead of .xlsx once it has more
+    # than this many rows (0 = always CSV). Unset keeps the default Excel row-limit rule. CSV is streamed, so
+    # it avoids the memory spike of building a very large .xlsx sheet in one go on full-year runs.
+    data[:transactionsCsvAboveRows] = haskey(cfg,"transactionsCsvAboveRows") ? Int(cfg["transactionsCsvAboveRows"]) : nothing
     data[:samplePeriodExcludeSpinUp] = haskey(cfg,"samplePeriodExcludeSpinUp") ? Int(cfg["samplePeriodExcludeSpinUp"]) : 2
     data[:samplePeriodExcludeEnd] = haskey(cfg,"samplePeriodExcludeEnd") ? Int(cfg["samplePeriodExcludeEnd"]) : 2
 

@@ -13,18 +13,18 @@
 # THAT clearing's own price via the transactions table (same treatment as generators), so the
 # final-price valuation discards that whole trading history and prices only the last net position.
 #
-# The other side of the comparison is StorageRent: not a direct sum of storage's own recorded
+# The other side of the comparison is StorageMerchandisingSurplus: not a direct sum of storage's own recorded
 # transactions, but the residual of the whole-market money-balance identity (demand payments =
 # generator revenue + storage revenue) - i.e. DemandPayments(tx) - GeneratorRevenue(tx). The two
 # land on the same number whenever storage's own bookkeeping is correct (this identity is exactly
 # what motivated the demand_adjust:false fix in helper_model_results.jl's Transactions(), and the
 # cases this module defaults to were re-run after that fix specifically so this comparison would
-# hold), but the conceptual difference matters: StorageRent never reads a single Storage-tagged
+# hold), but the conceptual difference matters: StorageMerchandisingSurplus never reads a single Storage-tagged
 # row, so it's an independent check on whatever number storage's own transactions would report, not
 # a restatement of them - if Storage's bookkeeping were ever broken again, this comparison would
 # still correctly show what storage was actually paid, rather than reproducing the same bug.
 #
-# The final-price revenue and StorageRent can diverge a lot, and the divergence grows
+# The final-price revenue and StorageMerchandisingSurplus can diverge a lot, and the divergence grows
 # with look-ahead distance, because a longer look-ahead means more re-clearings touch each MTU
 # before final delivery, i.e. more chances for storage to lock in a trade at one price while the
 # market keeps moving for unrelated reasons before that MTU is finally settled. See
@@ -90,7 +90,7 @@ FinalPriceRevenue(fdd) = sum(skipmissing((fdd.StorageDischarge .- fdd.StorageCha
 # agent - MarketDataStorage.CalculateEconomicIndicators' AgentEconomicMetrics just labels the same
 # column "payments" for demand and "revenue" for generators (see PostAnalysisCommon.DEFAULT_AGENT_MAP
 # for the two agent lists), so these two sums are the demand/generator halves of the same
-# whole-market money balance StorageRent below computes the residual of.
+# whole-market money balance StorageMerchandisingSurplus below computes the residual of.
 function DemandPayments(tx)
 	demand_agents = PostAnalysisCommon.DEFAULT_AGENT_MAP[PostAnalysisCommon.AGENT_DEMAND]
 	return sum(tx[[a in demand_agents for a in tx.Agent], "Payments/Revenues (€)"])
@@ -106,23 +106,23 @@ end
 # own recorded transactions directly, is the more meaningful side of the reconciliation: it never
 # reads a single Storage-tagged transaction row, so it's an independent check on what storage was
 # actually paid rather than a restatement of its own bookkeeping.
-StorageRent(tx) = DemandPayments(tx) - GeneratorRevenue(tx)
+StorageMerchandisingSurplus(tx) = DemandPayments(tx) - GeneratorRevenue(tx)
 
 function Reconcile(case_paths, case, time_range)
 	(fdd, tx) = LoadCaseData(case_paths, case, time_range)
 	storage_tx = tx[tx.Agent .== "Storage", :]
 
 	final_price = FinalPriceRevenue(fdd)
-	rent = StorageRent(tx)
+	surplus = StorageMerchandisingSurplus(tx)
 	net_final_position = sum(skipmissing(fdd.StorageDischarge .- fdd.StorageCharge))
 	gross_traded_volume = sum(abs.(storage_tx[!, "Quantity (MWh)"]))
 
 	return (
 		Case=case,
 		FinalPriceRevenue=final_price,
-		StorageRent=rent,
-		Delta=rent - final_price,
-		DeltaPct=final_price == 0 ? NaN : 100 * (rent - final_price) / final_price,
+		StorageMerchandisingSurplus=surplus,
+		Delta=surplus - final_price,
+		DeltaPct=final_price == 0 ? NaN : 100 * (surplus - final_price) / final_price,
 		NetFinalPositionMWh=net_final_position,
 		GrossTradedVolumeMWh=gross_traded_volume,
 		NStorageTrades=nrow(storage_tx),
@@ -161,10 +161,10 @@ end
 
 function SummaryPlot(summary_df, cases, analysis_dir_path)
 	x = 1:length(cases)
-	p = Plots.plot(xlabel="Case", ylabel="Storage Revenue (€)", title="Storage revenue: final-price revenue vs storage rent",
+	p = Plots.plot(xlabel="Case", ylabel="Storage Revenue (€)", title="Storage revenue: final-price revenue vs storage merchandising surplus",
 		xticks=(x, cases), xrotation=30, legend=:outerbottom, size=(900, 480), left_margin=10Plots.mm, bottom_margin=0Plots.mm)
 	Plots.bar!(p, x .- 0.15, summary_df.FinalPriceRevenue, bar_width=0.3, label="Final-price revenue")
-	Plots.bar!(p, x .+ 0.15, summary_df.StorageRent, bar_width=0.3, label="Storage rent (demand payments - generator revenue)")
+	Plots.bar!(p, x .+ 0.15, summary_df.StorageMerchandisingSurplus, bar_width=0.3, label="Storage merchandising surplus (demand payments - generator revenue)")
 	display(p)
 	savefig(p, "$analysis_dir_path/storage_revenue_reconciliation.png")
 end
