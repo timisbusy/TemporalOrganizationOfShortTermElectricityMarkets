@@ -54,7 +54,17 @@ end
 # analyzed by one caller (see "Parallel analysis" below), so this itself needs no
 # locking - the concurrency hazard lives one level up, in the shared outputs
 # _analyze_and_write! writes into.
-function AnalyzeAlternateOptima(m::Model; obj_tol::Float64=1e-6, value_tol::Float64=0.01, exclude_prefixes::Vector{String}=String[])
+#
+# `solver_attributes` (e.g. Dict("primal_feasibility_tolerance" => 1e-10) for HiGHS) are set on `m`
+# before the sweep: an `obj_tol` below the solver's own feasibility tolerance (HiGHS default 1e-7)
+# is smaller than the solver can resolve, so the pinned re-solves fail rather than tighten. Setting
+# them is permanent for `m`, which is fine - it is only analyzed here, once. Solves that do not
+# reach OPTIMAL leave NaN in lo/hi/width; their termination statuses are tallied in a warning.
+function AnalyzeAlternateOptima(m::Model; obj_tol::Float64=1e-6, value_tol::Float64=0.01, exclude_prefixes::Vector{String}=String[], solver_attributes::Dict{String,Any}=Dict{String,Any}())
+    for (attribute, value) in solver_attributes
+        set_attribute(m, attribute, value)
+    end
+    failed_statuses = Dict{String,Int}()
     original_obj = objective_function(m)
     original_sense = objective_sense(m)
     z_star = objective_value(m)
@@ -75,16 +85,20 @@ function AnalyzeAlternateOptima(m::Model; obj_tol::Float64=1e-6, value_tol::Floa
         @objective(m, Min, x)
         optimize!(m)
         lo = termination_status(m) == MOI.OPTIMAL ? value(x) : NaN
+        termination_status(m) == MOI.OPTIMAL || (failed_statuses[string(termination_status(m))] = get(failed_statuses, string(termination_status(m)), 0) + 1)
 
         @objective(m, Max, x)
         optimize!(m)
         hi = termination_status(m) == MOI.OPTIMAL ? value(x) : NaN
+        termination_status(m) == MOI.OPTIMAL || (failed_statuses[string(termination_status(m))] = get(failed_statuses, string(termination_status(m)), 0) + 1)
 
         width = hi - lo
         vname = name(x)
         parsed = _parse_variable_name(vname)
         push!(rows, (variable=vname, family=parsed.family, asset=parsed.asset, var_mtu=parsed.mtu, lo=lo, hi=hi, width=width, non_unique=width > value_tol))
     end
+
+    isempty(failed_statuses) || @warn "alternate-optima solves that did not reach OPTIMAL (obj_tol=$obj_tol): $failed_statuses"
 
     delete(m, pin)
     set_objective_function(m, original_obj)
@@ -226,8 +240,8 @@ function _count_scheduled_jobs(markets_at_time, time_period_range, target_mtus, 
     return total
 end
 
-function _analyze_and_write!(summaries, summaries_lock, progress, m, market_name, t, results_dir, obj_tol, value_tol, exclude_prefixes, write_per_auction_files)
-    df = AnalyzeAlternateOptima(m; obj_tol=obj_tol, value_tol=value_tol, exclude_prefixes=exclude_prefixes)
+function _analyze_and_write!(summaries, summaries_lock, progress, m, market_name, t, results_dir, obj_tol, value_tol, exclude_prefixes, write_per_auction_files, solver_attributes)
+    df = AnalyzeAlternateOptima(m; obj_tol=obj_tol, value_tol=value_tol, exclude_prefixes=exclude_prefixes, solver_attributes=solver_attributes)
     df.mtu .= t
     df.market .= market_name
     (family_summary, asset_summary) = SummarizeDegeneracy(df)
@@ -255,9 +269,9 @@ function _analyze_and_write!(summaries, summaries_lock, progress, m, market_name
     return df
 end
 
-function _analysis_worker(jobs, summaries, summaries_lock, progress, results_dir, obj_tol, value_tol, exclude_prefixes, write_per_auction_files)
+function _analysis_worker(jobs, summaries, summaries_lock, progress, results_dir, obj_tol, value_tol, exclude_prefixes, write_per_auction_files, solver_attributes)
     for job in jobs
-        _analyze_and_write!(summaries, summaries_lock, progress, job.m, job.market_name, job.t, results_dir, obj_tol, value_tol, exclude_prefixes, write_per_auction_files)
+        _analyze_and_write!(summaries, summaries_lock, progress, job.m, job.market_name, job.t, results_dir, obj_tol, value_tol, exclude_prefixes, write_per_auction_files, solver_attributes)
     end
 end
 
@@ -300,7 +314,7 @@ end
 #       "src/configs/experiments/rolling_36_no_cap_1d_spinup.yaml", "full_period_scan",
 #       :full_period; solver="highs", max_workers=4, exclude_prefixes=["Qd_adj["],
 #   )
-function RunScan(config_file::String, test_id::String, target_mtus; obj_tol::Float64=1e-6, value_tol::Float64=0.01, solver::Union{Nothing,String}=nothing, exclude_prefixes::Vector{String}=String[], max_workers::Union{Nothing,Int}=nothing, queue_multiplier::Int=2, write_per_auction_files::Bool=true)
+function RunScan(config_file::String, test_id::String, target_mtus; obj_tol::Float64=1e-6, value_tol::Float64=0.01, solver::Union{Nothing,String}=nothing, exclude_prefixes::Vector{String}=String[], max_workers::Union{Nothing,Int}=nothing, queue_multiplier::Int=2, write_per_auction_files::Bool=true, solver_attributes::Dict{String,Any}=Dict{String,Any}())
     config = ClearMarket.DataImporter.load_input_data(config_file)
     if solver !== nothing
         config[:optimizationModelConfig] = get(config, :optimizationModelConfig, Dict{String,Any}())
@@ -345,7 +359,7 @@ function RunScan(config_file::String, test_id::String, target_mtus; obj_tol::Flo
     summaries_lock = ReentrantLock()
     progress = _make_progress(total_jobs)
     jobs = Channel{_AnalysisJob}(max(1, queue_multiplier * max_workers))
-    worker_tasks = [@spawn _analysis_worker(jobs, summaries, summaries_lock, progress, results_dir, obj_tol, value_tol, exclude_prefixes, write_per_auction_files) for _ in 1:max_workers]
+    worker_tasks = [@spawn _analysis_worker(jobs, summaries, summaries_lock, progress, results_dir, obj_tol, value_tol, exclude_prefixes, write_per_auction_files, solver_attributes) for _ in 1:max_workers]
 
     for t in time_period_range
         t > max_target && break
@@ -375,7 +389,7 @@ end
 # MTUs across the named market designs (defaults to all of them) - or target_mtus=:full_period
 # for the whole analyzed simulation window (see _resolve_target_mtus). Same parallel-analysis
 # design, keyword set, and pre-large-scan validation checklist as RunScan - see its docstring.
-function RunComparisonScan(config_file::String, test_id::String, target_mtus; market_names=nothing, obj_tol::Float64=1e-6, value_tol::Float64=0.01, exclude_prefixes::Vector{String}=String[], max_workers::Union{Nothing,Int}=nothing, queue_multiplier::Int=2, write_per_auction_files::Bool=true)
+function RunComparisonScan(config_file::String, test_id::String, target_mtus; market_names=nothing, obj_tol::Float64=1e-6, value_tol::Float64=0.01, exclude_prefixes::Vector{String}=String[], max_workers::Union{Nothing,Int}=nothing, queue_multiplier::Int=2, write_per_auction_files::Bool=true, solver_attributes::Dict{String,Any}=Dict{String,Any}())
     config = ClearMarket.DataImporter.load_input_data(config_file)
     resolved_solver = _resolve_solver(config)
     max_workers = something(max_workers, _default_max_workers(resolved_solver))
@@ -427,7 +441,7 @@ function RunComparisonScan(config_file::String, test_id::String, target_mtus; ma
     summaries_lock = ReentrantLock()
     progress = _make_progress(total_jobs)
     jobs = Channel{_AnalysisJob}(max(1, queue_multiplier * max_workers))
-    worker_tasks = [@spawn _analysis_worker(jobs, summaries, summaries_lock, progress, results_dir, obj_tol, value_tol, exclude_prefixes, write_per_auction_files) for _ in 1:max_workers]
+    worker_tasks = [@spawn _analysis_worker(jobs, summaries, summaries_lock, progress, results_dir, obj_tol, value_tol, exclude_prefixes, write_per_auction_files, solver_attributes) for _ in 1:max_workers]
 
     for t in time_period_range
         t > max_target && break
