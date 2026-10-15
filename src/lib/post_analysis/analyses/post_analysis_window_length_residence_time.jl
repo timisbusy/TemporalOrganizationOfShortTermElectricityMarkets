@@ -288,23 +288,29 @@ end
 # Mirrors Laura's plot_group_histograms: one subplot per case, stacked vertically, 3h-wide bins
 # over 0-72h, normalized to a discharge-share probability, no per-panel legend (the case name is
 # the panel title instead) - plus the same 24h day-boundary guide lines/ticks as the CDF plot.
+# All panels share one y-axis range so bar heights are directly comparable across window lengths.
 function PlotResidenceTimeHistograms(residence_by_case, weights_by_case, cases, analysis_dir_path)
 	bins = 0:3:72
+	hist_edges = collect(bins)
 	subplots = Any[]
 
+	# every panel's discharge-share bars are computed up front so all panels can share one y-axis
+	# upper limit (set by the tallest bar across ALL cases) - otherwise each panel autoscales to its
+	# own tallest bar and the panels can't be compared by eye
+	hist_probs_by_case = Dict{String,Vector{Float64}}()
 	for case in cases
-		residence = residence_by_case[case]
-		weights = weights_by_case[case]
-
-		hist_edges = collect(bins)
 		hist_counts = zeros(Float64, length(hist_edges) - 1)
-		for (r, w) in zip(residence, weights)
+		for (r, w) in zip(residence_by_case[case], weights_by_case[case])
 			idx = clamp(searchsortedlast(hist_edges, r), 1, length(hist_counts))
 			hist_counts[idx] += w
 		end
 		total = sum(hist_counts)
-		hist_probs = total > EPS ? hist_counts ./ total : hist_counts
-		y_upper = maximum(hist_probs; init=0.0) * 1.12 + 0.005
+		hist_probs_by_case[case] = total > EPS ? hist_counts ./ total : hist_counts
+	end
+	y_upper = maximum((maximum(p; init=0.0) for p in values(hist_probs_by_case)); init=0.0) * 1.12 + 0.005
+
+	for case in cases
+		hist_probs = hist_probs_by_case[case]
 
 		sp = Plots.bar(hist_edges[1:end-1], hist_probs, bar_width=step(bins),
 						xlabel="Residence time (h)", ylabel="Discharge share",
