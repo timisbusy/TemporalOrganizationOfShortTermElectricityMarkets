@@ -1,4 +1,4 @@
-module StorageTimeBiasedPenaltyMarketModel
+module TiebreakPenaltyMarketModel
 
 using JuMP
 using HiGHS
@@ -17,7 +17,10 @@ const gurobi_env = Gurobi.Env()
 # so, between MTUs with equal prices, the LP prefers to charge earlier and discharge later in the window. Storage stays a free
 # welfare-maximizing resource (no bids). The aim is to break the indifference between otherwise-equivalent storage schedules
 # (primal degeneracy) at negligible cost to welfare. Configured with optimizationModelConfig.storageThroughputPenalty and
-# storageTimeBias (both required, >= 0) and model: storage_time_biased_penalty.
+# storageTimeBias (both required, >= 0) and model: tiebreak_penalty.
+# The objective also subtracts a curtailment penalty (available - dispatched variable generation) per MWh, set separately for
+# solar and wind via optimizationModelConfig.solarCurtailmentPenalty and windCurtailmentPenalty (both required, >= 0), so that
+# curtailing is a (negligible-cost) last resort and ties between curtailing and not curtailing are broken towards dispatch.
 
 	# Step 2a: create lists for the variables (sets) - note the !, we are modifying the model.
 
@@ -215,12 +218,24 @@ function process_parameters!(m::Model, time_period::Int, marketresults, initiali
         m.ext[:parameters][:previous_time_period_dispatch][g] = prev_mtu_dispatch
     end
 
-    for key in ("storageThroughputPenalty", "storageTimeBias")
-        haskey(data, :optimizationModelConfig) && haskey(data[:optimizationModelConfig], key) || throw("storage_time_biased_penalty model requires optimizationModelConfig.$key")
+    for key in ("storageThroughputPenalty", "storageTimeBias", "solarCurtailmentPenalty", "windCurtailmentPenalty")
+        haskey(data, :optimizationModelConfig) && haskey(data[:optimizationModelConfig], key) || throw("tiebreak_penalty model requires optimizationModelConfig.$key")
         float(data[:optimizationModelConfig][key]) >= 0.0 || throw("optimizationModelConfig.$key must be >= 0, got $(data[:optimizationModelConfig][key])")
     end
     m.ext[:parameters][:storage_throughput_penalty] = float(data[:optimizationModelConfig]["storageThroughputPenalty"])
     m.ext[:parameters][:storage_time_bias] = float(data[:optimizationModelConfig]["storageTimeBias"])
+
+    # curtailment penalty per variable generator [EUR/MWh], matched on the generator name ("Solar" / "Wind"); other variable generators are not penalized
+    m.ext[:parameters][:curtailment_penalty] = Dict{String,Float64}()
+    for g in m.ext[:sets][:VG]
+        if occursin("Solar", g)
+            m.ext[:parameters][:curtailment_penalty][g] = float(data[:optimizationModelConfig]["solarCurtailmentPenalty"])
+        elseif occursin("Wind", g)
+            m.ext[:parameters][:curtailment_penalty][g] = float(data[:optimizationModelConfig]["windCurtailmentPenalty"])
+        else
+            m.ext[:parameters][:curtailment_penalty][g] = 0.0
+        end
+    end
 
     m.ext[:data_storage] = Dict{Symbol,Any}()
     m.ext[:data_storage][:ex_post_transactions] = haskey(data, :optimizationModelConfig) && data[:optimizationModelConfig]["ex_post_transactions"] == true
@@ -404,10 +419,17 @@ function build_market_clearing!(m::Model, time_period::Int, marketresults, initi
         ) :
         0.0
 
+    # curtailment = available variable generation not dispatched (Q_gen - Qg), penalized per MWh
+    curtailment_penalty_cost = sum(
+        m.ext[:parameters][:curtailment_penalty][g] * (Q_gen[(String(g),t)] - Qg[g,t])
+        for g in m.ext[:sets][:VG], t in OW
+    )
+
     m.ext[:objective] = @objective(m, Max,
         sum(Pr_dem[(String(d),t)] * Qd[d,t] for d in ID, t in OW) -
         sum(Pr_gen[(String(g),t)] * Qg[g,t] for g in IG, t in OW) -
-        storage_penalty_cost
+        storage_penalty_cost -
+        curtailment_penalty_cost
     )
 
 

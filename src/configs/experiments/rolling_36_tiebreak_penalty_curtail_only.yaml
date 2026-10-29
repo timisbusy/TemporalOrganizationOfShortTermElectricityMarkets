@@ -1,6 +1,6 @@
-﻿# general parameters
+# general parameters
 
-name: rolling_36_time_biased_penalty # descriptive name for experiment
+name: rolling_36_tiebreak_penalty_curtail_only # descriptive name for experiment
 
 # Set temporal parameters for experiment - granularity and duration
 timePeriodsPerDay: 24 # number of time periods in a day
@@ -31,12 +31,13 @@ agentConfig: validate_laura_agents.yaml
 
 # for optimization model customization
 optimizationModelConfig:
-  model: storage_time_biased_penalty
+  model: tiebreak_penalty
   solver: highs
   solver_method: simplex
   demand_adjust: false
   ex_post_transactions: false
   restrict_mtu1_trading: true
-  storageThroughputPenalty: 0.001 # EUR per MWh of storage charge or discharge (flat part)
-  storageTimeBias: 0.01 # extra EUR/MWh ramped linearly across the window: discharge costs more early, charge costs more late
-
+  storageThroughputPenalty: 0.0 # EUR per MWh of storage charge or discharge (flat part)
+  storageTimeBias: 0.0 # extra EUR/MWh ramped linearly across the window: discharge costs more early, charge costs more late
+  solarCurtailmentPenalty: 40 # EUR per MWh of curtailed solar
+  windCurtailmentPenalty: 20 # EUR per MWh of curtailed wind

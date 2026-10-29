@@ -1,10 +1,6 @@
-﻿# general parameters
+# general parameters
 
-name: rolling_36_time_biased_penalty_wind_tiebreak # descriptive name for experiment
-# Identical to rolling_36_no_cap_1d_spinup.yaml except for agentConfig: uses
-# validate_laura_agents_wind_tiebreak.yaml (Wind bidPrice 0.01 EUR/MWh instead of 0), to test
-# whether breaking the exact Wind/Solar zero-price tie changes how many decision variables the
-# degeneracy scan (DegeneracyScan.RunScan) finds to be non-unique.
+name: fixed_36_tiebreak_penalty # descriptive name for experiment
 
 # Set temporal parameters for experiment - granularity and duration
 timePeriodsPerDay: 24 # number of time periods in a day
@@ -28,19 +24,20 @@ windOffset: 11
 
 
 # choose a market configuration from the markets directory
-marketConfig: rolling_laura.yaml
+marketConfig: fixed_laura.yaml
 
 # choose an agent configuration from the agents directory
-agentConfig: validate_laura_agents_wind_tiebreak.yaml
+agentConfig: validate_laura_agents.yaml
 
 # for optimization model customization
 optimizationModelConfig:
-  model: storage_time_biased_penalty
+  model: tiebreak_penalty
   solver: highs
   solver_method: simplex
   demand_adjust: false
   ex_post_transactions: false
   restrict_mtu1_trading: true
-  storageThroughputPenalty: 0.001 # EUR per MWh of storage charge or discharge (flat part)
+  storageThroughputPenalty: 0.02 # EUR per MWh of storage charge or discharge (flat part)
   storageTimeBias: 0.01 # extra EUR/MWh ramped linearly across the window: discharge costs more early, charge costs more late
-
+  solarCurtailmentPenalty: 40 # EUR per MWh of curtailed solar
+  windCurtailmentPenalty: 20 # EUR per MWh of curtailed wind
