@@ -26,6 +26,28 @@ using XLSX
 using Base.Threads: nthreads, @spawn
 
 include("../market_clearers/clear_market.jl")
+include("./plot_degeneracy_single_auction.jl")
+
+# The auctions whose single-auction range plots RunScan writes by default (see RunScan's plot_auctions).
+const DEFAULT_PLOT_AUCTIONS = [251, 294]
+
+# Write PlotDegeneracySingleAuction's range plot for each given auction MTU from the per-auction
+# files already in results_dir/degeneracy, into results_dir/degeneracy_plots/MTU{t}/. Never throws:
+# a missing file or plot error is warned about so it can't cost the scan its results.
+function _plot_auctions(results_dir::String, mtus)
+    dir = "$results_dir/degeneracy"
+    for t in mtus
+        try
+            files = filter(f -> occursin(Regex("^degeneracy_.+_$(t)\\.xlsx\$"), f), readdir(dir))
+            isempty(files) && (@warn "no per-auction file for MTU $t in $dir - skipping its plot"; continue)
+            for f in files
+                PlotDegeneracySingleAuction.PerformAnalysis(joinpath(dir, f), "$results_dir/degeneracy_plots/MTU$t")
+            end
+        catch e
+            @warn "single-auction plot for MTU $t failed" exception = e
+        end
+    end
+end
 
 const MOI = MathOptInterface
 
@@ -55,57 +77,144 @@ end
 # locking - the concurrency hazard lives one level up, in the shared outputs
 # _analyze_and_write! writes into.
 #
+# Every solve is capped at `solve_time_limit` seconds (a timed-out solve counts as a failed solve).
 # `solver_attributes` (e.g. Dict("primal_feasibility_tolerance" => 1e-10) for HiGHS) are set on `m`
-# before the sweep: an `obj_tol` below the solver's own feasibility tolerance (HiGHS default 1e-7)
-# is smaller than the solver can resolve, so the pinned re-solves fail rather than tighten. Setting
-# them is permanent for `m`, which is fine - it is only analyzed here, once. Solves that do not
-# reach OPTIMAL leave NaN in lo/hi/width; their termination statuses are tallied in a warning.
-function AnalyzeAlternateOptima(m::Model; obj_tol::Float64=1e-6, value_tol::Float64=0.01, exclude_prefixes::Vector{String}=String[], solver_attributes::Dict{String,Any}=Dict{String,Any}())
+# before the sweep. Setting them is permanent for `m`, which is fine - it is only analyzed here,
+# once. HiGHS discards its stored solution when an attribute changes, so `m` is re-solved first and
+# z_star comes from that solve.
+#
+# The pin keeps the objective within max(obj_tol, obj_rel_tol * |z_star|) of z_star. Objectives
+# here are in the millions, so an absolute obj_tol of 1e-6 is below what the solver can resolve
+# and makes many of the pinned re-solves fail - pass obj_rel_tol (e.g. 1e-9) to scale the pin
+# with the objective. The tolerance actually used is recorded per row in `obj_tol_used`.
+#
+# FAILED SOLVES: a min or max solve that does not terminate OPTIMAL gives no value for that
+# variable, so its lo/hi/width are NaN and (width > value_tol being false) it would otherwise
+# look unique. That silently biases the result towards "unique", and an over-loose pin biases it
+# the other way, so every row carries `min_status`/`max_status` (the termination statuses) and
+# `solve_ok` (both OPTIMAL). Rows with solve_ok == false say nothing about uniqueness - callers
+# must count them (see _analyze_and_write! / _finish!, which report and optionally error).
+# Before a solve is declared failed it is retried under RETRY_ATTRIBUTE_SETS (HiGHS: presolve off,
+# then the interior-point solver); `retries` counts the retries a row needed, so a row with
+# retries > 0 and solve_ok == true was recovered and a row with solve_ok == false failed them all.
+#
+# TWO-TOLERANCE CHECK: a range found under a pin of tolerance T is only meaningful if it is not
+# produced by the slack T itself - with the objective in the 1e9 range any practical pin lets the
+# LP trade a few hundred MWh at a marginal cost of ~1/700 EUR/MWh, and such a width shrinks in
+# proportion to T. With `obj_rel_tol_check` set (typically obj_rel_tol / 10) each variable is swept
+# a second time under that tighter pin; `non_unique` is then true only if the width exceeds
+# value_tol under BOTH pins and does not shrink by more than half. The raw single-pin verdict is
+# kept as `non_unique_raw` and the second width as `width_check`; a failed solve in either pass
+# clears `solve_ok`.
+function AnalyzeAlternateOptima(m::Model; obj_tol::Float64=1e-6, obj_rel_tol::Float64=0.0, obj_rel_tol_check::Union{Nothing,Float64}=nothing, value_tol::Float64=0.01, exclude_prefixes::Vector{String}=String[], solver_attributes::Dict{String,Any}=Dict{String,Any}(), solve_time_limit::Float64=120.0)
+    # a pinned re-solve can stall inside the solver indefinitely (a full-period scan hung for ~1h on one) - bound every solve; a timed-out solve is reported as a failed solve (TIME_LIMIT)
+    set_time_limit_sec(m, solve_time_limit)
     for (attribute, value) in solver_attributes
         set_attribute(m, attribute, value)
     end
-    failed_statuses = Dict{String,Int}()
+    # setting any solver option (time limit included) discards the stored solution, so always re-solve before reading z_star
+    optimize!(m)
+    termination_status(m) == MOI.OPTIMAL || error("re-solve before the alternate-optima sweep did not reach OPTIMAL: $(termination_status(m))")
     original_obj = objective_function(m)
     original_sense = objective_sense(m)
     z_star = objective_value(m)
+    vars = [x for x in all_variables(m) if !any(p -> startswith(name(x), p), exclude_prefixes)]
 
-    # Pin the feasible region to solutions within obj_tol of the optimum. The
-    # model's own constraints already enforce the other side of this bound at
-    # optimality (nothing can beat z_star), so only one direction is needed here.
-    pin = if original_sense == MOI.MAX_SENSE
-        @constraint(m, original_obj >= z_star - obj_tol)
-    else
-        @constraint(m, original_obj <= z_star + obj_tol)
-    end
+    tol_primary = max(obj_tol, obj_rel_tol * abs(z_star))
+    primary = _sweep!(m, vars, original_obj, original_sense, z_star, tol_primary)
+    check = obj_rel_tol_check === nothing ? nothing : _sweep!(m, vars, original_obj, original_sense, z_star, max(obj_tol, obj_rel_tol_check * abs(z_star)))
 
     rows = NamedTuple[]
-    for x in all_variables(m)
-        any(p -> startswith(name(x), p), exclude_prefixes) && continue
-
-        @objective(m, Min, x)
-        optimize!(m)
-        lo = termination_status(m) == MOI.OPTIMAL ? value(x) : NaN
-        termination_status(m) == MOI.OPTIMAL || (failed_statuses[string(termination_status(m))] = get(failed_statuses, string(termination_status(m)), 0) + 1)
-
-        @objective(m, Max, x)
-        optimize!(m)
-        hi = termination_status(m) == MOI.OPTIMAL ? value(x) : NaN
-        termination_status(m) == MOI.OPTIMAL || (failed_statuses[string(termination_status(m))] = get(failed_statuses, string(termination_status(m)), 0) + 1)
-
-        width = hi - lo
+    for (i, x) in enumerate(vars)
         vname = name(x)
         parsed = _parse_variable_name(vname)
-        push!(rows, (variable=vname, family=parsed.family, asset=parsed.asset, var_mtu=parsed.mtu, lo=lo, hi=hi, width=width, non_unique=width > value_tol))
+        pr = primary[i]
+        width = pr.hi - pr.lo
+        raw = width > value_tol
+        solve_ok = pr.min_status == MOI.OPTIMAL && pr.max_status == MOI.OPTIMAL
+        row = (variable=vname, family=parsed.family, asset=parsed.asset, var_mtu=parsed.mtu, lo=pr.lo, hi=pr.hi, width=width)
+        if check === nothing
+            non_unique = raw
+            extra = (;)
+        else
+            ck = check[i]
+            width_check = ck.hi - ck.lo
+            solve_ok &= ck.min_status == MOI.OPTIMAL && ck.max_status == MOI.OPTIMAL
+            # a width caused by the pin's slack shrinks in proportion to the pin (ratio ~ tolerance ratio, 0.1 for
+            # a 10x tighter check), a real alternate optimum keeps it (ratio ~ 1) - 0.5 separates the two
+            persists = width_check > value_tol && width_check >= 0.5 * width
+            non_unique = raw && persists
+            extra = (width_check=width_check, non_unique_raw=raw, min_status_check=string(ck.min_status), max_status_check=string(ck.max_status))
+        end
+        push!(rows, merge(row, extra, (non_unique=non_unique, solve_ok=solve_ok, retries=pr.retries + (check === nothing ? 0 : check[i].retries), min_status=string(pr.min_status), max_status=string(pr.max_status), obj_tol_used=tol_primary)))
     end
-
-    isempty(failed_statuses) || @warn "alternate-optima solves that did not reach OPTIMAL (obj_tol=$obj_tol): $failed_statuses"
-
-    delete(m, pin)
-    set_objective_function(m, original_obj)
-    set_objective_sense(m, original_sense)
 
     return DataFrame(rows)
 end
+
+# One min/max sweep of `vars` with the objective pinned to within `tol` of z_star; returns a
+# (lo, hi, min_status, max_status) per variable and restores `m`'s objective and removes the pin.
+# HiGHS option overrides tried in turn when a pinned min/max solve does not reach OPTIMAL (the
+# default simplex path fails on a few percent of these solves with OTHER_ERROR). Each set is applied
+# for the retry only and the option's previous value is restored afterwards. Retries are HiGHS-only;
+# for any other solver a failed solve is reported as failed without retry.
+const RETRY_ATTRIBUTE_SETS = [
+    Dict{String,Any}("presolve" => "off"),
+    Dict{String,Any}("solver" => "ipm"),
+]
+
+# optimize! `m`; if it does not reach OPTIMAL, re-solve under each of `retry_sets` in turn until one does.
+# Returns (status, value of x or NaN, number_of_retries_used) - status is that of the last attempt. x's value
+# is read before the overridden options are restored, because changing a HiGHS option discards the solution.
+function _optimize_with_retry!(m::Model, x, retry_sets)
+    optimize!(m)
+    status = termination_status(m)
+    status == MOI.OPTIMAL && return (status, value(x), 0)
+    (isempty(retry_sets) || solver_name(m) != "HiGHS") && return (status, NaN, 0)
+    retries = 0
+    result = NaN
+    for attrs in retry_sets
+        previous = Dict{String,Any}(k => (try get_attribute(m, k) catch; nothing end) for k in keys(attrs))
+        for (k, v) in attrs
+            set_attribute(m, k, v)
+        end
+        optimize!(m)
+        retries += 1
+        status = termination_status(m)
+        status == MOI.OPTIMAL && (result = value(x))
+        for (k, v) in previous
+            set_attribute(m, k, v === nothing ? "choose" : v)
+        end
+        status == MOI.OPTIMAL && break
+    end
+    return (status, result, retries)
+end
+
+function _sweep!(m::Model, vars, original_obj, original_sense, z_star, tol, retry_sets=RETRY_ATTRIBUTE_SETS)
+    # The model's own constraints already enforce the other side of this bound at optimality
+    # (nothing can beat z_star), so only one direction is needed here.
+    pin = if original_sense == MOI.MAX_SENSE
+        @constraint(m, original_obj >= z_star - tol)
+    else
+        @constraint(m, original_obj <= z_star + tol)
+    end
+    out = NamedTuple[]
+    for x in vars
+        @objective(m, Min, x)
+        (min_status, lo, min_retries) = _optimize_with_retry!(m, x, retry_sets)
+
+        @objective(m, Max, x)
+        (max_status, hi, max_retries) = _optimize_with_retry!(m, x, retry_sets)
+        push!(out, (lo=lo, hi=hi, min_status=min_status, max_status=max_status, retries=min_retries + max_retries))
+    end
+    delete(m, pin)
+    set_objective_function(m, original_obj)
+    set_objective_sense(m, original_sense)
+    return out
+end
+
+# Variables whose min and/or max solve did not reach OPTIMAL - their uniqueness is unknown.
+FailedSolves(df::DataFrame) = filter(r -> !r.solve_ok, df)
 
 # Breaks down the non-unique (width > value_tol) rows of an AnalyzeAlternateOptima
 # result by variable family (Qg, Qg_adj, Qd, Qch, Qdis, SOC, ...) and, where the
@@ -165,10 +274,7 @@ end
 # RunComparisonScan's own loop regardless of how target_mtus was produced.
 function _resolve_target_mtus(target_mtus, config)
     target_mtus !== :full_period && return target_mtus
-    return range(
-        config[:timePeriodsPerDay] * config[:samplePeriodExcludeSpinUp],
-        config[:timePeriodsPerDay] * (config[:clearForDays] - config[:samplePeriodExcludeEnd]) - 1,
-    )
+    return ClearMarket.DataImporter.sample_time_range(config[:timePeriodsPerDay], config[:clearForDays], config[:samplePeriodExcludeSpinUp], config[:samplePeriodExcludeEnd])
 end
 
 _resolve_solver(config) = haskey(config, :optimizationModelConfig) && haskey(config[:optimizationModelConfig], "solver") ? lowercase(String(config[:optimizationModelConfig]["solver"])) : "gurobi"
@@ -240,17 +346,17 @@ function _count_scheduled_jobs(markets_at_time, time_period_range, target_mtus, 
     return total
 end
 
-function _analyze_and_write!(summaries, summaries_lock, progress, m, market_name, t, results_dir, obj_tol, value_tol, exclude_prefixes, write_per_auction_files, solver_attributes)
-    df = AnalyzeAlternateOptima(m; obj_tol=obj_tol, value_tol=value_tol, exclude_prefixes=exclude_prefixes, solver_attributes=solver_attributes)
+function _analyze_and_write!(summaries, summaries_lock, progress, m, market_name, t, results_dir, obj_tol, obj_rel_tol, obj_rel_tol_check, value_tol, exclude_prefixes, write_per_auction_files, solver_attributes)
+    df = AnalyzeAlternateOptima(m; obj_tol=obj_tol, obj_rel_tol=obj_rel_tol, obj_rel_tol_check=obj_rel_tol_check, value_tol=value_tol, exclude_prefixes=exclude_prefixes, solver_attributes=solver_attributes)
     df.mtu .= t
     df.market .= market_name
     (family_summary, asset_summary) = SummarizeDegeneracy(df)
+    n_failed = count(.!df.solve_ok)
 
     if write_per_auction_files
-        XLSX.writetable(
-            "$results_dir/degeneracy/degeneracy_$(market_name)_$(t).xlsx",
-            "data" => df, "by_family" => family_summary, "by_asset" => asset_summary,
-        )
+        sheets = Pair{String,DataFrame}["data" => df, "by_family" => family_summary, "by_asset" => asset_summary]
+        n_failed > 0 && push!(sheets, "failed" => FailedSolves(df)) # variables with no valid range - see AnalyzeAlternateOptima
+        XLSX.writetable("$results_dir/degeneracy/degeneracy_$(market_name)_$(t).xlsx", sheets...)
     end
 
     # Bundles the shared summaries push with this job's progress/log lines under one lock -
@@ -261,6 +367,7 @@ function _analyze_and_write!(summaries, summaries_lock, progress, m, market_name
         push!(summaries, df)
         n_non_unique = count(df.non_unique)
         println("Analyzed alternate optima for $market_name at MTU $t: $n_non_unique / $(nrow(df)) variables are non-unique (value_tol=$value_tol)")
+        n_failed > 0 && @warn "MTU $t ($market_name): $n_failed / $(nrow(df)) variables had a min/max solve that did not reach OPTIMAL - their uniqueness is UNKNOWN (counted as unique above)" statuses=_failed_status_counts(df)
         for r in eachrow(family_summary)
             println("     $(r.family): $(r.count) (MTU $(r.min_mtu)-$(r.max_mtu), widest=$(round(r.max_width, digits=2)))")
         end
@@ -269,16 +376,40 @@ function _analyze_and_write!(summaries, summaries_lock, progress, m, market_name
     return df
 end
 
-function _analysis_worker(jobs, summaries, summaries_lock, progress, results_dir, obj_tol, value_tol, exclude_prefixes, write_per_auction_files, solver_attributes)
+function _analysis_worker(jobs, summaries, summaries_lock, progress, results_dir, obj_tol, obj_rel_tol, obj_rel_tol_check, value_tol, exclude_prefixes, write_per_auction_files, solver_attributes)
     for job in jobs
-        _analyze_and_write!(summaries, summaries_lock, progress, job.m, job.market_name, job.t, results_dir, obj_tol, value_tol, exclude_prefixes, write_per_auction_files, solver_attributes)
+        _analyze_and_write!(summaries, summaries_lock, progress, job.m, job.market_name, job.t, results_dir, obj_tol, obj_rel_tol, obj_rel_tol_check, value_tol, exclude_prefixes, write_per_auction_files, solver_attributes)
     end
 end
 
-function _finish!(summaries, results_dir)
+# status -> number of min/max solves that did not reach OPTIMAL, over `df`'s failed rows
+function _failed_status_counts(df::DataFrame)
+    counts = Dict{String,Int}()
+    status_columns = intersect([:min_status, :max_status, :min_status_check, :max_status_check], propertynames(df))
+    for r in eachrow(FailedSolves(df)), col in status_columns
+        st = r[col]
+        st == "OPTIMAL" || (counts[st] = get(counts, st, 0) + 1)
+    end
+    return counts
+end
+
+# Writes the combined summary (with a "failed" sheet when any solve failed) and reports failed
+# solves for the whole scan. on_incomplete = :error additionally throws, after everything is
+# written, so a scan with unreliable results cannot be mistaken for a clean one.
+function _finish!(summaries, results_dir, on_incomplete::Symbol=:warn)
     combined = isempty(summaries) ? DataFrame() : vcat(summaries...)
     if !isempty(combined)
-        XLSX.writetable("$results_dir/degeneracy/degeneracy_summary.xlsx", "data" => combined)
+        failed = FailedSolves(combined)
+        sheets = Pair{String,DataFrame}["data" => combined]
+        isempty(failed) || push!(sheets, "failed" => failed)
+        XLSX.writetable("$results_dir/degeneracy/degeneracy_summary.xlsx", sheets...)
+        if isempty(failed)
+            println("All $(nrow(combined)) alternate-optima variable solves reached OPTIMAL (min and max) - no unreliable results.")
+        else
+            by_family = combine(groupby(failed, :family), nrow => :n)
+            msg = "INCOMPLETE SCAN: $(nrow(failed)) / $(nrow(combined)) variables ($(round(100 * nrow(failed) / nrow(combined), digits=2))%) across $(length(unique(failed.mtu))) auctions had a min/max solve that did not reach OPTIMAL, so their uniqueness is UNKNOWN and they are counted as unique in non_unique. Statuses: $(_failed_status_counts(combined)). By family: $(Dict(zip(by_family.family, by_family.n))). Details: the \"failed\" sheet of degeneracy_summary.xlsx."
+            on_incomplete == :error ? error(msg) : @warn msg
+        end
     end
     return combined
 end
@@ -314,7 +445,13 @@ end
 #       "src/configs/experiments/rolling_36_no_cap_1d_spinup.yaml", "full_period_scan",
 #       :full_period; solver="highs", max_workers=4, exclude_prefixes=["Qd_adj["],
 #   )
-function RunScan(config_file::String, test_id::String, target_mtus; obj_tol::Float64=1e-6, value_tol::Float64=0.01, solver::Union{Nothing,String}=nothing, exclude_prefixes::Vector{String}=String[], max_workers::Union{Nothing,Int}=nothing, queue_multiplier::Int=2, write_per_auction_files::Bool=true, solver_attributes::Dict{String,Any}=Dict{String,Any}())
+#
+# After the scan, PlotDegeneracySingleAuction's range plot is written for each MTU in
+# `plot_auctions` that was actually scanned (default DEFAULT_PLOT_AUCTIONS; pass Int[] for none),
+# to results/{test_id}/degeneracy_plots/MTU{t}/. A chunked scan only plots the auctions its own
+# chunk covers. A plotting failure is warned about and never affects the scan results.
+function RunScan(config_file::String, test_id::String, target_mtus; obj_tol::Float64=1e-6, obj_rel_tol::Float64=0.0, obj_rel_tol_check::Union{Nothing,Float64}=nothing, value_tol::Float64=0.01, solver::Union{Nothing,String}=nothing, exclude_prefixes::Vector{String}=String[], max_workers::Union{Nothing,Int}=nothing, queue_multiplier::Int=2, write_per_auction_files::Bool=true, solver_attributes::Dict{String,Any}=Dict{String,Any}(), on_incomplete::Symbol=:warn, plot_auctions::Vector{Int}=DEFAULT_PLOT_AUCTIONS)
+    on_incomplete in (:warn, :error) || throw(ArgumentError("on_incomplete must be :warn or :error, got $on_incomplete"))
     config = ClearMarket.DataImporter.load_input_data(config_file)
     if solver !== nothing
         config[:optimizationModelConfig] = get(config, :optimizationModelConfig, Dict{String,Any}())
@@ -359,7 +496,7 @@ function RunScan(config_file::String, test_id::String, target_mtus; obj_tol::Flo
     summaries_lock = ReentrantLock()
     progress = _make_progress(total_jobs)
     jobs = Channel{_AnalysisJob}(max(1, queue_multiplier * max_workers))
-    worker_tasks = [@spawn _analysis_worker(jobs, summaries, summaries_lock, progress, results_dir, obj_tol, value_tol, exclude_prefixes, write_per_auction_files, solver_attributes) for _ in 1:max_workers]
+    worker_tasks = [@spawn _analysis_worker(jobs, summaries, summaries_lock, progress, results_dir, obj_tol, obj_rel_tol, obj_rel_tol_check, value_tol, exclude_prefixes, write_per_auction_files, solver_attributes) for _ in 1:max_workers]
 
     for t in time_period_range
         t > max_target && break
@@ -382,14 +519,17 @@ function RunScan(config_file::String, test_id::String, target_mtus; obj_tol::Flo
     close(jobs)
     foreach(fetch, worker_tasks)
 
-    return _finish!(summaries, results_dir)
+    summary = _finish!(summaries, results_dir, on_incomplete)
+    write_per_auction_files && _plot_auctions(results_dir, [t for t in plot_auctions if t in target_mtus])
+    return summary
 end
 
 # For a comparison config (config[:marketSequences], i.e. `compare: market`), scan the given
 # MTUs across the named market designs (defaults to all of them) - or target_mtus=:full_period
 # for the whole analyzed simulation window (see _resolve_target_mtus). Same parallel-analysis
 # design, keyword set, and pre-large-scan validation checklist as RunScan - see its docstring.
-function RunComparisonScan(config_file::String, test_id::String, target_mtus; market_names=nothing, obj_tol::Float64=1e-6, value_tol::Float64=0.01, exclude_prefixes::Vector{String}=String[], max_workers::Union{Nothing,Int}=nothing, queue_multiplier::Int=2, write_per_auction_files::Bool=true, solver_attributes::Dict{String,Any}=Dict{String,Any}())
+function RunComparisonScan(config_file::String, test_id::String, target_mtus; market_names=nothing, obj_tol::Float64=1e-6, obj_rel_tol::Float64=0.0, obj_rel_tol_check::Union{Nothing,Float64}=nothing, value_tol::Float64=0.01, exclude_prefixes::Vector{String}=String[], max_workers::Union{Nothing,Int}=nothing, queue_multiplier::Int=2, write_per_auction_files::Bool=true, solver_attributes::Dict{String,Any}=Dict{String,Any}(), on_incomplete::Symbol=:warn)
+    on_incomplete in (:warn, :error) || throw(ArgumentError("on_incomplete must be :warn or :error, got $on_incomplete"))
     config = ClearMarket.DataImporter.load_input_data(config_file)
     resolved_solver = _resolve_solver(config)
     max_workers = something(max_workers, _default_max_workers(resolved_solver))
@@ -441,7 +581,7 @@ function RunComparisonScan(config_file::String, test_id::String, target_mtus; ma
     summaries_lock = ReentrantLock()
     progress = _make_progress(total_jobs)
     jobs = Channel{_AnalysisJob}(max(1, queue_multiplier * max_workers))
-    worker_tasks = [@spawn _analysis_worker(jobs, summaries, summaries_lock, progress, results_dir, obj_tol, value_tol, exclude_prefixes, write_per_auction_files, solver_attributes) for _ in 1:max_workers]
+    worker_tasks = [@spawn _analysis_worker(jobs, summaries, summaries_lock, progress, results_dir, obj_tol, obj_rel_tol, obj_rel_tol_check, value_tol, exclude_prefixes, write_per_auction_files, solver_attributes) for _ in 1:max_workers]
 
     for t in time_period_range
         t > max_target && break
@@ -466,7 +606,7 @@ function RunComparisonScan(config_file::String, test_id::String, target_mtus; ma
     close(jobs)
     foreach(fetch, worker_tasks)
 
-    return _finish!(summaries, results_dir)
+    return _finish!(summaries, results_dir, on_incomplete)
 end
 
 end;

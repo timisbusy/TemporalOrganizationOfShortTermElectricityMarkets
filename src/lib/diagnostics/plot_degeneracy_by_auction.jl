@@ -12,6 +12,9 @@ using Plots, DataFrames, XLSX
 
 const TRADED_FAMILIES = ["Qg", "Qd", "Qch", "Qdis"]
 
+# Fixed y-axis maximum so by-auction plots from different scans are directly comparable.
+const Y_MAX = 120
+
 asint(x) = x isa AbstractString ? parse(Int, x) : Int(x)
 asbool(x) = x isa AbstractString ? parse(Bool, x) : Bool(x)
 
@@ -44,7 +47,7 @@ function PlotByAuction(counts, analysis_dir_path)
 					xlabel="Auction MTU", ylabel="Non-unique variables",
 					title="Non-Unique Variables by Auction - MTU $first_auction-$last_auction",
 					marker=:circle, markersize=4, linewidth=2, color="#2a78d6", label=false,
-					xticks=first_auction:xtick_step(first_auction, last_auction):last_auction, ylims=(0, maximum(counts.n_non_unique) * 1.1),
+					xticks=first_auction:xtick_step(first_auction, last_auction):last_auction, ylims=(0, Y_MAX),
 					grid=:y, framestyle=:axes, size=(width, 600), left_margin=10Plots.mm, bottom_margin=8Plots.mm)
 	savefig(p, "$analysis_dir_path/non_unique_variables_by_auction.png")
 end
