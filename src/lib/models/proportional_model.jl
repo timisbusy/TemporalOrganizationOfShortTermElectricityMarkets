@@ -11,6 +11,14 @@ include("../helpers/helper_input_data.jl")
 const gurobi_env = Gurobi.Env()
 
 # NOTE: THIS IS A COPY OF THE FLEXIBLE MODEL with explicit handling for adjustment market periods (those for which a dispatch has already been made)
+# Differences from the latest model: optional equal-fraction wind/solar dispatch (proportional_res), and a time-biased penalty on
+# storage use in the objective. With k = position of the MTU within the optimization window (0 at the first MTU, W-1 at the last),
+# the per-MWh costs are
+#   discharge:  storageThroughputPenalty + storageTimeBias * (W-1-k)/(W-1)   (highest at the start of the window)
+#   charge:     storageThroughputPenalty + storageTimeBias * k/(W-1)         (highest at the end of the window)
+# so, between MTUs with equal prices, the LP prefers to charge earlier and discharge later in the window - breaking the indifference
+# between otherwise-equivalent storage schedules at negligible cost to welfare. Both keys are optional optimizationModelConfig
+# settings (>= 0, default 0 = no penalty). Carried over from the tiebreak_penalty model without its curtailment penalty terms.
 
 	# Step 2a: create lists for the variables (sets) - note the !, we are modifying the model.
 
@@ -208,6 +216,14 @@ function process_parameters!(m::Model, time_period::Int, marketresults, initiali
         m.ext[:parameters][:previous_time_period_dispatch][g] = prev_mtu_dispatch
     end
 
+    # time-biased storage penalty (see the objective): both optional, 0 (no penalty) when unset
+    opt_config = get(data, :optimizationModelConfig, Dict{String,Any}())
+    for key in ("storageThroughputPenalty", "storageTimeBias")
+        float(get(opt_config, key, 0.0)) >= 0.0 || throw("optimizationModelConfig.$key must be >= 0, got $(opt_config[key])")
+    end
+    m.ext[:parameters][:storage_throughput_penalty] = float(get(opt_config, "storageThroughputPenalty", 0.0))
+    m.ext[:parameters][:storage_time_bias] = float(get(opt_config, "storageTimeBias", 0.0))
+
     m.ext[:data_storage] = Dict{Symbol,Any}()
     m.ext[:data_storage][:ex_post_transactions] = haskey(data, :optimizationModelConfig) && data[:optimizationModelConfig]["ex_post_transactions"] == true
     m.ext[:data_storage][:demand_adjust] = haskey(data, :optimizationModelConfig) && data[:optimizationModelConfig]["demand_adjust"] == true
@@ -402,9 +418,21 @@ function build_market_clearing!(m::Model, time_period::Int, marketresults, initi
     end
 
 
+    # position weight w(t) in [0,1]: 0 at the first MTU of the window, 1 at the last (0 throughout a one-MTU window)
+    window_span = length(OW) - 1
+    position_weight(t) = window_span > 0 ? (t - OW[1]) / window_span : 0.0
+    storage_penalty_cost = has_storage ?
+        sum(
+            (m.ext[:parameters][:storage_throughput_penalty] + m.ext[:parameters][:storage_time_bias] * (1.0 - position_weight(t))) * Qdis[t] +
+            (m.ext[:parameters][:storage_throughput_penalty] + m.ext[:parameters][:storage_time_bias] * position_weight(t)) * Qch[t]
+            for t in OW
+        ) :
+        0.0
+
     m.ext[:objective] = @objective(m, Max,
         sum(Pr_dem[(String(d),t)] * Qd[d,t] for d in ID, t in OW) -
-        sum(Pr_gen[(String(g),t)] * Qg[g,t] for g in IG, t in OW)
+        sum(Pr_gen[(String(g),t)] * Qg[g,t] for g in IG, t in OW) -
+        storage_penalty_cost
     )
 
 
