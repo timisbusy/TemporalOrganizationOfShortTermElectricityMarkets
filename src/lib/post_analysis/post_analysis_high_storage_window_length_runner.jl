@@ -26,10 +26,12 @@ const DEFAULT_CASES = ["36h", "48h", "72h"]
 
 DefaultLabel(case_paths, cases) = "high_storage_" * PostAnalysisConventionalGenerationCost.DefaultLabel(case_paths, cases)
 
-# time_range: MTU analysis window, defaulting to the 31-day runs' (PostAnalysisCommon.DEFAULT_TIME_RANGE);
-# pass e.g. 72:8831 for the full-year 2025 runs (PostAnalysisRunner.FullYear2025Window.time_range)
-function Run(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, label=DefaultLabel(case_paths, cases), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE)
+# time_range: MTU analysis window - nothing (the default) is the window the runs' own configs define
+# (see PostAnalysisCommon.ResolveTimeRange); pass e.g. 72:8831 to override it
+# (PostAnalysisRunner.FullYear2025Window.time_range for the full-year 2025 runs)
+function Run(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, label=DefaultLabel(case_paths, cases), time_range=nothing)
 	output_base = PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=label)
+	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
 
 	PostAnalysisConventionalGenerationCost.PerformAnalysis(case_paths; cases=cases, output_base=output_base, time_range=time_range)
 	PostAnalysisPriceByHour.PerformAnalysis(case_paths; cases=cases, output_base=output_base, time_range=time_range)

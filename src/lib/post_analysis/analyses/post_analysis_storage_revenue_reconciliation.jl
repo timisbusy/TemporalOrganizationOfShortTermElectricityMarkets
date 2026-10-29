@@ -169,7 +169,9 @@ function SummaryPlot(summary_df, cases, analysis_dir_path)
 	savefig(p, "$analysis_dir_path/storage_revenue_reconciliation.png")
 end
 
-function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE, top_n_divergent=15, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label="storage_revenue_reconciliation"))
+function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; time_range=nothing, top_n_divergent=15, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label="storage_revenue_reconciliation"))
+	# nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
+	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths; output_base=output_base)
 
 	analysis_dir_path = "$output_base/storage_revenue_reconciliation"
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)

@@ -148,7 +148,7 @@ function ClearSimple(config_file, test_id)
 
 	end
 
-	test_range = range(config[:timePeriodsPerDay]*config[:samplePeriodExcludeSpinUp],config[:timePeriodsPerDay]*(config[:clearForDays] - config[:samplePeriodExcludeEnd]) - 1)
+	test_range = DataImporter.sample_time_range(config[:timePeriodsPerDay], config[:clearForDays], config[:samplePeriodExcludeSpinUp], config[:samplePeriodExcludeEnd])
 	println(test_range.start, test_range.stop)
 
 	MarketDataStorage.WriteStorageAnomalies(marketresult, config[:name], test_id)
@@ -271,7 +271,7 @@ function ClearMarketComparisonForConfig(config, test_id)
 
 	end
 
-	test_range = range(config[:timePeriodsPerDay]*config[:samplePeriodExcludeSpinUp],config[:timePeriodsPerDay]*(config[:clearForDays] - config[:samplePeriodExcludeEnd]) - 1)
+	test_range = DataImporter.sample_time_range(config[:timePeriodsPerDay], config[:clearForDays], config[:samplePeriodExcludeSpinUp], config[:samplePeriodExcludeEnd])
 	# short_test_range = range(config[:timePeriodsPerDay]*3,config[:timePeriodsPerDay]*5 - 1)
 	zoom_19_21 = range(config[:timePeriodsPerDay]*19,config[:timePeriodsPerDay]*22 - 1)
 	println(test_range.start, test_range.stop)

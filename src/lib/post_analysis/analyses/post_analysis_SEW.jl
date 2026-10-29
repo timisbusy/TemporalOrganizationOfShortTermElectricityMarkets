@@ -29,7 +29,9 @@ end
 # PostAnalysisDaily/PostAnalysisQuantitiesByAgent for that other, baseline-first convention). One
 # value column per case (in `cases` order), then one "{subject} vs {base}" String column per base
 # case.
-function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE)
+function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=nothing)
+	# nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
+	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
 
 	subject = cases[end]
 	base_cases = cases[1:end-1]

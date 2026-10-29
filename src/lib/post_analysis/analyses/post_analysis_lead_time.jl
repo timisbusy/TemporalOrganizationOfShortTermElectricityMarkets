@@ -21,9 +21,11 @@ function CleanDirectory(path)
 	mkpath(path)
 end
 
-# day_range: delivery-day indices (MTU ÷ 24, relative to the experiment's startDate) to include -
-# the default 2:30 suits the 31-day runs; pass e.g. 3:367 for the full-year 2025 runs
-function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), day_range=2:30)
+# day_range: delivery-day indices (MTU ÷ 24, relative to the experiment's startDate) to include,
+# both ends inclusive - nothing (the default) covers the days of the window the runs' own configs
+# define (see PostAnalysisCommon.ResolveTimeRange/DayRange); pass e.g. 3:367 for the full-year 2025 runs
+function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), day_range=nothing)
+	day_range === nothing && (day_range = PostAnalysisCommon.DayRange(PostAnalysisCommon.ResolveTimeRange(nothing, case_paths, cases; output_base=output_base)))
 
 	analysis_dir_path = "$output_base/lead_time_analysis"
 

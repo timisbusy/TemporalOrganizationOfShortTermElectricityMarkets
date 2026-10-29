@@ -78,7 +78,9 @@ end
 
 # case_paths/cases/output_base as in the other post-analysis modules - cases[end] is the "subject"
 # design (e.g. Rolling Horizon) compared against each preceding case, matching PostAnalysisSEW/Daily.
-function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE, start_date=Date(2024, 12, 29), mtus_per_day=24)
+function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=nothing, start_date=Date(2024, 12, 29), mtus_per_day=24)
+	# nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
+	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
 
 	analysis_dir_path = "$output_base/post_analysis_monthly"
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)

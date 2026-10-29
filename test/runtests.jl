@@ -21,3 +21,7 @@ end
 @testset "StorageMipModel Tests" begin
 	include("storage_mip_model_tests.jl")
 end
+
+@testset "Time range Tests" begin
+	include("time_range_tests.jl")
+end

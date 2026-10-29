@@ -40,7 +40,9 @@ const DEFAULT_CASES = ["36h", "48h", "72h"]
 # Windows' 260-char MAX_PATH once a filename is added on top, three window lengths deep).
 DefaultLabel(case_paths, cases) = join([c for c in cases if haskey(case_paths, c)], "_vs_")
 
-function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=DefaultLabel(case_paths, cases)), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE)
+function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=DefaultLabel(case_paths, cases)), time_range=nothing)
+	# nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
+	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
 	# kept short ("gen_cost", not "conventional_generation_cost") for the same MAX_PATH reason -
 	# see PostAnalysisPhysicalIndicators' analysis_dir_path comment.
 	analysis_dir_path = "$output_base/gen_cost"

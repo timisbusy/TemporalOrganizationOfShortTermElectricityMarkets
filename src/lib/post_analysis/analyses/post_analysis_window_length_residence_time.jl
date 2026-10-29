@@ -183,7 +183,9 @@ function WeightedQuantile(values::AbstractVector{<:Real}, weights::AbstractVecto
 	return v[end]
 end
 
-function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=PostAnalysisConventionalGenerationCost.DefaultLabel(case_paths, cases)), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE)
+function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=PostAnalysisConventionalGenerationCost.DefaultLabel(case_paths, cases)), time_range=nothing)
+	# nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
+	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
 
 	analysis_dir_path = "$output_base/residence_time"
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)

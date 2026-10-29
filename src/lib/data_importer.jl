@@ -4,6 +4,27 @@ using YAML, Dates, DataFrames, XLSX
 
 CONFIG_PATH =  "src/configs" # "../configs"
 
+# days trimmed from each end of the run when a config sets neither samplePeriodExcludeSpinUp nor samplePeriodExcludeEnd
+const DEFAULT_SAMPLE_PERIOD_EXCLUDE_DAYS = 2
+
+# The post-hoc analysis window ("test_range") in MTU: everything from `exclude_spin_up_days` days in, up to
+# `exclude_end_days` days before the end of the clearForDays range. The single definition of this window -
+# the market clearers, the degeneracy scan and the post-analysis suite all take it from here.
+function sample_time_range(time_periods_per_day::Int, clear_for_days::Int, exclude_spin_up_days::Int, exclude_end_days::Int)
+    return (time_periods_per_day * exclude_spin_up_days):(time_periods_per_day * (clear_for_days - exclude_end_days) - 1)
+end
+
+# Same window straight from a raw experiment yaml Dict (e.g. the copy in a run's Config/ folder), with the
+# same defaults load_input_data applies - no market/agent files are resolved.
+function sample_time_range(cfg::AbstractDict)
+    return sample_time_range(
+        Int(cfg["timePeriodsPerDay"]),
+        Int(cfg["clearForDays"]),
+        haskey(cfg, "samplePeriodExcludeSpinUp") ? Int(cfg["samplePeriodExcludeSpinUp"]) : DEFAULT_SAMPLE_PERIOD_EXCLUDE_DAYS,
+        haskey(cfg, "samplePeriodExcludeEnd") ? Int(cfg["samplePeriodExcludeEnd"]) : DEFAULT_SAMPLE_PERIOD_EXCLUDE_DAYS,
+    )
+end
+
 # create a market configuration object from a file
 
 function load_market_configuration(path::String, expTimePeriodsPerDay::Int)
@@ -89,8 +110,8 @@ function load_input_data(path::String)
     # than this many rows (0 = always CSV). Unset keeps the default Excel row-limit rule. CSV is streamed, so
     # it avoids the memory spike of building a very large .xlsx sheet in one go on full-year runs.
     data[:transactionsCsvAboveRows] = haskey(cfg,"transactionsCsvAboveRows") ? Int(cfg["transactionsCsvAboveRows"]) : nothing
-    data[:samplePeriodExcludeSpinUp] = haskey(cfg,"samplePeriodExcludeSpinUp") ? Int(cfg["samplePeriodExcludeSpinUp"]) : 2
-    data[:samplePeriodExcludeEnd] = haskey(cfg,"samplePeriodExcludeEnd") ? Int(cfg["samplePeriodExcludeEnd"]) : 2
+    data[:samplePeriodExcludeSpinUp] = haskey(cfg,"samplePeriodExcludeSpinUp") ? Int(cfg["samplePeriodExcludeSpinUp"]) : DEFAULT_SAMPLE_PERIOD_EXCLUDE_DAYS
+    data[:samplePeriodExcludeEnd] = haskey(cfg,"samplePeriodExcludeEnd") ? Int(cfg["samplePeriodExcludeEnd"]) : DEFAULT_SAMPLE_PERIOD_EXCLUDE_DAYS
 
     # optional wind forecast error scenario CSV (generated there if missing) and the seed used
     # to generate it - without these, ClearMarket falls back to the shared ~800 hour scenario file
@@ -163,8 +184,8 @@ function load_input_data_xlsx(path::String)
 
     data[:skipEarlyAuctions] = hasproperty(cfg_df,"Skip Early Auctions") && cfg_df[!,"Skip Early Auctions"][1] !== missing ? Int(cfg_df[!,"Skip Early Auctions"][1]) : 0
     data[:windOffset] = hasproperty(cfg_df,"Wind Offset") && cfg_df[!,"Wind Offset"][1] !== missing ? Int(cfg_df[!,"Wind Offset"][1]) : 0
-    data[:samplePeriodExcludeSpinUp] = hasproperty(cfg_df,"Sample Period Exclude Spin Up") && cfg_df[!,"Sample Period Exclude Spin Up"][1] !== missing ? Int(cfg_df[!,"Sample Period Exclude Spin Up"][1]) : 2
-    data[:samplePeriodExcludeEnd] = hasproperty(cfg_df,"Sample Period Exclude End") && cfg_df[!,"Sample Period Exclude End"][1] !== missing ? Int(cfg_df[!,"Sample Period Exclude End"][1]) : 2
+    data[:samplePeriodExcludeSpinUp] = hasproperty(cfg_df,"Sample Period Exclude Spin Up") && cfg_df[!,"Sample Period Exclude Spin Up"][1] !== missing ? Int(cfg_df[!,"Sample Period Exclude Spin Up"][1]) : DEFAULT_SAMPLE_PERIOD_EXCLUDE_DAYS
+    data[:samplePeriodExcludeEnd] = hasproperty(cfg_df,"Sample Period Exclude End") && cfg_df[!,"Sample Period Exclude End"][1] !== missing ? Int(cfg_df[!,"Sample Period Exclude End"][1]) : DEFAULT_SAMPLE_PERIOD_EXCLUDE_DAYS
 
     # optimization model selection and customization - only built when "Optimization Model" is
     # set, mirroring the YAML path's haskey(cfg, "optimizationModelConfig") gate. every subkey is

@@ -173,7 +173,9 @@ function CaseForecastErrors(case_path, time_range)
 	return (errors=errors, relative_abs_errors=relative_abs_errors)
 end
 
-function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=DefaultLabel(case_paths, cases)), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE)
+function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=DefaultLabel(case_paths, cases)), time_range=nothing)
+	# nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
+	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
 
 	analysis_dir_path = "$output_base/wind_forecast_error"
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
