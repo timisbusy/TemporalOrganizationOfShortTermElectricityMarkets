@@ -49,8 +49,12 @@ function WriteTransactions(path_without_extension, transactions)
 	end
 end
 
-# Rows, net and gross (sum of |quantity|) traded MWh, and net payments (sum of quantity * price; the sign
-# convention is the one CalculateEconomicIndicators uses for transactions) for one set of transactions.
+const AGENT_TYPE_COLUMN = "Agent Type"
+const TOTALS_FIELDS = (:rows, :net_mwh, :gross_mwh, :net_payments)
+
+# Rows, net and gross (sum of |quantity|) traded MWh, and net payments (sum of quantity * price) for one set
+# of transactions. Only meaningful within one agent type: generator, demand and storage quantities carry
+# different meanings and must not be added together.
 function SegmentTotals(transactions)
 	return (
 		rows=nrow(transactions),
@@ -60,15 +64,28 @@ function SegmentTotals(transactions)
 	)
 end
 
+const NO_TRANSACTIONS = (rows=0, net_mwh=0.0, gross_mwh=0.0, net_payments=0.0)
+
+# agent type => totals, for the agent types present in `agent_types`
+TotalsByAgentType(transactions, agent_types) = Dict(t => SegmentTotals(transactions[transactions[!, AGENT_TYPE_COLUMN] .== t, :]) for t in agent_types)
+
+# results[case][segment][agent type] => totals. Row counts are also reported over all agent types ("All");
+# the quantity and payment indicators only per agent type.
 function SummaryTable(cases, results)
 	indicators = ["Transactions", "Net traded (MWh)", "Gross traded (MWh)", "Net payments (€)"]
-	table = DataFrame("Indicator" => String[], "Segment" => String[])
+	table = DataFrame("Indicator" => String[], "Agent Type" => String[], "Segment" => String[])
 	for c in cases
 		table[!, c] = Float64[]
 	end
-	for (segment, key) in ((BALANCING, :balancing), (ENERGY, :energy), ("Total", :total))
-		for (indicator, field) in zip(indicators, (:rows, :net_mwh, :gross_mwh, :net_payments))
-			push!(table, (indicator, segment, [Float64(getproperty(results[c][key], field)) for c in cases]...))
+	agent_types = sort(unique(vcat([collect(keys(results[c]["Total"])) for c in cases]...)))
+	for agent_type in vcat("All", agent_types), (indicator, field) in zip(indicators, TOTALS_FIELDS)
+		agent_type == "All" && field != :rows && continue
+		for segment in (BALANCING, ENERGY, "Total")
+			case_values = map(cases) do c
+				by_type = results[c][segment]
+				agent_type == "All" ? Float64(sum(t.rows for t in values(by_type); init=0)) : Float64(getproperty(get(by_type, agent_type, NO_TRANSACTIONS), field))
+			end
+			push!(table, (indicator, agent_type, segment, case_values...))
 		end
 	end
 	return table
@@ -101,13 +118,13 @@ function PerformAnalysis(case_paths; cases=collect(keys(case_paths)), output_bas
 		WriteTransactions("$analysis_dir_path/transactions_energy_$slug", energy)
 		# the total comes from the unsplit transactions, so the check below can actually catch a lost or doubled row
 		in_range = time_range === nothing ? transactions : transactions[time_range.start .<= transactions[!, MTU_COLUMN] .<= time_range.stop, :]
-		total = SegmentTotals(in_range)
-		parts = (SegmentTotals(balancing), SegmentTotals(energy))
-		for field in (:rows, :net_mwh, :gross_mwh, :net_payments)
-			isapprox(getproperty(parts[1], field) + getproperty(parts[2], field), getproperty(total, field); atol=1e-6, rtol=1e-9) ||
-				throw("$c: balancing + energy $field does not equal the total")
+		agent_types = unique(in_range[!, AGENT_TYPE_COLUMN])
+		results[c] = Dict(BALANCING => TotalsByAgentType(balancing, agent_types), ENERGY => TotalsByAgentType(energy, agent_types), "Total" => TotalsByAgentType(in_range, agent_types))
+		for agent_type in agent_types, field in TOTALS_FIELDS
+			split_sum = getproperty(results[c][BALANCING][agent_type], field) + getproperty(results[c][ENERGY][agent_type], field)
+			isapprox(split_sum, getproperty(results[c]["Total"][agent_type], field); atol=1e-6, rtol=1e-9) ||
+				throw("$c: balancing + energy $field for $agent_type does not equal the total")
 		end
-		results[c] = (balancing=parts[1], energy=parts[2], total=total)
 	end
 
 	summary = SummaryTable(cases, results)

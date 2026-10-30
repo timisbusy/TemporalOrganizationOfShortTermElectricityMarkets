@@ -1,5 +1,6 @@
 using DataFrames
 using JuMP
+using XLSX
 
 # see two_stage_model_tests.jl for why ClearMarket is include-guarded
 if !isdefined(Main, :ClearMarket)
@@ -131,7 +132,7 @@ end
 			@test isfile(joinpath(out, "transactions_balancing_case_a.xlsx"))
 			@test isfile(joinpath(out, "transactions_energy_case_a.xlsx"))
 			@test isfile(joinpath(out, "balancing_energy_summary.xlsx"))
-			rows(segment) = summary[(summary.Indicator .== "Transactions") .& (summary.Segment .== segment), "Case A"][1]
+			rows(segment) = summary[(summary.Indicator .== "Transactions") .& (summary."Agent Type" .== "All") .& (summary.Segment .== segment), "Case A"][1]
 			@test rows("Balancing") + rows("Energy") == rows("Total") == nrow(tx)
 		end
 	end
