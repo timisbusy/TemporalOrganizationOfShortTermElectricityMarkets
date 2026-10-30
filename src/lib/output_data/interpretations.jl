@@ -17,7 +17,8 @@ DecisionVariablesInterpretation = DataFrame([
 	(DataPoint="Wind", Interpretation="Wind generator dispatch quantity (MWh)"),
 	(DataPoint="Solar", Interpretation="Solar generator dispatch quantity (MWh)"),
 	(DataPoint="Q_{Agent}", Interpretation="Agent bid quantity (MWh)"),
-	(DataPoint="P_{Agent}", Interpretation="Agent bid price (€)")
+	(DataPoint="P_{Agent}", Interpretation="Agent bid price (€)"),
+	(DataPoint="Segment", Interpretation="Balancing for the first MTU of a clearing whose restrict_mtu1_trading lock was applied (the balancing market), otherwise Energy. final_dispatch_decisions_energy holds only Energy rows: for an MTU delivered via a balancing row, the last clearing that traded it as an energy MTU")
 	])
 
 TransactionsInterpretation = DataFrame([

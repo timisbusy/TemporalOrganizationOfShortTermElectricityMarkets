@@ -137,3 +137,57 @@ end
 		end
 	end
 end
+
+if !isdefined(Main, :BalancingEnergySEW)
+	include("../src/lib/post_analysis/balancing_energy/balancing_energy_sew.jl")
+end
+
+@testset "Energy-only final dispatch decisions and SEW by segment" begin
+	container = clear_sequence(LatestMarketModel.build, balancing_segment_fixture(restrict=true))
+	final = MarketDataStorage.GetFinalDispatchDecisions(container)
+	energy = MarketDataStorage.GetEnergyFinalDispatchDecisions(container)
+	tx = MarketDataStorage.GetTransactions(container)
+	agents = ["D", "3G_Base", "4G_Shoulder", "5G_Peak", "7G_Solar"]
+
+	@testset "decision variables carry the Segment of each row" begin
+		# clearing t >= 1 locks its first MTU t, so the final row of every delivered MTU t >= 1 is a balancing row
+		@test all(r.Segment == (r.mtu in (1, 2) ? "Balancing" : "Energy") for r in eachrow(final))
+	end
+
+	@testset "energy table has one row per MTU, none of them balancing" begin
+		@test sort(energy.mtu) == sort(final.mtu)
+		@test all(energy.Segment .== "Energy")
+		@test "FinalAuctionPrice" in names(energy)
+	end
+
+	@testset "energy row of a balancing MTU is the dispatch from before the balancing clearing" begin
+		for mtu in (1, 2), agent in agents
+			@test energy[energy.mtu .== mtu, agent][1] ≈ final[final.mtu .== mtu, "Q_prev_$agent"][1]
+		end
+		# an MTU that was never a balancing MTU is unchanged
+		for agent in agents
+			@test energy[energy.mtu .== 0, agent][1] ≈ final[final.mtu .== 0, agent][1]
+		end
+	end
+
+	@testset "an MTU with only balancing rows is rejected" begin
+		only_balancing = [DataFrame(mtu=[5], price=[1.0], Segment=["Balancing"])]
+		@test_throws String MarketDataStorage.EnergyFinalDispatchDecisions(only_balancing)
+		@test_throws String MarketDataStorage.EnergyFinalDispatchDecisions([DataFrame(mtu=[5], price=[1.0])])
+	end
+
+	@testset "SEW by segment reconciles" begin
+		E = BalancingEnergySEW
+		agent_map = Dict(E.HelperModelResults.AGENT_DEMAND => ["D"], E.HelperModelResults.AGENT_GENERATOR => ["3G_Base", "4G_Shoulder", "5G_Peak", "7G_Solar"])
+		result = E.SewBySegment(final, energy, tx, agent_map, 0:4) # throws if energy + balancing != total
+		sew = result.values[result.indicator_names[1]]
+		@test sew["Total"] ≈ sew["Energy"] + sew["Balancing"]
+		# demand rises by 4 at each of the two balancing MTUs, bid 100, covered by the peaker at 80
+		@test sew["Balancing"] ≈ 2 * 4 * (100 - 80)
+		@test ismissing(result.values[result.indicator_names[7]]["Energy"]) && ismissing(result.values[result.indicator_names[7]]["Balancing"]) # imbalance energy: Total only
+		@test ismissing(result.values["Mean Final Auction Price (€/MWh)"]["Balancing"])
+
+		# runs from before the Segment column are rejected
+		@test_throws String E.SewBySegment(select(final, Not(:Segment)), energy, tx, agent_map, 0:4)
+	end
+end
