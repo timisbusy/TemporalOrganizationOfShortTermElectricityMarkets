@@ -28,6 +28,7 @@ TransactionsInterpretation = DataFrame([
 	(DataPoint="Market Time Unit", Interpretation="Market Time Unit for which energy is dispatched, counted from beginning of experiment period"), 
 	(DataPoint="Clearing MTU", Interpretation="Market Time Unit in which this market was held (gate closure), counted from beginning of experiment period"), 
 	(DataPoint="Agent Type", Interpretation="Identifies the type of agent - Demand, Generator, or Storage"), 
+	(DataPoint="Segment", Interpretation="Balancing for the first MTU of a clearing whose restrict_mtu1_trading lock was applied (the balancing market), otherwise Energy"),
 	(DataPoint="Payments/Revenues (€)", Interpretation="Payments or revenues for transaction i.e., Quantity*Price (€)")
 	])
 

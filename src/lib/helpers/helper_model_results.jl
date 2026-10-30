@@ -225,7 +225,19 @@ mutable struct Transaction
 	ClearingMTU::Int
 	TimesCleared::Int
 	AgentType::AgentTypeEnum
+	Segment::String
 	Transaction() = new()
+end
+
+# Which market a transaction belongs to: the first MTU of a clearing whose model applied the
+# restrict_mtu1_trading lock (marketresult.LockedMTU1, set from the model's own m.ext[:locked_mtu1])
+# is the balancing market, every other MTU - and every MTU of an unlocked clearing - the energy market.
+const SEGMENT_BALANCING = "Balancing"
+const SEGMENT_ENERGY = "Energy"
+
+function TransactionSegment(marketresult, mtu)
+	locked_mtu1 = isdefined(marketresult, :LockedMTU1) ? marketresult.LockedMTU1 : nothing
+	return locked_mtu1 !== nothing && mtu == locked_mtu1 ? SEGMENT_BALANCING : SEGMENT_ENERGY
 end
 
 # compare clearing outcomes with previous clearings to generate a set of transactions
@@ -345,13 +357,14 @@ function Transactions(marketresult, previous_dispatch, market_name, resultset, m
 		end
 	end
 
-	transactions_df = DataFrame(MarketName=String[], Agent=String[], Quantity=Float64[], Price=Float64[], MTU=Int[], ClearingMTU=Int[], TimesCleared=Int[], AgentType=String[])
+	transactions_df = DataFrame(MarketName=String[], Agent=String[], Quantity=Float64[], Price=Float64[], MTU=Int[], ClearingMTU=Int[], TimesCleared=Int[], AgentType=String[], Segment=String[])
 	for t in transactions
-		push!(transactions_df, [t.MarketName, t.Agent, t.Quantity, t.Price, t.MTU, t.ClearingMTU, t.TimesCleared, string(Symbol(t.AgentType))])
+		t.Segment = TransactionSegment(marketresult, t.MTU)
+		push!(transactions_df, [t.MarketName, t.Agent, t.Quantity, t.Price, t.MTU, t.ClearingMTU, t.TimesCleared, string(Symbol(t.AgentType)), t.Segment])
 	end
 
-	long_names = ["Market Name", "Agent", "Quantity (MWh)", "Price (€/MWh)", "Market Time Unit", "Clearing MTU", "Times Cleared", "Agent Type"]
-	short_names = ["MarketName", "Agent", "Quantity", "Price", "MTU", "ClearingMTU", "TimesCleared", "AgentType"]
+	long_names = ["Market Name", "Agent", "Quantity (MWh)", "Price (€/MWh)", "Market Time Unit", "Clearing MTU", "Times Cleared", "Agent Type", "Segment"]
+	short_names = ["MarketName", "Agent", "Quantity", "Price", "MTU", "ClearingMTU", "TimesCleared", "AgentType", "Segment"]
 	rename!(transactions_df, short_names .=> long_names)
 
 	adjustment_anomalies_df = DataFrame(MarketName=String[], Agent=String[], AgentType=String[], MTU=Int[], ClearingMTU=Int[], AdjustmentQ=Float64[], ExpectedAdjustmentQ=Float64[], Diff=Float64[])

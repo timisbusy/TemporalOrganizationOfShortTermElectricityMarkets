@@ -25,3 +25,7 @@ end
 @testset "Time range Tests" begin
 	include("time_range_tests.jl")
 end
+
+@testset "BalancingSegment Tests" begin
+	include("balancing_segment_tests.jl")
+end

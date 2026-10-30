@@ -404,10 +404,14 @@ function build_market_clearing!(m::Model, time_period::Int, marketresults, initi
     if haskey(data, :optimizationModelConfig) && data[:optimizationModelConfig]["restrict_mtu1_trading"] == true && !market[:overrideMTU1Restriction]
 
         # TAtoLLD Change 1: replicate Laura's limit on trading for base/shoulder/solar in the first MTU
-        if length(marketresults.Results) != 0 && time_period == start_at_period
+        if length(marketresults.Results) != 0
+            # the balancing/energy split of the results (MarketDataStorage Segment) treats a locked window's first MTU as the
+            # balancing market, which only holds when that MTU is the clearing MTU itself
+            time_period == start_at_period || error("restrict_mtu1_trading lock requires the optimization window to start at the clearing MTU, but the clearing at $time_period starts its window at $start_at_period")
             for g in ["3G_Base", "4G_Shoulder", "7G_Solar"]
                 @constraint(m, Qg_adj[g,start_at_period] == 0)
             end
+            m.ext[:locked_mtu1] = start_at_period
         end
     end
 

@@ -1,0 +1,99 @@
+using DataFrames
+using JuMP
+
+# see two_stage_model_tests.jl for why ClearMarket is include-guarded
+if !isdefined(Main, :ClearMarket)
+	include("../src/lib/market_clearers/clear_market.jl")
+end
+using .ClearMarket.MarketDataStorage
+using .ClearMarket.LatestMarketModel
+using .ClearMarket.TwoStageMarketModel
+using .ClearMarket.StorageMipMarketModel
+
+# the restrict_mtu1_trading lock names these three generators, so the fixture has to define them
+function balancing_segment_fixture(; restrict, override=false, look_ahead=0)
+	demand_profile = DataFrame(mtu=0:20, Value=fill(8.0, 21))
+	solar_profile = DataFrame(mtu=0:20, Value=fill(1.0, 21))
+	data = Dict{Symbol,Any}(
+		:dispatchableGenerators => Dict{String,Any}(
+			"3G_Base" => Dict{String,Any}("bidPrice" => 20.0, "capacity" => 10.0, "rampRate" => 100.0, "initialQuantity" => 0.0, "emissionFactor" => 500.0),
+			"4G_Shoulder" => Dict{String,Any}("bidPrice" => 50.0, "capacity" => 10.0, "rampRate" => 100.0, "initialQuantity" => 0.0, "emissionFactor" => 500.0),
+			# not named in the lock, so it can cover the demand increase in a locked first MTU
+			"5G_Peak" => Dict{String,Any}("bidPrice" => 80.0, "capacity" => 10.0, "rampRate" => 100.0, "initialQuantity" => 0.0, "emissionFactor" => 500.0),
+		),
+		:variableGenerators => Dict{String,Any}("7G_Solar" => Dict{String,Any}("bidPrice" => 0.0, "capacity" => 2.0, "profile" => solar_profile)),
+		:demandSegments => Dict{String,Any}("D" => Dict{String,Any}("bidPrice" => 100.0, "profile" => demand_profile)),
+		:batteryStorage => Dict{String,Any}("energyCapacity" => 0.0, "powerCapacity" => 0.0, "efficiency" => 0.9, "initialSOC" => 0.0, "endSOC" => 0.0),
+		:timePeriodsPerDay => 24,
+		:windOffset => 0,
+		:optimizationModelConfig => Dict{String,Any}("demand_adjust" => true, "ex_post_transactions" => false, "restrict_mtu1_trading" => restrict),
+	)
+	initialization = Dict(:SOC => 0.0, :Q_gen => Dict("3G_Base" => 0.0, "4G_Shoulder" => 0.0, "5G_Peak" => 0.0, "7G_Solar" => 0.0))
+	market = Dict{Symbol,Any}(:name => "TestMarket", :lookAheadDistance => look_ahead, :optimizationWindow => 3, :enforceRampRates => false, :overrideMTU1Restriction => override)
+	return (data, initialization, market, demand_profile)
+end
+
+# clears t = 0, 1, 2 with the given model builder, returns the container. Demand rises at each later
+# clearing's first MTU, which the locked generators can't follow - so something has to trade in the
+# balancing MTU.
+function clear_sequence(build, fixture; times=0:2)
+	(data, initialization, market, demand_profile) = fixture
+	container = MarketDataStorage.MakeMarketResultContainer()
+	for t in times
+		t > 0 && (demand_profile[demand_profile.mtu .== t, :Value] .= 12.0)
+		m = build(t, container, initialization, data, market)
+		optimize!(m)
+		MarketDataStorage.AddMarketResult!(container, m, t, "TestMarket")
+	end
+	return container
+end
+
+models = [("LatestMarketModel", LatestMarketModel.build), ("TwoStageMarketModel", TwoStageMarketModel.build), ("StorageMipMarketModel", StorageMipMarketModel.build)]
+
+for (model_name, build) in models
+	@testset "Balancing/energy segment: $model_name" begin
+
+		@testset "locked run tags the first MTU of every clearing after the first" begin
+			fixture = balancing_segment_fixture(restrict=true)
+			container = clear_sequence(build, fixture)
+
+			# the first clearing has nothing to lock against; later ones lock their first MTU
+			@test [mr.LockedMTU1 for mr in container.Results] == [nothing, 1, 2]
+
+			tx = MarketDataStorage.GetTransactions(container)
+			@test "Segment" in names(tx)
+			@test names(tx)[end] == "Segment"
+			@test Set(tx.Segment) <= Set(["Balancing", "Energy"])
+
+			# Balancing is exactly the rows at the clearing MTU of a locked clearing
+			balancing = tx[tx.Segment .== "Balancing", :]
+			@test nrow(balancing) > 0
+			@test all(balancing[!, "Market Time Unit"] .== balancing[!, "Clearing MTU"])
+			@test all(balancing[!, "Clearing MTU"] .> 0)
+			locked_rows = (tx[!, "Market Time Unit"] .== tx[!, "Clearing MTU"]) .& (tx[!, "Clearing MTU"] .> 0)
+			@test (tx.Segment .== "Balancing") == locked_rows
+
+			# the lock itself: the locked generators make no adjustment in their balancing rows
+			@test !any(in.(balancing.Agent, Ref(["3G_Base", "4G_Shoulder", "7G_Solar"])))
+
+			# partition: balancing and energy together are every transaction, none twice
+			energy = tx[tx.Segment .== "Energy", :]
+			@test nrow(balancing) + nrow(energy) == nrow(tx)
+			@test sum(balancing[!, "Quantity (MWh)"]) + sum(energy[!, "Quantity (MWh)"]) ≈ sum(tx[!, "Quantity (MWh)"])
+		end
+
+		@testset "unlocked runs are all Energy" begin
+			for fixture in (balancing_segment_fixture(restrict=false), balancing_segment_fixture(restrict=true, override=true))
+				container = clear_sequence(build, fixture)
+				@test all(isnothing, [mr.LockedMTU1 for mr in container.Results])
+				@test all(MarketDataStorage.GetTransactions(container).Segment .== "Energy")
+			end
+		end
+
+		@testset "a lock with a window that does not start at the clearing MTU fails loudly" begin
+			fixture = balancing_segment_fixture(restrict=true, look_ahead=2)
+			# the first clearing is never locked, so the failure comes with the second
+			@test_throws ErrorException clear_sequence(build, fixture)
+		end
+	end
+end
