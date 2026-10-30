@@ -43,8 +43,8 @@ function SimulationTimingFor(config_path)
 	# this is independent of skipEarlyAuctions/lastAuctionMTU, and can fall outside the auction
 	# range entirely (e.g. samplePeriodExcludeEnd: 0 doesn't know about lastAuctionMTU, so the
 	# validation config's test_range reaches well past its actual last auction)
-	test_range_start = config[:timePeriodsPerDay] * config[:samplePeriodExcludeSpinUp]
-	test_range_stop = config[:timePeriodsPerDay] * (config[:clearForDays] - config[:samplePeriodExcludeEnd]) - 1
+	test_range = DataImporter.sample_time_range(config[:timePeriodsPerDay], config[:clearForDays], config[:samplePeriodExcludeSpinUp], config[:samplePeriodExcludeEnd])
+	test_range_start, test_range_stop = test_range.start, test_range.stop
 
 	# the two ranges post_analysis_laura_kpis.jl actually analyzes: "executed hours" is the h=1
 	# transaction of every auction (skip_early_auctions:last_mtu_simulation - identical to the

@@ -26,7 +26,9 @@ INTERVAL_INDICATORS = [
 # substance (subject=cases[2]=Rolling Horizon, the sole base=cases[1]=Fixed Horizon, matching the
 # previous hardcoded "Rolling Horizon" - "Fixed Horizon" behavior), only the file names gained a
 # suffix they didn't need before.
-function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE, imbalance_agents=PostAnalysisCommon.DEFAULT_IMBALANCE_AGENTS)
+function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=nothing, imbalance_agents=PostAnalysisCommon.DEFAULT_IMBALANCE_AGENTS)
+	# nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
+	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
 
 	subject = cases[end]
 	base_cases = cases[1:end-1]

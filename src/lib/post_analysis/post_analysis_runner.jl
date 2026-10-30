@@ -98,10 +98,12 @@ const FullYear2025Window = (
 # modules write into one shared, never-overwritten results/post_analysis/{timestamp}_{label}/
 # directory for this Run call (see PostAnalysisCommon.NewAnalysisOutputDir) - label defaults to one
 # derived from case_paths itself.
-# The window keywords default to the 31-day run layout (the values these modules used to hardcode);
-# pass them for a different run length - see FullYear2025Window below for the full-year 2025 runs:
-#   time_range - MTU analysis window (see PostAnalysisCommon.DEFAULT_TIME_RANGE)
-#   day_range - delivery-day indices for the lead-time/storage analyses
+# The window keywords default to nothing: the MTU window is derived from the runs' own configs
+# (samplePeriodExcludeSpinUp/End - see PostAnalysisCommon.ResolveTimeRange), and the day ranges from
+# that window. Pass them to override - see FullYear2025Window below for the full-year 2025 runs:
+#   time_range - MTU analysis window
+#   day_range - delivery-day indices for the lead-time analysis (default: the days time_range covers)
+#   storage_day_range - the same for the storage analysis
 #   highlight_days - (label, day index) pairs PostAnalysisDaily plots hour-by-hour
 #   illustrative_day - day PostAnalysisPrices plots price evolution for (nothing = its own default)
 #   clearing_mtus - clearings PostAnalysisAuctionSnapshots plots
@@ -109,9 +111,12 @@ const FullYear2025Window = (
 #     (month-by-month roll-up) - left as nothing for the 31-day runs, which span a single month
 function Run(case_paths=PostAnalysisCommon.DEFAULT_CASE_PATHS; cases=PostAnalysisCommon.CASES, label=PostAnalysisCommon.DefaultAnalysisLabel(case_paths, cases),
 	storage_revenue_case_paths=REGULAR_STORAGE_REVENUE_CASE_PATHS,
-	time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE, day_range=2:30, storage_day_range=2:29, highlight_days=[("May 4", 3), ("May 5", 4)],
+	time_range=nothing, day_range=nothing, storage_day_range=nothing, highlight_days=[("May 4", 3), ("May 5", 4)],
 	illustrative_day=nothing, clearing_mtus=PostAnalysisAuctionSnapshots.DEFAULT_CLEARING_MTUS, monthly_start_date=nothing)
 	output_base = PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=label)
+	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
+	day_range = day_range === nothing ? PostAnalysisCommon.DayRange(time_range) : day_range
+	storage_day_range = storage_day_range === nothing ? PostAnalysisCommon.DayRange(time_range) : storage_day_range
 
 	PostAnalysisLeadTime.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base, day_range=day_range)
 

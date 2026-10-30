@@ -13,11 +13,14 @@ include("../agent_renaming.jl")
 
 quantitySymbol = Symbol("Quantity (MWh)")
 
-# time_range: MTU window the daily SEW/driver statistics cover (see PostAnalysisCommon.DEFAULT_TIME_RANGE).
+# time_range: MTU window the daily SEW/driver statistics cover - nothing (the default) is the window the
+# runs' own configs define (see PostAnalysisCommon.ResolveTimeRange).
 # highlight_days: (label, day index) pairs to plot hour-by-hour; day index d spans MTU [24d, 24d+23]
 # and maps to calendar date startDate + d days - with startDate: 2025-05-01 (day 0 = May 1), May 4
 # is day index 3 and May 5 is day index 4 (the default). Each highlighted day must lie inside time_range.
-function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE, highlight_days=[("May 4", 3), ("May 5", 4)])
+function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=nothing, highlight_days=[("May 4", 3), ("May 5", 4)])
+    # nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
+    time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
 
     analysis_dir_path = "$output_base/post_analysis_daily"
 
@@ -56,7 +59,7 @@ end
 # not read from the pre-exported mtu_economic_results.xlsx - that export was written without
 # imbalance_agents set, so it has no real Imbalance Energy figures (see AnalyzeDrivers' imbalance
 # driver plot, which needs them).
-function GetMTUEconomicIndicators(cases, case_paths, time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE)
+function GetMTUEconomicIndicators(cases, case_paths, time_range=nothing)
     inds = Dict{String,Any}()
     for case in cases
         (economic_indicators, agent_indicators, transactions, finalDispatchDecisions, mtu_economic_indicators) = PostAnalysisCommon.CalculateCaseIndicators(case_paths, case; time_range=time_range, imbalance_agents=PostAnalysisCommon.DEFAULT_IMBALANCE_AGENTS)

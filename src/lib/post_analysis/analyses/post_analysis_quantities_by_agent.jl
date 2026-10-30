@@ -11,7 +11,9 @@ generator_names = ["3G_Base","4G_Shoulder","5G_Peak","6G_Wind","7G_Solar"]
 quantitySymbol = Symbol("Quantity (MWh)")
 surplusSymbol = Symbol("Surplus (€)")
 
-function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE)
+function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=nothing)
+	# nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
+	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
 
 	analysis_dir_path = "$output_base/post_analysis_quantities_by_agent"
 

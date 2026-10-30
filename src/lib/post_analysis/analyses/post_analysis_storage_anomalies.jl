@@ -66,7 +66,9 @@ function LoadStorageAnomalies(case_path, time_range)
 	return (instances, round(overlap_mwh; digits=2))
 end
 
-function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=DEFAULT_LABEL), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE)
+function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=DEFAULT_LABEL), time_range=nothing)
+	# nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
+	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
 	analysis_dir_path = "$output_base/storage_anomalies"
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 
