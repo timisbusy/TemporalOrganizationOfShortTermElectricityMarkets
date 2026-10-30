@@ -97,3 +97,42 @@ for (model_name, build) in models
 		end
 	end
 end
+
+if !isdefined(Main, :BalancingEnergySplit)
+	include("../src/lib/post_analysis/balancing_energy/balancing_energy_split.jl")
+end
+
+@testset "BalancingEnergySplit analysis" begin
+	container = clear_sequence(LatestMarketModel.build, balancing_segment_fixture(restrict=true))
+	tx = MarketDataStorage.GetTransactions(container)
+
+	@testset "SplitSegments partitions the transactions" begin
+		(balancing, energy) = BalancingEnergySplit.SplitSegments(tx)
+		@test nrow(balancing) > 0 && nrow(energy) > 0
+		@test nrow(balancing) + nrow(energy) == nrow(tx)
+		@test all(balancing.Segment .== "Balancing") && all(energy.Segment .== "Energy")
+
+		(b2, e2) = BalancingEnergySplit.SplitSegments(tx; time_range=1:1)
+		@test all(vcat(b2, e2)[!, "Market Time Unit"] .== 1)
+	end
+
+	@testset "runs without a Segment column are rejected" begin
+		@test_throws String BalancingEnergySplit.SplitSegments(select(tx, Not("Segment")))
+	end
+
+	@testset "PerformAnalysis writes the split tables and a summary" begin
+		mktempdir() do dir
+			case_path = joinpath(dir, "case")
+			mkpath(case_path)
+			XLSX.writetable(joinpath(case_path, "transactions.xlsx"), "data" => tx)
+			output_base = joinpath(dir, "out")
+			summary = BalancingEnergySplit.PerformAnalysis(Dict("Case A" => case_path); output_base=output_base)
+			out = joinpath(output_base, "post_analysis_balancing_energy_split")
+			@test isfile(joinpath(out, "transactions_balancing_case_a.xlsx"))
+			@test isfile(joinpath(out, "transactions_energy_case_a.xlsx"))
+			@test isfile(joinpath(out, "balancing_energy_summary.xlsx"))
+			rows(segment) = summary[(summary.Indicator .== "Transactions") .& (summary.Segment .== segment), "Case A"][1]
+			@test rows("Balancing") + rows("Energy") == rows("Total") == nrow(tx)
+		end
+	end
+end
