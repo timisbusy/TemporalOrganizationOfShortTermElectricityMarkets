@@ -36,9 +36,13 @@ const ADDITIVE_INDICATOR_POSITIONS = [1, 2, 3, 4, 5] # SEW, demand utility, prod
 const STORAGE_REVENUE_POSITION = 6
 const IMBALANCE_POSITION = 7
 
-# Balancing-side SEW, surpluses and storage revenue, read from the balancing transactions and the balancing
-# rows of final_dispatch_decisions (restricted to time_range, by delivery MTU).
-function BalancingIndicators(final_dispatch_decisions, transactions, agent_map, time_range)
+# The two per-agent building blocks of every balancing-side indicator, read from the balancing transactions
+# and the balancing rows of final_dispatch_decisions (restricted to time_range, by delivery MTU):
+#   bid_valued(agent) - sum of (adjustment quantity) * (bid price at that MTU): demand utility for a demand
+#                       agent, fuel cost for a generator
+#   cash(agent)       - sum of quantity * price over the agent's balancing transactions: payments for a demand
+#                       agent, revenue for a generator
+function BalancingTerms(final_dispatch_decisions, transactions, time_range)
 	in_range(mtus) = time_range.start .<= mtus .<= time_range.stop
 	balancing_rows = final_dispatch_decisions[in_range(final_dispatch_decisions.mtu) .& (final_dispatch_decisions.Segment .== BalancingEnergySplit.BALANCING), :]
 	balancing_tx = transactions[in_range(transactions[!, BalancingEnergySplit.MTU_COLUMN]) .& (transactions[!, BalancingEnergySplit.SEGMENT_COLUMN] .== BalancingEnergySplit.BALANCING), :]
@@ -55,7 +59,12 @@ function BalancingIndicators(final_dispatch_decisions, transactions, agent_map, 
 		return total
 	end
 	cash(agent) = sum(tx -> tx[BalancingEnergySplit.QUANTITY_COLUMN] * tx[BalancingEnergySplit.PRICE_COLUMN], eachrow(balancing_tx[balancing_tx.Agent .== agent, :]); init=0.0)
+	return (bid_valued=bid_valued, cash=cash)
+end
 
+# Balancing-side SEW, surpluses and storage revenue (see BalancingTerms)
+function BalancingIndicators(final_dispatch_decisions, transactions, agent_map, time_range)
+	(; bid_valued, cash) = BalancingTerms(final_dispatch_decisions, transactions, time_range)
 	demand_utility = sum(bid_valued, agent_map[HelperModelResults.AGENT_DEMAND]; init=0.0)
 	production_costs = sum(bid_valued, agent_map[HelperModelResults.AGENT_GENERATOR]; init=0.0)
 	payments = sum(cash, agent_map[HelperModelResults.AGENT_DEMAND]; init=0.0)

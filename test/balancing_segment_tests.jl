@@ -191,3 +191,48 @@ end
 		@test_throws String E.SewBySegment(select(final, Not(:Segment)), energy, tx, agent_map, 0:4)
 	end
 end
+
+if !isdefined(Main, :BalancingEnergySurpluses)
+	include("../src/lib/post_analysis/balancing_energy/balancing_energy_surpluses.jl")
+end
+
+@testset "Per-agent surplus by segment" begin
+	S = BalancingEnergySurpluses
+	container = clear_sequence(LatestMarketModel.build, balancing_segment_fixture(restrict=true))
+	final = MarketDataStorage.GetFinalDispatchDecisions(container)
+	energy = MarketDataStorage.GetEnergyFinalDispatchDecisions(container)
+	tx = MarketDataStorage.GetTransactions(container)
+	agent_map = Dict(S.HelperModelResults.AGENT_DEMAND => ["D"], S.HelperModelResults.AGENT_GENERATOR => ["3G_Base", "4G_Shoulder", "5G_Peak", "7G_Solar"])
+	agents = ["D", "3G_Base", "4G_Shoulder", "5G_Peak", "7G_Solar"]
+
+	result = S.AgentSurplusBySegment(final, energy, tx, agent_map, 0:4; agents=agents) # throws if energy + balancing != total per agent
+
+	@testset "per-agent surpluses add up" begin
+		for agent in agents
+			@test result[agent]["Energy"] + result[agent]["Balancing"] ≈ result[agent]["Total"]
+		end
+	end
+
+	@testset "the locked generators have no balancing surplus" begin
+		for agent in ["3G_Base", "4G_Shoulder", "7G_Solar"]
+			@test result[agent]["Balancing"] == 0.0
+		end
+	end
+
+	@testset "demand gets the balancing welfare, the peaker is price-setting" begin
+		# +4 MWh at bid 100 served by the peaker at 80, at two balancing MTUs; the peaker sets the 80 price
+		@test result["D"]["Balancing"] ≈ 2 * 4 * (100 - 80)
+		@test result["5G_Peak"]["Balancing"] ≈ 0.0 atol=1e-6
+	end
+
+	@testset "table has Total/Energy/Balancing per case and no Balancing % Diff" begin
+		table = S.SurplusTable(["Base", "Subject"], Dict("Base" => result, "Subject" => result); agents=agents)
+		@test nrow(table) == length(agents)
+		@test "Subject vs Base Energy % Diff" in names(table)
+		@test all(table[!, "Subject vs Base Balancing % Diff"] .== "—")
+	end
+
+	@testset "runs without a Segment column are rejected" begin
+		@test_throws String S.AgentSurplusBySegment(select(final, Not(:Segment)), energy, tx, agent_map, 0:4; agents=agents)
+	end
+end
