@@ -236,3 +236,44 @@ end
 		@test_throws String S.AgentSurplusBySegment(select(final, Not(:Segment)), energy, tx, agent_map, 0:4; agents=agents)
 	end
 end
+
+if !isdefined(Main, :BalancingEnergyQuantities)
+	include("../src/lib/post_analysis/balancing_energy/balancing_energy_quantities.jl")
+end
+
+@testset "Quantity and gross traded volume by segment" begin
+	Q = BalancingEnergyQuantities
+	container = clear_sequence(LatestMarketModel.build, balancing_segment_fixture(restrict=true))
+	final = MarketDataStorage.GetFinalDispatchDecisions(container)
+	energy = MarketDataStorage.GetEnergyFinalDispatchDecisions(container)
+	tx = MarketDataStorage.GetTransactions(container)
+	agent_map = Dict(Q.BalancingEnergySEW.HelperModelResults.AGENT_DEMAND => ["D"], Q.BalancingEnergySEW.HelperModelResults.AGENT_GENERATOR => ["3G_Base", "4G_Shoulder", "5G_Peak", "7G_Solar"])
+	agents = ["D", "3G_Base", "4G_Shoulder", "5G_Peak", "7G_Solar"]
+
+	@testset "quantities add up and the balancing adjustment is the demand increase" begin
+		q = Q.AgentQuantityBySegment(final, energy, tx, agent_map, 0:4; agents=agents) # throws if energy + balancing != total
+		for agent in agents
+			@test q[agent]["Energy"] + q[agent]["Balancing"] ≈ q[agent]["Total"]
+		end
+		# +4 MWh of demand at each of the two balancing MTUs, all supplied by the peaker
+		@test q["D"]["Balancing"] ≈ 8.0
+		@test q["5G_Peak"]["Balancing"] ≈ 8.0
+		for agent in ["3G_Base", "4G_Shoulder", "7G_Solar"]
+			@test q[agent]["Balancing"] == 0.0
+		end
+	end
+
+	@testset "gross traded volume partitions by segment" begin
+		g = Q.GrossTradedVolumeBySegment(tx, 0:4; generators=["3G_Base", "4G_Shoulder", "5G_Peak", "7G_Solar"])
+		for (agent, by_segment) in g
+			@test by_segment["Energy"] + by_segment["Balancing"] ≈ by_segment["Total"]
+		end
+		@test g["5G_Peak"]["Balancing"] ≈ 8.0
+		@test g["3G_Base"]["Balancing"] == 0.0
+	end
+
+	@testset "runs without a Segment column are rejected" begin
+		@test_throws String Q.AgentQuantityBySegment(select(final, Not(:Segment)), energy, tx, agent_map, 0:4; agents=agents)
+		@test_throws String Q.GrossTradedVolumeBySegment(select(tx, Not("Segment")), 0:4; generators=["5G_Peak"])
+	end
+end

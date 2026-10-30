@@ -54,13 +54,14 @@ function AgentSurplusBySegment(final_dispatch_decisions, energy_final_dispatch_d
 	return result
 end
 
+# (also used for the quantity tables of balancing_energy_quantities.jl via metric_label)
 # Agent | per case: Total, Energy, Balancing | "{subject} vs {base} Total/Energy/Balancing % Diff" for each base
 # case (cases[end] is the subject, as in post_analysis_quantities_by_agent.jl); the Balancing % Diff is "—".
-function SurplusTable(cases, results; agents=DEFAULT_AGENTS)
+function SurplusTable(cases, results; agents=DEFAULT_AGENTS, metric_label="Surplus (€)")
 	subject = cases[end]
 	base_cases = cases[1:end-1]
 	pairs = Any["Agent" => String[]]
-	append!(pairs, ["$case $segment Surplus (€)" => Float64[] for case in cases for segment in SEGMENTS])
+	append!(pairs, ["$case $segment $metric_label" => Float64[] for case in cases for segment in SEGMENTS])
 	append!(pairs, ["$subject vs $base $segment % Diff" => String[] for base in base_cases for segment in SEGMENTS])
 	table = DataFrame(pairs...)
 
