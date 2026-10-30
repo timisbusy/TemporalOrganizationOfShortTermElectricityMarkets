@@ -31,6 +31,9 @@ const HelperModelResults = PostAnalysisCommon.HelperModelResults
 
 const SEGMENTS = ["Total", "Energy", "Balancing"]
 
+# near-zero float noise (e.g. a generator the lock pins, summed over thousands of transactions) reported as exactly 0.0
+snap(x) = MarketDataStorage.snap0(x)
+
 # indicators of economic_indicators (after header renaming) with an additive balancing part, in column order
 const ADDITIVE_INDICATOR_POSITIONS = [1, 2, 3, 4, 5] # SEW, demand utility, production costs, producer and consumer surplus
 const STORAGE_REVENUE_POSITION = 6
@@ -70,12 +73,12 @@ function BalancingIndicators(final_dispatch_decisions, transactions, agent_map, 
 	payments = sum(cash, agent_map[HelperModelResults.AGENT_DEMAND]; init=0.0)
 	revenue = sum(cash, agent_map[HelperModelResults.AGENT_GENERATOR]; init=0.0)
 	return (
-		sew=demand_utility - production_costs,
-		demand_utility=demand_utility,
-		production_costs=production_costs,
-		producer_surplus=revenue - production_costs,
-		consumer_surplus=demand_utility - payments,
-		storage_revenue=cash("Storage"),
+		sew=snap(demand_utility - production_costs),
+		demand_utility=snap(demand_utility),
+		production_costs=snap(production_costs),
+		producer_surplus=snap(revenue - production_costs),
+		consumer_surplus=snap(demand_utility - payments),
+		storage_revenue=snap(cash("Storage")),
 	)
 end
 

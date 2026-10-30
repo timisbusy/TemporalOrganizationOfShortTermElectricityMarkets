@@ -58,9 +58,9 @@ const TOTALS_FIELDS = (:rows, :net_mwh, :gross_mwh, :net_payments)
 function SegmentTotals(transactions)
 	return (
 		rows=nrow(transactions),
-		net_mwh=sum(transactions[!, QUANTITY_COLUMN]; init=0.0),
+		net_mwh=PostAnalysisCommon.MarketDataStorage.snap0(sum(transactions[!, QUANTITY_COLUMN]; init=0.0)),
 		gross_mwh=sum(abs, transactions[!, QUANTITY_COLUMN]; init=0.0),
-		net_payments=sum(transactions[!, QUANTITY_COLUMN] .* transactions[!, PRICE_COLUMN]; init=0.0),
+		net_payments=PostAnalysisCommon.MarketDataStorage.snap0(sum(transactions[!, QUANTITY_COLUMN] .* transactions[!, PRICE_COLUMN]; init=0.0)),
 	)
 end
 

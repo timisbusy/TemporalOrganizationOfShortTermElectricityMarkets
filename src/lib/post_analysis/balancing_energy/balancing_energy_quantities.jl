@@ -42,7 +42,7 @@ function AgentQuantityBySegment(final_dispatch_decisions, energy_final_dispatch_
 	quantity_of(indicators, agent) = Float64(indicators[indicators.Agent .== agent, QUANTITY_COLUMN][1])
 	result = Dict{String,Dict{String,Float64}}()
 	for agent in agents
-		balancing = sum(balancing_transactions[balancing_transactions.Agent .== agent, BalancingEnergySplit.QUANTITY_COLUMN]; init=0.0)
+		balancing = MarketDataStorage.snap0(sum(balancing_transactions[balancing_transactions.Agent .== agent, BalancingEnergySplit.QUANTITY_COLUMN]; init=0.0))
 		result[agent] = Dict("Total" => quantity_of(total, agent), "Energy" => quantity_of(energy, agent), "Balancing" => balancing)
 		isapprox(result[agent]["Energy"] + balancing, result[agent]["Total"]; atol=1e-3, rtol=1e-9) ||
 			throw("$agent: energy quantity ($(result[agent]["Energy"])) + balancing quantity ($balancing) does not equal total ($(result[agent]["Total"]))")
@@ -54,7 +54,7 @@ end
 function GrossTradedVolumeBySegment(transactions, time_range; generators=DEFAULT_GENERATORS)
 	hasproperty(transactions, BalancingEnergySplit.SEGMENT_COLUMN) || throw("transactions have no \"$(BalancingEnergySplit.SEGMENT_COLUMN)\" column - this run predates the balancing/energy split and is not supported (rerun it)")
 	scoped = in_range(transactions, time_range)
-	gross(rows, agent) = sum(abs, rows[rows.Agent .== agent, BalancingEnergySplit.QUANTITY_COLUMN]; init=0.0)
+	gross(rows, agent) = MarketDataStorage.snap0(sum(abs, rows[rows.Agent .== agent, BalancingEnergySplit.QUANTITY_COLUMN]; init=0.0))
 	result = Dict{String,Dict{String,Float64}}()
 	for agent in generators
 		by_segment = Dict(

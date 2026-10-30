@@ -277,3 +277,12 @@ end
 		@test_throws String Q.GrossTradedVolumeBySegment(select(tx, Not("Segment")), 0:4; generators=["5G_Peak"])
 	end
 end
+
+@testset "Float noise in segment values is reported as zero" begin
+	noise = DataFrame("Quantity (MWh)" => [1.5, -1.5 + 1e-13, 2e-13], "Price (€/MWh)" => [40.0, 40.0, 40.0])
+	totals = BalancingEnergySplit.SegmentTotals(noise)
+	@test totals.net_mwh == 0.0
+	@test totals.net_payments == 0.0
+	@test totals.rows == 3
+	@test totals.gross_mwh ≈ 3.0
+end

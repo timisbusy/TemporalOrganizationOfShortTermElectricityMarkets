@@ -46,7 +46,7 @@ function AgentSurplusBySegment(final_dispatch_decisions, energy_final_dispatch_d
 
 	result = Dict{String,Dict{String,Float64}}()
 	for agent in agents
-		balancing = agent in demand_agents ? bid_valued(agent) - cash(agent) : cash(agent) - bid_valued(agent)
+		balancing = MarketDataStorage.snap0(agent in demand_agents ? bid_valued(agent) - cash(agent) : cash(agent) - bid_valued(agent))
 		result[agent] = Dict("Total" => surplus_of(total, agent), "Energy" => surplus_of(energy, agent), "Balancing" => balancing)
 		isapprox(result[agent]["Energy"] + balancing, result[agent]["Total"]; atol=1e-3, rtol=1e-9) ||
 			throw("$agent: energy surplus ($(result[agent]["Energy"])) + balancing surplus ($balancing) does not equal total ($(result[agent]["Total"]))")
