@@ -10,8 +10,8 @@
 #                            ~2.19e9 EUR in both, so its levels are indistinguishable at that scale and it appears only
 #                            as the difference above).
 #   boxplot_statistics.csv   the numbers behind every box: n, mean, standard error, quartiles, whisker ends, extremes.
-# Boxes span the quartiles with the median inside, whiskers reach the furthest point within 1.5 x IQR, every seed is a dot,
-# and the diamond is the mean. Rerunnable at any time - including on a sweep still in progress, which is read from a copy.
+# Boxes span the quartiles with the median inside, whiskers reach the furthest point within 1.5 x IQR, seeds beyond the
+# whiskers are open circles, and the diamond is the mean. Rerunnable at any time - including on a sweep still in progress, which is read from a copy.
 #
 # Example:
 #   include("src/lib/post_analysis/analyses/post_analysis_error_realization_sweep.jl")
@@ -19,7 +19,7 @@
 
 module PostAnalysisErrorRealizationSweep
 
-using CSV, DataFrames, Plots, StatsPlots, Statistics, Printf, Random
+using CSV, DataFrames, Plots, StatsPlots, Statistics, Printf
 
 # chart surface and ink, from the dataviz reference palette
 const SURFACE = "#fcfcfb"
@@ -76,13 +76,12 @@ panel_style(; kwargs...) = (; background_color=SURFACE, foreground_color=AXIS, f
     titlefontcolor=INK, legendfontcolor=INK_SECONDARY, grid=:y, gridcolor=GRID, gridalpha=1.0, gridlinewidth=1, framestyle=:box, tickfontsize=9,
     guidefontsize=10, titlefontsize=11, yformatter=CompactTick, kwargs...)
 
-# a box, its seeds as dots (with a surface ring so overlapping dots stay legible) and its mean
-function AddBox!(p, position, values, color; label="", rng, dot_alpha=0.4, fill_alpha=0.22)
+# a box with its whiskers, the points beyond the whiskers as open circles (the usual outlier mark), and the mean
+function AddBox!(p, position, values, color; label="", fill_alpha=0.22)
     # color= as well as linecolor=: without it the box outline and whiskers take the next default-palette color
     boxplot!(p, fill(position, length(values)), values; color=color, fillcolor=color, fillalpha=fill_alpha, linecolor=color, linewidth=1.5,
-             outliers=false, whisker_width=:half, bar_width=0.5, label=label)
-    jitter = (rand(rng, length(values)) .- 0.5) .* 0.3
-    scatter!(p, position .+ jitter, values; markersize=4, markercolor=color, markeralpha=dot_alpha, markerstrokecolor=SURFACE, markerstrokewidth=1, label="")
+             outliers=true, markershape=:circle, markersize=5, markercolor=SURFACE, markeralpha=1.0, markerstrokecolor=color, markerstrokewidth=1.5,
+             whisker_width=:half, bar_width=0.5, label=label)
     scatter!(p, [position], [mean(values)]; marker=:diamond, markersize=9, markercolor=INK, markerstrokecolor=SURFACE, markerstrokewidth=2, label="")
 end
 
@@ -94,7 +93,7 @@ function PaddedLimits(values; include_zero=true)
     return (lo - pad, hi + pad)
 end
 
-function DifferencePanel(df, kpi, rng)
+function DifferencePanel(df, kpi)
     x = df[!, kpi.diff]
     stats = BoxStatistics(x)
     better = kpi.diff in (:d_wind_curtailed, :d_solar_curtailed, :d_imbalance) ? count(<(0), x) : count(>(0), x)
@@ -102,18 +101,18 @@ function DifferencePanel(df, kpi, rng)
     p = Plots.plot(; panel_style()..., title="$(kpi.title)\n$subtitle", ylabel="rolling − fixed ($(kpi.unit))", xlims=(0.4, 1.6), xticks=false,
                    ylims=PaddedLimits(x), legend=false, titlefontsize=10, left_margin=8Plots.mm)
     hline!(p, [0.0]; color=INK_SECONDARY, linewidth=1, linestyle=:solid, label="")
-    AddBox!(p, 1, x, INK_SECONDARY; rng=rng, dot_alpha=0.35, fill_alpha=0.15)
+    AddBox!(p, 1, x, INK_SECONDARY; fill_alpha=0.15)
     return p
 end
 
-function LevelsPanel(df, kpi, rng; legend)
+function LevelsPanel(df, kpi; legend)
     fixed, rolling = df[!, kpi.fixed], df[!, kpi.rolling]
     lo, hi = PaddedLimits(vcat(fixed, rolling); include_zero=false)
     legend && (hi += 0.14 * (hi - lo)) # headroom so the legend sits above the data
     p = Plots.plot(; panel_style()..., title=kpi.title, ylabel=kpi.unit, xlims=(0.4, 2.6), xticks=([1, 2], ["Fixed", "Rolling"]),
                    ylims=(lo, hi), legend=legend ? :topright : false, left_margin=8Plots.mm)
-    AddBox!(p, 1, fixed, FIXED_COLOR; label="Fixed horizon", rng=rng)
-    AddBox!(p, 2, rolling, ROLLING_COLOR; label="Rolling horizon", rng=rng)
+    AddBox!(p, 1, fixed, FIXED_COLOR; label="Fixed horizon")
+    AddBox!(p, 2, rolling, ROLLING_COLOR; label="Rolling horizon")
     return p
 end
 
@@ -134,18 +133,17 @@ function PerformAnalysis(sweep_name::String="fixed_vs_rolling_36"; output_dir::S
     df = CSV.read(IOBuffer(read(kpis_path)), DataFrame) # a copy, so a sweep still appending to the file cannot hand us half a row
     nrow(df) > 0 || error("$kpis_path has no completed seeds")
     mkpath(output_dir)
-    rng = MersenneTwister(1) # fixed, so the dot jitter is the same every time the plot is drawn
     n = nrow(df)
     seeds = "seeds $(minimum(df.seed))–$(maximum(df.seed))"
-    key = "box: quartiles and median · whiskers: furthest point within 1.5 × IQR · dots: individual seeds · ◆: mean"
+    key = "box: quartiles and median · whiskers: furthest point within 1.5 × IQR · circles: seeds beyond the whiskers · ◆: mean"
 
-    panels = [DifferencePanel(df, kpi, rng) for kpi in DIFFERENCE_KPIS]
+    panels = [DifferencePanel(df, kpi) for kpi in DIFFERENCE_KPIS]
     differences = Plots.plot(panels...; layout=(2, 2), size=(1100, 850), background_color=SURFACE,
                              plot_title="Rolling vs fixed horizon, paired over $n wind forecast error realizations ($seeds)\n$key",
                              plot_titlefontsize=11, plot_titlefontcolor=INK, plot_titlevspan=0.09, bottom_margin=4Plots.mm)
     savefig(differences, "$output_dir/paired_differences.png")
 
-    level_panels = [LevelsPanel(df, kpi, rng; legend=(i == 1)) for (i, kpi) in enumerate(LEVEL_KPIS)]
+    level_panels = [LevelsPanel(df, kpi; legend=(i == 1)) for (i, kpi) in enumerate(LEVEL_KPIS)]
     levels = Plots.plot(level_panels...; layout=(1, 3), size=(1300, 520), background_color=SURFACE,
                         plot_title="KPI levels by design across $n wind forecast error realizations ($seeds)\n$key",
                         plot_titlefontsize=11, plot_titlefontcolor=INK, plot_titlevspan=0.16, bottom_margin=6Plots.mm)
