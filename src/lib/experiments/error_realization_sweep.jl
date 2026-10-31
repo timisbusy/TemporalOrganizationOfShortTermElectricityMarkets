@@ -28,6 +28,9 @@
 #   ErrorRealizationSweep.Run("fixed_vs_rolling_36",
 #       "src/configs/experiments/fixed_36_no_cap_1d_spinup.yaml",
 #       "src/configs/experiments/rolling_36_no_cap_1d_spinup.yaml"; first_seed=1000, n_seeds=300)
+#
+# A long sweep can be run as several shorter processes, so memory is released between them: pass
+# max_new_seeds=100 and call Run again (it skips the seeds already in kpis.csv) until kpis.csv holds n_seeds rows.
 
 module ErrorRealizationSweep
 
@@ -156,7 +159,7 @@ function BatchSummary(df, batch_seeds, n_total, batch_number, n_batches)
     return join(lines, "\n")
 end
 
-function Run(name::String, fixed_config::String, rolling_config::String; first_seed::Int=1000, n_seeds::Int=300, batch_size::Int=5)
+function Run(name::String, fixed_config::String, rolling_config::String; first_seed::Int=1000, n_seeds::Int=300, batch_size::Int=5, max_new_seeds::Int=typemax(Int))
     sweep_id = "sweep_$name"
     out_dir = "results/$sweep_id"
     mkpath(out_dir)
@@ -176,6 +179,7 @@ function Run(name::String, fixed_config::String, rolling_config::String; first_s
         done = Set{Int}()
     end
     pending = [s for s in seeds if !(s in done)]
+    pending = pending[1:min(length(pending), max_new_seeds)] # lets a caller run a long sweep in several shorter processes
     LogLine(progress_log, "sweep $name: $(length(done)) of $n_seeds seeds already in kpis.csv, $(length(pending)) to run (seeds $first_seed-$(first_seed + n_seeds - 1))")
 
     n_batches = cld(n_seeds, batch_size)
