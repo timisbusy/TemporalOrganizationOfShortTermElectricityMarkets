@@ -35,7 +35,7 @@ EconomicIndicatorsInterpretation = DataFrame([
 	(DataPoint="SEW", Interpretation="Socioeconomic Welfare generated in test period (€)"), 
 	(DataPoint="ProducerSurplus", Interpretation="Producer Surplus generated in test period (€)"),
 	(DataPoint="ConsumerSurplus", Interpretation="Consumer Surplus generated in test period (€)"), 
-	(DataPoint="StorageRevenue", Interpretation="Storage net revenue (revenues received - payments made) in test period (€)")
+	(DataPoint="StorageRevenue", Interpretation="Storage net revenue in test period (€): the sum of quantity * price over all of storage's transactions, each at its own clearing's price")
 	])
 
 AgentIndicatorsInterpretation = DataFrame([

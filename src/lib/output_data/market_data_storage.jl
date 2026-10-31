@@ -216,9 +216,8 @@ function GetFinalDispatchDecisions(market_result_container)
 	# "mtu"-deduplication keeps the LAST clearing to have touched each MTU - since Results are
 	# appended in increasing TimeCleared order, that's the clearing whose own TimeCleared equals
 	# the MTU itself, i.e. the final auction that actually included/delivered it. Its price is
-	# therefore the realized settlement price for that MTU, not just "some clearing's price" - see
-	# CalculateEconomicIndicators' storage revenue calculation below for why that distinction
-	# matters (kept, renamed, rather than dropped as before).
+	# therefore the realized settlement price for that MTU, not just "some clearing's price" (kept,
+	# renamed, rather than dropped as before).
 	rename!(finalDispatchDecisions, :price => :FinalAuctionPrice)
 	market_result_container.DecisionVariablesCache = finalDispatchDecisions
 	market_result_container.DecisionVariablesCacheBust = false
@@ -549,12 +548,14 @@ function CalculateEconomicIndicators(finalDispatchDecisions, transactions, agent
 	=#
 	# plus special handling for storage
 
-	# storage revenue = final dispatched (discharge - charge) for each MTU, priced at that MTU's own
-	# FinalAuctionPrice - matching the validation definition (the settlement price of the auction
-	# that actually delivered the MTU), NOT the transactions-based sum(quantity*price) across every
-	# speculative adjustment transaction from every clearing that ever touched an MTU (that "gross across
-	# the full look-ahead window" quantity is what Gross Traded Volume reports for generators).
-	storage_revenue = sum(skipmissing((finalDispatchDecisions.StorageDischarge .- finalDispatchDecisions.StorageCharge) .* finalDispatchDecisions.FinalAuctionPrice))
+	# storage revenue = the sum of quantity * price over all of storage's transactions in the range, each
+	# settled at its own clearing's price - the same treatment generators get (their revenue is the same
+	# sum over their own transactions), so what storage earned across every clearing that revised an MTU
+	# is counted, not just its last net position. (Until now this valued the final dispatched
+	# discharge - charge of each MTU at that MTU's FinalAuctionPrice, for parity with an external
+	# validation reference; PostAnalysisStorageRevenueReconciliation still computes that definition.)
+	# A transaction's quantity is the adjustment in (discharge - charge), so positive is revenue.
+	storage_revenue = sum(transactions[transactions.Agent .== "Storage", payrev_symbol]; init=0.0)
 	# like this we report out the sum quantity of energy charged and discharged - the difference is also interesting
 	storage_quantity = 	combine(finalDispatchDecisions, :StorageDischarge => sum)[1,1] # + combine(finalDispatchDecisions, :StorageCharge => sum)[1,1]
 
@@ -655,18 +656,10 @@ function CalculateEconomicIndicators(finalDispatchDecisions, transactions, agent
 		mtu_production_costs = 0.0
 		mtu_finalDispatchDecisions = finalDispatchDecisions[finalDispatchDecisions.mtu .== mtu, :]
 		mtu_transactions = transactions[transactions[!, mtu_symbol] .== mtu, :]
-		# see the whole-range storage_revenue above for why this uses final dispatch * FinalAuctionPrice
-		# rather than transactions. time_range can extend past the last MTU finalDispatchDecisions
-		# actually covers (e.g. plot() passes a test_range derived from clearForDays, which can run
-		# past the horizon the configured clearing schedule delivered) - nrow==0 there, so default
-		# to 0.0 rather than indexing into an empty row, matching the old transactions-based
-		# combine(...,sum) call this replaced (sum over zero rows was already 0.0).
-		mtu_storage_revenue = if nrow(mtu_finalDispatchDecisions) > 0
-			mtu_price = coalesce(mtu_finalDispatchDecisions.FinalAuctionPrice[1], 0.0)
-			snap0((mtu_finalDispatchDecisions.StorageDischarge[1] - mtu_finalDispatchDecisions.StorageCharge[1]) * mtu_price)
-		else
-			0.0
-		end
+		# same definition as the whole-range storage_revenue above, so the per-MTU values sum to it. An MTU
+		# with no storage transactions (including one past the last MTU the clearing schedule delivered,
+		# which time_range can extend to) sums to 0.0.
+		mtu_storage_revenue = snap0(sum(mtu_transactions[mtu_transactions.Agent .== "Storage", payrev_symbol]; init=0.0))
 		mtu_imbalance_energy = if imbalance_agents !== nothing && nrow(mtu_finalDispatchDecisions) > 0
 			snap0(CounterbalancedImbalance(get(variable_by_mtu, mtu, 0.0), get(balancing_by_mtu, mtu, 0.0)))
 		else
