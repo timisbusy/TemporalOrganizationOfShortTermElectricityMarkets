@@ -37,7 +37,7 @@ const DIFFERENCE_KPIS = [
     (diff=:d_sew, fixed=:fixed_sew, rolling=:rolling_sew, title="Socioeconomic welfare", unit="EUR"),
     (diff=:d_wind_curtailed, fixed=:fixed_wind_curtailed, rolling=:rolling_wind_curtailed, title="Wind curtailment", unit="MWh"),
     (diff=:d_solar_curtailed, fixed=:fixed_solar_curtailed, rolling=:rolling_solar_curtailed, title="Solar curtailment", unit="MWh"),
-    (diff=:d_imbalance, fixed=:fixed_imbalance, rolling=:rolling_imbalance, title="Imbalance energy", unit="MWh"),
+    (diff=:d_imbalance, fixed=:fixed_imbalance, rolling=:rolling_imbalance, title="Peak agent balancing energy", unit="MWh"),
 ]
 const LEVEL_KPIS = DIFFERENCE_KPIS[2:4]
 
@@ -116,6 +116,13 @@ function LevelsPanel(df, kpi; legend)
     return p
 end
 
+# an axis-less panel holding just the text, for the bottom row of a figure
+function Caption(text)
+    p = Plots.plot(; framestyle=:none, grid=false, ticks=false, legend=false, background_color=SURFACE, xlims=(0, 1), ylims=(0, 1))
+    Plots.annotate!(p, 0.5, 0.5, Plots.text(text, 9, INK_SECONDARY, :center))
+    return p
+end
+
 function StatisticsTable(df)
     rows = NamedTuple[]
     for kpi in DIFFERENCE_KPIS
@@ -134,19 +141,20 @@ function PerformAnalysis(sweep_name::String="fixed_vs_rolling_36"; output_dir::S
     nrow(df) > 0 || error("$kpis_path has no completed seeds")
     mkpath(output_dir)
     n = nrow(df)
-    seeds = "seeds $(minimum(df.seed))–$(maximum(df.seed))"
     key = "box: quartiles and median · whiskers: furthest point within 1.5 × IQR · circles: seeds beyond the whiskers · ◆: mean"
 
+    caption = Caption(key)
+
     panels = [DifferencePanel(df, kpi) for kpi in DIFFERENCE_KPIS]
-    differences = Plots.plot(panels...; layout=(2, 2), size=(1100, 850), background_color=SURFACE,
-                             plot_title="Rolling vs fixed horizon, paired over $n wind forecast error realizations ($seeds)\n$key",
-                             plot_titlefontsize=11, plot_titlefontcolor=INK, plot_titlevspan=0.09, bottom_margin=4Plots.mm)
+    differences = Plots.plot(panels..., caption; layout=Plots.@layout([grid(2, 2); c{0.05h}]), size=(1100, 850), background_color=SURFACE,
+                             plot_title="Rolling vs Fixed Horizon Difference over $n Wind Forecast Error Realizations",
+                             plot_titlefontsize=12, plot_titlefontcolor=INK, plot_titlevspan=0.05)
     savefig(differences, "$output_dir/paired_differences.png")
 
     level_panels = [LevelsPanel(df, kpi; legend=(i == 1)) for (i, kpi) in enumerate(LEVEL_KPIS)]
-    levels = Plots.plot(level_panels...; layout=(1, 3), size=(1300, 520), background_color=SURFACE,
-                        plot_title="KPI levels by design across $n wind forecast error realizations ($seeds)\n$key",
-                        plot_titlefontsize=11, plot_titlefontcolor=INK, plot_titlevspan=0.16, bottom_margin=6Plots.mm)
+    levels = Plots.plot(level_panels..., caption; layout=Plots.@layout([grid(1, 3); c{0.08h}]), size=(1300, 520), background_color=SURFACE,
+                        plot_title="KPIs for $n Wind Forecast Error Realizations",
+                        plot_titlefontsize=12, plot_titlefontcolor=INK, plot_titlevspan=0.09)
     savefig(levels, "$output_dir/levels_by_design.png")
 
     table = StatisticsTable(df)
