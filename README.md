@@ -22,7 +22,7 @@ include("src/lib/experiments/test_experiment.jl")
 
 # parameter 1: experiment name
 # parameter 2: location of experiment xlsx file
-TestExperiment.RunBasic("xlsx_test", "src/configs/xlsx/experiments/OneIntraday.xlsx")
+TestExperiment.RunBasic("xlsx_test", "src/configs/xlsx/experiments/Fixed36.xlsx")
 
 println("done")
 ```

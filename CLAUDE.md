@@ -25,7 +25,7 @@ For diagnostics that use multiple Julia threads (e.g. `DegeneracyScan.RunScan`'s
 From a Julia session/notebook at the repo root:
 ```julia
 include("src/lib/experiments/test_experiment.jl")
-TestExperiment.RunBasic("experiment_name", "src/configs/xlsx/experiments/OneIntraday.xlsx")  # or a .yaml path
+TestExperiment.RunBasic("experiment_name", "src/configs/xlsx/experiments/Fixed36.xlsx")  # or a .yaml path
 ```
 Output location is printed at the end: `results/{unix_timestamp}_{experiment_name}/`.
 
