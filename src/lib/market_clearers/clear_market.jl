@@ -7,6 +7,7 @@ using .Helpers.HelperModelResults
 
 include("../data_importer.jl")
 
+include("../models/solver_selection.jl")
 include("../models/flexible_model.jl")
 include("../models/explicit_adjustment_model.jl")
 include("../models/laura_convergence_model.jl")

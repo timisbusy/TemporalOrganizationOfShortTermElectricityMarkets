@@ -22,6 +22,10 @@ end
 	include("storage_mip_model_tests.jl")
 end
 
+@testset "Solver selection Tests" begin
+	include("solver_selection_tests.jl")
+end
+
 @testset "Time range Tests" begin
 	include("time_range_tests.jl")
 end

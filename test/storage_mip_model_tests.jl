@@ -49,7 +49,7 @@ using .ClearMarket.LatestMarketModel
 	# build_market_clearing! themselves - mirrors what StorageMipMarketModel.build() does
 	# internally for the stage-1 MIP solve
 	prepare_unbuilt(t, container, initialization, data, market) = begin
-		m = Model(StorageMipMarketModel.select_optimizer(data))
+		m = Model(ClearMarket.SolverSelection.select_optimizer(data))
 		set_silent(m)
 		StorageMipMarketModel.define_sets!(m, t, container, initialization, data, market)
 		StorageMipMarketModel.process_time_series_data!(m, t, container, initialization, data, market)
@@ -112,32 +112,40 @@ using .ClearMarket.LatestMarketModel
 	end
 
 	@testset "dual query throws on the raw MIP stage but succeeds after build()'s fixed-LP re-solve" begin
+		# This test is about Gurobi's behaviour on a MIP (it refuses to give duals; HiGHS does give them, and picks
+		# a different dual among the degenerate ones), so it needs a Gurobi license and is skipped without one.
+		gurobi_available = try; ClearMarket.SolverSelection.gurobi_env(); true; catch; false; end
+		if !gurobi_available
+			@test_skip gurobi_available
+		else
 
-		(data, initialization, market) = make_scenario(1.0)
-		container = MarketDataStorage.MakeMarketResultContainer()
+			(data, initialization, market) = make_scenario(1.0)
+			data[:optimizationModelConfig]["solver"] = "gurobi"
+			container = MarketDataStorage.MakeMarketResultContainer()
 
-		# GIVEN the raw stage-1 model (still a MIP - the binary z[t] has not been fixed away)
-		m1 = prepare_unbuilt(0, container, initialization, data, market)
-		StorageMipMarketModel.build_market_clearing!(m1, 0, container, initialization, data, market)
-		optimize!(m1)
-		@test termination_status(m1) == MathOptInterface.OPTIMAL
+			# GIVEN the raw stage-1 model (still a MIP - the binary z[t] has not been fixed away)
+			m1 = prepare_unbuilt(0, container, initialization, data, market)
+			StorageMipMarketModel.build_market_clearing!(m1, 0, container, initialization, data, market)
+			optimize!(m1)
+			@test termination_status(m1) == MathOptInterface.OPTIMAL
 
-		# THEN querying the energy balance dual on the MIP itself errors - a MIP has no valid
-		# LP duals, which is exactly why build() always re-solves a fixed-bounds LP afterwards
-		@test_throws Exception dual.(m1.ext[:constraints][:energy_balance])
+			# THEN querying the energy balance dual on the MIP itself errors - a MIP has no valid
+			# LP duals, which is exactly why build() always re-solves a fixed-bounds LP afterwards
+			@test_throws Exception dual.(m1.ext[:constraints][:energy_balance])
 
-		# WHEN build() runs its full two-solve pattern (MIP, then fix-and-resolve as an LP)
-		m2 = StorageMipMarketModel.build(0, container, initialization, data, market)
-		optimize!(m2)
+			# WHEN build() runs its full two-solve pattern (MIP, then fix-and-resolve as an LP)
+			m2 = StorageMipMarketModel.build(0, container, initialization, data, market)
+			optimize!(m2)
 
-		# THEN the returned model is a pure LP and its energy_balance dual is a valid price -
-		# here the marginal generator G (bidPrice 50) sets the price at every mtu
-		OW = m2.ext[:sets][:OW]
-		prices = dual.(m2.ext[:constraints][:energy_balance])
-		for t in OW
-			@test isapprox(prices[t], 50.0)
+			# THEN the returned model is a pure LP and its energy_balance dual is a valid price -
+			# here the marginal generator G (bidPrice 50) sets the price at every mtu
+			OW = m2.ext[:sets][:OW]
+			prices = dual.(m2.ext[:constraints][:energy_balance])
+			for t in OW
+				@test isapprox(prices[t], 50.0)
+			end
+
 		end
-
 	end
 
 	@testset "build() populates m.ext[:storage_mip] and MarketDataStorage records per-MTU decisions" begin

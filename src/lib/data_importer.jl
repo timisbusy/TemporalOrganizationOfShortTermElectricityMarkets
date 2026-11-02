@@ -305,7 +305,7 @@ function load_input_data_xlsx(path::String)
     if hasproperty(cfg_df,"Optimization Model") && cfg_df[!,"Optimization Model"][1] !== missing
         data[:optimizationModelConfig] = Dict{String,Any}(
             "model" => String(cfg_df[!,"Optimization Model"][1]),
-            "solver" => hasproperty(cfg_df,"Solver") && cfg_df[!,"Solver"][1] !== missing ? String(cfg_df[!,"Solver"][1]) : "gurobi",
+            "solver" => hasproperty(cfg_df,"Solver") && cfg_df[!,"Solver"][1] !== missing ? String(cfg_df[!,"Solver"][1]) : "highs",
             "solver_method" => hasproperty(cfg_df,"Solver Method") && cfg_df[!,"Solver Method"][1] !== missing ? String(cfg_df[!,"Solver Method"][1]) : "simplex",
             "demand_adjust" => hasproperty(cfg_df,"Demand Adjust") && cfg_df[!,"Demand Adjust"][1] !== missing ? Bool(cfg_df[!,"Demand Adjust"][1]) : false,
             "ex_post_transactions" => hasproperty(cfg_df,"Ex Post Transactions") && cfg_df[!,"Ex Post Transactions"][1] !== missing ? Bool(cfg_df[!,"Ex Post Transactions"][1]) : false,

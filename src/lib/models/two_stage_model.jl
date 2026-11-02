@@ -2,14 +2,13 @@ module TwoStageMarketModel
 
 using JuMP
 using HiGHS
-using Gurobi
 using DataFrames
 
 using ..Helpers.MarketDataStorage
+using ..SolverSelection
 
 include("../helpers/helper_input_data.jl")
 
-const gurobi_env = Gurobi.Env()
 
 # NOTE: This model does a first run with open charge/discharge for storage and then if a simultaneous charge/discharge operation occurs, restricts storage to only the higher of the two for that MTU in the second stage. It verifies that the objective value is the same in both cases and surfaces the objective value, and the MTUs constrained in a data frame which the market clearer will store for analysis.
 
@@ -429,27 +428,12 @@ end
 # data - information about assets - prices, availability factors, etc
 # market - defines when the window for which this market clears and the market name
 
-DEFAULT_SOLVER = "gurobi"
-
-# solver is chosen via data[:optimizationModelConfig]["solver"] ("gurobi" or "highs"), defaulting to DEFAULT_SOLVER
-function select_optimizer(data::Dict{Symbol,Any})
-    solver = haskey(data, :optimizationModelConfig) && haskey(data[:optimizationModelConfig], "solver") ? lowercase(String(data[:optimizationModelConfig]["solver"])) : DEFAULT_SOLVER
-
-    if solver == "gurobi"
-        return () -> Gurobi.Optimizer(gurobi_env)
-    elseif solver == "highs"
-        return HiGHS.Optimizer
-    else
-        throw("unknown solver \"$solver\" in optimizationModelConfig - supported solvers are \"gurobi\" and \"highs\"")
-    end
-end
-
 function build(time_period, marketresults, initialization, data, market)
 
-	# create the optimisation model with the configured solver (default Gurobi)
+	# create the optimisation model with the configured solver (default HiGHS)
 
     # Stage 1: solve with open (unconstrained) storage charge/discharge
-    m1 = Model(select_optimizer(data))
+    m1 = Model(SolverSelection.select_optimizer(data))
     set_silent(m1)
     define_sets!(m1, time_period, marketresults, initialization, data, market)
     process_time_series_data!(m1, time_period, marketresults, initialization, data, market)
@@ -476,7 +460,7 @@ function build(time_period, marketresults, initialization, data, market)
     # Stage 2: re-solve with the smaller of charge/discharge forced to zero at each flagged MTU,
     # restricting storage to only the higher of the two operations there - build_market_clearing!
     # adds these constraints itself, since m.ext[:two_stage_forced_zero] is set below before it runs
-    m2 = Model(select_optimizer(data))
+    m2 = Model(SolverSelection.select_optimizer(data))
     set_silent(m2)
     define_sets!(m2, time_period, marketresults, initialization, data, market)
     process_time_series_data!(m2, time_period, marketresults, initialization, data, market)

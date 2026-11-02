@@ -2,13 +2,12 @@ module StorageMipMarketModel
 
 using JuMP
 using HiGHS
-using Gurobi
 
 using ..Helpers.MarketDataStorage
+using ..SolverSelection
 
 include("../helpers/helper_input_data.jl")
 
-const gurobi_env = Gurobi.Env()
 
 # NOTE: THIS IS A COPY OF LATEST_MODEL with storage charge/discharge exclusivity enforced
 # exactly via a Big-M disjunctive constraint (a binary z[t] per MTU, in the spirit of
@@ -430,26 +429,11 @@ end
 # data - information about assets - prices, availability factors, etc
 # market - defines when the window for which this market clears and the market name
 
-DEFAULT_SOLVER = "gurobi"
-
-# solver is chosen via data[:optimizationModelConfig]["solver"] ("gurobi" or "highs"), defaulting to DEFAULT_SOLVER
-function select_optimizer(data::Dict{Symbol,Any})
-    solver = haskey(data, :optimizationModelConfig) && haskey(data[:optimizationModelConfig], "solver") ? lowercase(String(data[:optimizationModelConfig]["solver"])) : DEFAULT_SOLVER
-
-    if solver == "gurobi"
-        return () -> Gurobi.Optimizer(gurobi_env)
-    elseif solver == "highs"
-        return HiGHS.Optimizer
-    else
-        throw("unknown solver \"$solver\" in optimizationModelConfig - supported solvers are \"gurobi\" and \"highs\"")
-    end
-end
-
 function build(time_period, marketresults, initialization, data, market)
 
     # Stage 1: solve the MIP - the Big-M disjunctive constraint in build_market_clearing!
     # decides, per MTU, which side (charge/discharge) storage is allowed to use
-    m1 = Model(select_optimizer(data))
+    m1 = Model(SolverSelection.select_optimizer(data))
     set_silent(m1)
     define_sets!(m1, time_period, marketresults, initialization, data, market)
     process_time_series_data!(m1, time_period, marketresults, initialization, data, market)
@@ -473,7 +457,7 @@ function build(time_period, marketresults, initialization, data, market)
     # below before it runs. This turns the model back into a pure LP whose energy_balance dual
     # is a valid price - see module docstring for why this re-solve is mandatory rather than
     # conditional on detecting an issue.
-    m2 = Model(select_optimizer(data))
+    m2 = Model(SolverSelection.select_optimizer(data))
     set_silent(m2)
     define_sets!(m2, time_period, marketresults, initialization, data, market)
     process_time_series_data!(m2, time_period, marketresults, initialization, data, market)

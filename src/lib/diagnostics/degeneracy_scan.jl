@@ -157,7 +157,7 @@ function _resolve_target_mtus(target_mtus, config)
     )
 end
 
-_resolve_solver(config) = haskey(config, :optimizationModelConfig) && haskey(config[:optimizationModelConfig], "solver") ? lowercase(String(config[:optimizationModelConfig]["solver"])) : "gurobi"
+_resolve_solver(config) = ClearMarket.SolverSelection.solver(config)
 
 # ---- Parallel analysis ----
 #
