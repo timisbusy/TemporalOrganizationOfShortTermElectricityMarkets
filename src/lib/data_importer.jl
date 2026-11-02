@@ -25,8 +25,8 @@ function sample_time_range(cfg::AbstractDict)
     )
 end
 
-# The sample_time_range inputs from an Excel experiment sheet, keyed like the experiment yaml so the
-# Dict method above applies to either. `nothing` if the workbook has no "data" sheet with a "Clear for Days" column.
+# The window-related settings of an Excel experiment sheet (plus startDate), keyed like the experiment yaml so
+# the Dict method above applies to either. `nothing` if the workbook has no "data" sheet with a "Clear for Days" column.
 function experiment_window_config_xlsx(path::String)
     df = try
         DataFrame(XLSX.readtable(path, "data"))
@@ -35,6 +35,7 @@ function experiment_window_config_xlsx(path::String)
     end
     hasproperty(df, "Clear for Days") || return nothing
     cfg = Dict{String,Any}("clearForDays" => df[!,"Clear for Days"][1], "timePeriodsPerDay" => df[!,"MTU per Day"][1])
+    hasproperty(df, "Start Date") && df[!,"Start Date"][1] !== missing && (cfg["startDate"] = df[!,"Start Date"][1])
     for (column, key) in ("Sample Period Exclude Spin Up" => "samplePeriodExcludeSpinUp", "Sample Period Exclude End" => "samplePeriodExcludeEnd")
         hasproperty(df, column) && df[!,column][1] !== missing && (cfg[key] = df[!,column][1])
     end
@@ -180,6 +181,98 @@ function load_input_data(path::String)
     return data
 end
 
+# An Excel agent workbook as the same nested Dict an agent yaml loads to (dispatchableGenerators,
+# variableGenerators, demand.segments, batteryStorage).
+function load_agent_config_xlsx(path::String)
+    genCfg = DataFrame(XLSX.readtable(path, "Generators"))
+    demandCfg = DataFrame(XLSX.readtable(path, "Demands"))
+    storageCfg = DataFrame(XLSX.readtable(path, "Storage"))
+
+    dispatchableGenCfg = genCfg[genCfg[!,"Type"] .== "Dispatchable",:]
+    variableGenCfg = genCfg[genCfg[!,"Type"] .== "Variable",:]
+
+    # generators: separate dictionaries for dispatchable and variable generators
+    dispatchableGenerators = Dict{String, Any}()
+
+    for genRow in eachrow(dispatchableGenCfg)
+        gen = Dict{String, Any}(
+            "bidPrice" => genRow["Bid Price"],
+            "capacity" => genRow["Capacity"],
+            "initialQuantity" => genRow["Initial Quantity"],
+            "emissionFactor" => genRow["Emission Factor"],
+        )
+        # only set the ramp keys that are filled in: the models pick the formulation by haskey(gen, "rampRate")
+        hasproperty(genRow, "Ramp Rate") && genRow["Ramp Rate"] !== missing ? gen["rampRate"] = genRow["Ramp Rate"] : false
+        hasproperty(genRow, "Ramp Rate LD") && genRow["Ramp Rate LD"] !== missing ? gen["rampRateLD"] = genRow["Ramp Rate LD"] : false
+        gen["conversionFactor"] = hasproperty(genRow, "Conversion Factor") && genRow["Conversion Factor"] !== missing ? Float64(genRow["Conversion Factor"]) : .001
+        dispatchableGenerators[String(genRow["Name"])] = gen
+    end
+
+    variableGenerators = Dict{String, Any}()
+
+    for genRow in eachrow(variableGenCfg)
+        gen = Dict{String, Any}(
+            "bidPrice" => genRow["Bid Price"],
+            "capacity" => genRow["Capacity"],
+        )
+
+        hasproperty(genRow, "Profile") && genRow["Profile"] !== missing ? gen["profile"] = parse.(Float64,split(strip(genRow["Profile"],['"','[',']']),',')) : false
+        hasproperty(genRow, "Profile File") && genRow["Profile File"] !== missing ? gen["profile_file"] = genRow["Profile File"] : false
+        hasproperty(genRow, "Profile Files") && genRow["Profile Files"] !== missing ? gen["profile_files"] = String.(strip.(split(strip(genRow["Profile Files"],['"','[',']']),','))) : false
+        hasproperty(genRow, "Profile Type") && genRow["Profile Type"] !== missing ? gen["profile_type"] = genRow["Profile Type"] : false
+        gen["conversionFactor"] = hasproperty(genRow, "Conversion Factor") && genRow["Conversion Factor"] !== missing ? Float64(genRow["Conversion Factor"]) : .001
+        variableGenerators[String(genRow["Name"])] = gen
+    end
+
+    # demand segments: Base and Flex demand, each with a bid and hourly quantities
+    demandSegments = Dict{String, Any}()
+
+    for dRow in eachrow(demandCfg)
+        dem = Dict{String, Any}(
+            "bidPrice" => dRow["Bid Price"],
+        )
+        hasproperty(dRow, "Profile") && dRow["Profile"] !== missing ? dem["profile"] = parse.(Float64,split(strip(dRow["Profile"],['"','[',']']),',')) : false
+        hasproperty(dRow, "Profile File") && dRow["Profile File"] !== missing ? dem["profile_file"] = dRow["Profile File"] : false
+        hasproperty(dRow, "Profile Type") && dRow["Profile Type"] !== missing ? dem["profile_type"] = dRow["Profile Type"] : false
+        hasproperty(dRow, "Quantity Constant") && dRow["Quantity Constant"] !== missing ? dem["quantity_constant"] = Float64(dRow["Quantity Constant"]) : false
+        dem["conversionFactor"] = hasproperty(dRow, "Conversion Factor") && dRow["Conversion Factor"] !== missing ? Float64(dRow["Conversion Factor"]) : .001
+
+        demandSegments[String(dRow["Name"])] = dem
+    end
+    
+    # storage parameters
+    batteryStorage = Dict{String, Any}(
+        "energyCapacity" => Float64(storageCfg[!,"Energy Capacity"][1]),
+        "powerCapacity" => Float64(storageCfg[!,"Power Capacity"][1]),
+        "efficiency" => Float64(storageCfg[!,"Efficiency"][1]),
+        "initialSOC" => Float64(storageCfg[!,"Initial SOC"][1]),
+        "endSOC" => Float64(storageCfg[!,"End SOC"][1]),
+    )
+
+    return Dict{String,Any}(
+        "dispatchableGenerators" => dispatchableGenerators,
+        "variableGenerators" => variableGenerators,
+        "demand" => Dict{String,Any}("segments" => demandSegments),
+        "batteryStorage" => batteryStorage,
+    )
+end
+
+# An Excel market workbook as the nested Dict a market yaml loads to.
+function market_config_raw_xlsx(path::String)
+    marketCfg_df = DataFrame(XLSX.readtable(path, "Validation"))
+    marketSequence_df = DataFrame(XLSX.readtable(path, "MarketSequence"))
+    sequence = Dict{String,Any}()
+    for marketDef in eachrow(marketSequence_df)
+        sequence[String(marketDef["Market Name"])] = Dict{String,Any}(
+            "clearingInterval" => Int(marketDef["Clearing Interval"]),
+            "optimizationWindow" => Int(marketDef["Optimization Window"]),
+            "lookAheadDistance" => Int(marketDef["Look Ahead Distance"]),
+            "clockTimeBegin" => Int(marketDef["Clock Time Begin"]),
+        )
+    end
+    return Dict{String,Any}("timePeriodsPerDay" => Int(marketCfg_df[!,"MTU Per Day"][1]), "marketSequence" => sequence)
+end
+
 function load_input_data_xlsx(path::String)
     # Read the YAML file into a nested Julia Dict/Array structure
     cfg_df = DataFrame(XLSX.readtable(path, "data"))
@@ -239,71 +332,11 @@ function load_input_data_xlsx(path::String)
     end
 
     data[:agentConfigFile] = "$(CONFIG_PATH)/xlsx/agents/$(cfg_df[!,"Agent Configuration"][1])"
-    genCfg = DataFrame(XLSX.readtable(data[:agentConfigFile], "Generators"))
-    demandCfg = DataFrame(XLSX.readtable(data[:agentConfigFile], "Demands"))
-    storageCfg = DataFrame(XLSX.readtable(data[:agentConfigFile], "Storage"))
-
-    dispatchableGenCfg = genCfg[genCfg[!,"Type"] .== "Dispatchable",:]
-    variableGenCfg = genCfg[genCfg[!,"Type"] .== "Variable",:]
-
-    # generators: separate dictionaries for dispatchable and variable generators
-    data[:dispatchableGenerators] = Dict{String, Any}()
-
-    for genRow in eachrow(dispatchableGenCfg)
-        gen = Dict{String, Any}(
-            "bidPrice" => genRow["Bid Price"],
-            "capacity" => genRow["Capacity"],
-            "initialQuantity" => genRow["Initial Quantity"],
-            "emissionFactor" => genRow["Emission Factor"],
-        )
-        # only set the ramp keys that are filled in: the models pick the formulation by haskey(gen, "rampRate")
-        hasproperty(genRow, "Ramp Rate") && genRow["Ramp Rate"] !== missing ? gen["rampRate"] = genRow["Ramp Rate"] : false
-        hasproperty(genRow, "Ramp Rate LD") && genRow["Ramp Rate LD"] !== missing ? gen["rampRateLD"] = genRow["Ramp Rate LD"] : false
-        gen["conversionFactor"] = hasproperty(genRow, "Conversion Factor") && genRow["Conversion Factor"] !== missing ? Float64(genRow["Conversion Factor"]) : .001
-        data[:dispatchableGenerators][String(genRow["Name"])] = gen
-    end
-
-    data[:variableGenerators] = Dict{String, Any}()
-
-    for genRow in eachrow(variableGenCfg)
-        gen = Dict{String, Any}(
-            "bidPrice" => genRow["Bid Price"],
-            "capacity" => genRow["Capacity"],
-        )
-
-        hasproperty(genRow, "Profile") && genRow["Profile"] !== missing ? gen["profile"] = parse.(Float64,split(strip(genRow["Profile"],['"','[',']']),',')) : false
-        hasproperty(genRow, "Profile File") && genRow["Profile File"] !== missing ? gen["profile_file"] = genRow["Profile File"] : false
-        hasproperty(genRow, "Profile Files") && genRow["Profile Files"] !== missing ? gen["profile_files"] = String.(strip.(split(strip(genRow["Profile Files"],['"','[',']']),','))) : false
-        hasproperty(genRow, "Profile Type") && genRow["Profile Type"] !== missing ? gen["profile_type"] = genRow["Profile Type"] : false
-        gen["conversionFactor"] = hasproperty(genRow, "Conversion Factor") && genRow["Conversion Factor"] !== missing ? Float64(genRow["Conversion Factor"]) : .001
-        data[:variableGenerators][String(genRow["Name"])] = gen
-    end
-
-    # demand segments: Base and Flex demand, each with a bid and hourly quantities
-    data[:demandSegments] = Dict{String, Any}()
-
-    for dRow in eachrow(demandCfg)
-        dem = Dict{String, Any}(
-            "bidPrice" => dRow["Bid Price"],
-        )
-        hasproperty(dRow, "Profile") && dRow["Profile"] !== missing ? dem["profile"] = parse.(Float64,split(strip(dRow["Profile"],['"','[',']']),',')) : false
-        hasproperty(dRow, "Profile File") && dRow["Profile File"] !== missing ? dem["profile_file"] = dRow["Profile File"] : false
-        hasproperty(dRow, "Profile Type") && dRow["Profile Type"] !== missing ? dem["profile_type"] = dRow["Profile Type"] : false
-        hasproperty(dRow, "Quantity Constant") && dRow["Quantity Constant"] !== missing ? dem["quantity_constant"] = Float64(dRow["Quantity Constant"]) : false
-        dem["conversionFactor"] = hasproperty(dRow, "Conversion Factor") && dRow["Conversion Factor"] !== missing ? Float64(dRow["Conversion Factor"]) : .001
-
-        data[:demandSegments][String(dRow["Name"])] = dem
-    end
-    
-    # storage parameters
-    data[:batteryStorage] = Dict{String, Any}(
-        "energyCapacity" => Float64(storageCfg[!,"Energy Capacity"][1]),
-        "powerCapacity" => Float64(storageCfg[!,"Power Capacity"][1]),
-        "efficiency" => Float64(storageCfg[!,"Efficiency"][1]),
-        "initialSOC" => Float64(storageCfg[!,"Initial SOC"][1]),
-        "endSOC" => Float64(storageCfg[!,"End SOC"][1]),
-    )
-
+    agent = load_agent_config_xlsx(data[:agentConfigFile])
+    data[:dispatchableGenerators] = agent["dispatchableGenerators"]
+    data[:variableGenerators] = agent["variableGenerators"]
+    data[:demandSegments] = agent["demand"]["segments"]
+    data[:batteryStorage] = agent["batteryStorage"]
 
     return data
 end

@@ -70,18 +70,13 @@ end
 # Reads bidPrice (EUR/MWh) for each conventional generator from the run's own copied agent
 # configuration under Config/ (see ClearMarket.CopyConfigFiles!) - discovered by content rather
 # than a fixed filename, since the copy is named after whatever agentConfig the experiment
-# actually referenced (e.g. "validate_laura_agents.yaml").
+# actually referenced (e.g. "validate_laura_agents.yaml" or "laura_agents.xlsx").
 function LoadGeneratorBidPrices(case_path; generators=CONVENTIONAL_GENERATORS)
-	config_dir = joinpath(case_path, "Config")
-	for f in readdir(config_dir)
-		endswith(f, ".yaml") || continue
-		data = YAML.load_file(joinpath(config_dir, f))
-		haskey(data, "dispatchableGenerators") || continue
-		gens = data["dispatchableGenerators"]
-		all(haskey(gens, g) for g in generators) || continue
-		return Dict(g => Float64(gens[g]["bidPrice"]) for g in generators)
-	end
-	throw("no agent configuration with dispatchableGenerators found in $config_dir")
+	(_, _, agent_cfg) = PostAnalysisCommon.LoadCaseConfigsByRole(case_path)
+	agent_cfg !== nothing && haskey(agent_cfg, "dispatchableGenerators") || throw("no agent configuration with dispatchableGenerators found in $(joinpath(case_path, "Config"))")
+	gens = agent_cfg["dispatchableGenerators"]
+	all(haskey(gens, g) for g in generators) || throw("agent configuration in $(joinpath(case_path, "Config")) lacks some of $generators")
+	return Dict(g => Float64(gens[g]["bidPrice"]) for g in generators)
 end
 
 function PlotHourlyCost(hourly_avg_cost, cases, analysis_dir_path)

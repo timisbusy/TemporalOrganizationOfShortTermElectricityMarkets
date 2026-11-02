@@ -74,6 +74,40 @@ end
 
 ExperimentConfigPath(case_path) = (c = ExperimentConfig(case_path); c === nothing ? nothing : first(c))
 
+# A run's copied experiment/market/agent configs from its Config/ folder as the nested Dicts the yamls
+# load to - from yaml copies, or from the Excel workbooks an Excel-driven run copies. Each is classified
+# by content rather than filename (the names differ per case); `nothing` for any role with no copy.
+function LoadCaseConfigsByRole(case_path)
+	config_dir = joinpath(case_path, "Config")
+	experiment_cfg = market_cfg = agent_cfg = nothing
+	for f in sort(readdir(config_dir))
+		startswith(f, "~\$") && continue # Excel lock file
+		path = joinpath(config_dir, f)
+		if endswith(f, ".yaml")
+			cfg = YAML.load_file(path)
+			cfg isa AbstractDict || continue
+			if haskey(cfg, "marketSequence")
+				market_cfg = cfg
+			elseif haskey(cfg, "variableGenerators") || haskey(cfg, "dispatchableGenerators")
+				agent_cfg = cfg
+			elseif haskey(cfg, "clearForDays")
+				experiment_cfg = cfg
+			end
+		elseif endswith(f, ".xlsx")
+			sheets = XLSX.openxlsx(XLSX.sheetnames, path)
+			if "MarketSequence" in sheets
+				market_cfg = DataImporter.market_config_raw_xlsx(path)
+			elseif "Generators" in sheets
+				agent_cfg = DataImporter.load_agent_config_xlsx(path)
+			elseif "data" in sheets
+				cfg = DataImporter.experiment_window_config_xlsx(path)
+				cfg === nothing || (experiment_cfg = cfg)
+			end
+		end
+	end
+	return (experiment_cfg, market_cfg, agent_cfg)
+end
+
 # MTUs of the clearings exported to a run's RAW/ folder. The final auction for MTU t is clearing t, so
 # these are the MTUs that have a final dispatch.
 function RawClearingMTUs(case_path)
