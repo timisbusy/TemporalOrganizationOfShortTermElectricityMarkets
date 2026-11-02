@@ -1,14 +1,12 @@
 module SimpleModel
 
 using JuMP
-using HiGHS
-using Gurobi
 
 using ..Helpers.MarketDataStorage
+using ..SolverSelection
 
 include("../helpers/helper_input_data.jl")
 
-const gurobi_env = Gurobi.Env()
 
 # NOTE: THIS IS A COPY OF THE FLEXIBLE MODEL with explicit handling for adjustment market periods (those for which a dispatch has already been made)
 
@@ -361,13 +359,13 @@ end
 # data - information about assets - prices, availability factors, etc
 # market - defines when the window for which this market clears and the market name
 
-USE_GUROBI = true
+USE_GUROBI = false
 
 function build(time_period, marketresults, initialization, data, market)
 
 	# create the optimisation model with HiGHS/Gurobi as the solver
 
-    m = USE_GUROBI ? Model(() -> Gurobi.Optimizer(gurobi_env)) : Model(HiGHS.Optimizer)
+    m = Model(SolverSelection.select_optimizer(USE_GUROBI ? "gurobi" : "highs"))
     set_silent(m)
 	# build the sets, time series and parameters based on the inputs
 	define_sets!(m, time_period, marketresults, initialization, data, market)
