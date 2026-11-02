@@ -1,7 +1,6 @@
 module TwoStageMarketModel
 
 using JuMP
-using HiGHS
 using DataFrames
 
 using ..Helpers.MarketDataStorage

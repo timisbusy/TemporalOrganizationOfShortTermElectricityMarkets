@@ -1,7 +1,6 @@
 module StorageMipMarketModel
 
 using JuMP
-using HiGHS
 
 using ..Helpers.MarketDataStorage
 using ..SolverSelection

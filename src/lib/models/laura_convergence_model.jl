@@ -1,9 +1,9 @@
 module LauraConvergenceMarketModel
 
 using JuMP
-using HiGHS
 
 using ..Helpers.MarketDataStorage
+using ..SolverSelection
 
 include("../helpers/helper_input_data.jl")
 
@@ -379,7 +379,7 @@ function build(time_period, marketresults, initialization, data, market)
 
 	# create the optimisation model with HiGHS as the solver
 
-    m = Model(HiGHS.Optimizer)
+    m = Model(SolverSelection.select_optimizer("highs"))
     set_silent(m)
 	# build the sets, time series and parameters based on the inputs
 	define_sets!(m, time_period, marketresults, initialization, data, market)

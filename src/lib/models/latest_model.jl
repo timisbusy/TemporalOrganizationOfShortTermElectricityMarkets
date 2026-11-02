@@ -1,7 +1,6 @@
 module LatestMarketModel
 
 using JuMP
-using HiGHS
 
 using ..Helpers.MarketDataStorage
 using ..SolverSelection

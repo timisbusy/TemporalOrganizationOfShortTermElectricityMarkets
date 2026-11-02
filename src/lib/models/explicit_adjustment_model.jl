@@ -1,7 +1,6 @@
 module ExplicitAdjustmentMarketModel
 
 using JuMP
-using HiGHS
 
 using ..Helpers.MarketDataStorage
 using ..SolverSelection

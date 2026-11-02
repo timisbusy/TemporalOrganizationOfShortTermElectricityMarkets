@@ -1,7 +1,6 @@
 module SimpleModel
 
 using JuMP
-using HiGHS
 
 using ..Helpers.MarketDataStorage
 using ..SolverSelection
