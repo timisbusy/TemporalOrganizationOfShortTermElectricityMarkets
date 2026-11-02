@@ -287,7 +287,9 @@ function load_input_data_xlsx(path::String)
     data[:clearForDays] = Int(cfg_df[!,"Clear for Days"][1])
     data[:timePeriodsPerDay] = Int(cfg_df[!,"MTU per Day"][1]) # number of MTU in each day
     data[:lastAuctionMTU] = hasproperty(cfg_df,"Last Auction MTU") && cfg_df[!,"Last Auction MTU"][1] !== missing ? Int(cfg_df[!,"Last Auction MTU"][1]) : nothing
-    data[:noiseLevel] = float(cfg_df[!,"Noise Level"][1])
+    # optional: the std of the generated wind forecast errors. Has no effect when a scenario file already exists
+    # (the default shared one does), so it defaults to the 0.2 the Laura configs use.
+    data[:noiseLevel] = hasproperty(cfg_df,"Noise Level") && cfg_df[!,"Noise Level"][1] !== missing ? float(cfg_df[!,"Noise Level"][1]) : 0.2
     data[:startDate] = hasproperty(cfg_df,"Start Date") && cfg_df[!,"Start Date"][1] !== missing ? cfg_df[!,"Start Date"][1] : Date(2026,1,1)
     data[:endDate] = data[:startDate] + Dates.Day(data[:clearForDays])
 
