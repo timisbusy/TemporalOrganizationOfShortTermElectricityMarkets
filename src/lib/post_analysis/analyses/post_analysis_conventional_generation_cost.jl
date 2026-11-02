@@ -41,6 +41,7 @@ const DEFAULT_CASES = ["36h", "48h", "72h"]
 DefaultLabel(case_paths, cases) = join([c for c in cases if haskey(case_paths, c)], "_vs_")
 
 function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=DefaultLabel(case_paths, cases)), time_range=nothing)
+	println("starting analysis: conventional generation cost")
 	# nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
 	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
 	# kept short ("gen_cost", not "conventional_generation_cost") for the same MAX_PATH reason -

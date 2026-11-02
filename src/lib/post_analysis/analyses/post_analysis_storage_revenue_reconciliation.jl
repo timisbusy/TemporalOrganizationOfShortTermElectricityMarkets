@@ -170,6 +170,7 @@ function SummaryPlot(summary_df, cases, analysis_dir_path)
 end
 
 function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; time_range=nothing, top_n_divergent=15, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label="storage_revenue_reconciliation"))
+	println("starting analysis: storage revenue reconciliation")
 	# nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
 	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths; output_base=output_base)
 

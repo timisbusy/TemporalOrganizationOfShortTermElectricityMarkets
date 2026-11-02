@@ -128,6 +128,7 @@ function StatisticsTable(df)
 end
 
 function PerformAnalysis(sweep_name::String="fixed_vs_rolling_36"; output_dir::String="results/sweep_$sweep_name/plots")
+	println("starting analysis: error realization sweep")
     kpis_path = "results/sweep_$sweep_name/kpis.csv"
     isfile(kpis_path) || error("no sweep results at $kpis_path")
     df = CSV.read(IOBuffer(read(kpis_path)), DataFrame) # a copy, so a sweep still appending to the file cannot hand us half a row

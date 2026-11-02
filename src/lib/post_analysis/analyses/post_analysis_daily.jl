@@ -19,6 +19,7 @@ quantitySymbol = Symbol("Quantity (MWh)")
 # and maps to calendar date startDate + d days - with startDate: 2025-05-01 (day 0 = May 1), May 4
 # is day index 3 and May 5 is day index 4 (the default). Each highlighted day must lie inside time_range.
 function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=nothing, highlight_days=[("May 4", 3), ("May 5", 4)])
+	println("starting analysis: daily")
     # nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
     time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
 

@@ -29,7 +29,7 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 
 	analysis_dir_path = "$output_base/lead_time_analysis"
 
-	println("starting analysis")
+	println("starting analysis: lead time")
 	CleanDirectory(analysis_dir_path)
 
 	transactions_by_case = Dict{String,DataFrame}()

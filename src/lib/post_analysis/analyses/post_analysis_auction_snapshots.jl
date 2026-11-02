@@ -32,6 +32,7 @@ GEN_COLORS = [:steelblue, :lightgreen, :red, :lightyellow, :gold, :purple]
 DEFAULT_CLEARING_MTUS = [84, 85, 86, 660, 661, 662]
 
 function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), clearing_mtus=DEFAULT_CLEARING_MTUS)
+	println("starting analysis: auction snapshots")
 
 	analysis_dir_path = "$output_base/auction_snapshots"
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)

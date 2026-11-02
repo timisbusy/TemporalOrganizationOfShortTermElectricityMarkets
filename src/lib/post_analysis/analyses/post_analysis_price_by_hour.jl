@@ -21,6 +21,7 @@ const DEFAULT_CASE_PATHS = PostAnalysisConventionalGenerationCost.DEFAULT_CASE_P
 const DEFAULT_CASES = PostAnalysisConventionalGenerationCost.DEFAULT_CASES
 
 function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=PostAnalysisConventionalGenerationCost.DefaultLabel(case_paths, cases)), time_range=nothing)
+	println("starting analysis: price by hour")
 	# nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
 	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
 	# kept short for the same MAX_PATH reason as PostAnalysisConventionalGenerationCost's gen_cost.
