@@ -25,6 +25,22 @@ function sample_time_range(cfg::AbstractDict)
     )
 end
 
+# The sample_time_range inputs from an Excel experiment sheet, keyed like the experiment yaml so the
+# Dict method above applies to either. `nothing` if the workbook has no "data" sheet with a "Clear for Days" column.
+function experiment_window_config_xlsx(path::String)
+    df = try
+        DataFrame(XLSX.readtable(path, "data"))
+    catch
+        return nothing
+    end
+    hasproperty(df, "Clear for Days") || return nothing
+    cfg = Dict{String,Any}("clearForDays" => df[!,"Clear for Days"][1], "timePeriodsPerDay" => df[!,"MTU per Day"][1])
+    for (column, key) in ("Sample Period Exclude Spin Up" => "samplePeriodExcludeSpinUp", "Sample Period Exclude End" => "samplePeriodExcludeEnd")
+        hasproperty(df, column) && df[!,column][1] !== missing && (cfg[key] = df[!,column][1])
+    end
+    return cfg
+end
+
 # create a market configuration object from a file
 
 function load_market_configuration(path::String, expTimePeriodsPerDay::Int)
