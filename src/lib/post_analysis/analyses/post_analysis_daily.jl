@@ -17,7 +17,7 @@ quantitySymbol = Symbol("Quantity (MWh)")
 # runs' own configs define (see PostAnalysisCommon.ResolveTimeRange).
 # highlight_days: (label, day index) pairs to plot hour-by-hour; day index d spans MTU [24d, 24d+23]
 # and maps to calendar date startDate + d days - with startDate: 2025-05-01 (day 0 = May 1), May 4
-# is day index 3 and May 5 is day index 4 (the default). Each highlighted day must lie inside time_range.
+# is day index 3 and May 5 is day index 4 (the default). Highlighted days that do not lie wholly inside time_range are skipped with a warning.
 function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=nothing, highlight_days=[("May 4", 3), ("May 5", 4)])
 	println("starting analysis: daily")
     # nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
@@ -36,6 +36,11 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 
     for (label, day) in highlight_days
         interval = day*24:((day + 1)*24 - 1)
+        # the indicators above only cover time_range, so a day that is not wholly inside it has no data to plot
+        if !(first(interval) in time_range && last(interval) in time_range)
+            println("warning: skipping highlight day $label (MTU $(first(interval)):$(last(interval))) - it is not inside the analysis time range $time_range")
+            continue
+        end
         println("$(uppercase(label)) RESULTS")
         for indicator in ["SOC", "6G_Wind", "2D_ModerateBid", "4G_Shoulder"]
             plotPhysicalIndicator(dds, interval, Symbol(indicator), print_cases, label, analysis_dir_path)
