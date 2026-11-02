@@ -177,9 +177,9 @@ function load_input_data_xlsx(path::String)
 
     data[:clearForDays] = Int(cfg_df[!,"Clear for Days"][1])
     data[:timePeriodsPerDay] = Int(cfg_df[!,"MTU per Day"][1]) # number of MTU in each day
-    data[:lastAuctionMTU] = hasproperty(cfg_df,"Last Auction MTU") && cfg_df[!,"Last Auction MTU"][1] != "" ? Int(cfg_df[!,"Last Auction MTU"][1]) : nothing
+    data[:lastAuctionMTU] = hasproperty(cfg_df,"Last Auction MTU") && cfg_df[!,"Last Auction MTU"][1] !== missing ? Int(cfg_df[!,"Last Auction MTU"][1]) : nothing
     data[:noiseLevel] = float(cfg_df[!,"Noise Level"][1])
-    data[:startDate] = hasproperty(cfg_df,"Start Date") && cfg_df[!,"Start Date"][1] != "" ? cfg_df[!,"Start Date"][1] : Date(2026,1,1)
+    data[:startDate] = hasproperty(cfg_df,"Start Date") && cfg_df[!,"Start Date"][1] !== missing ? cfg_df[!,"Start Date"][1] : Date(2026,1,1)
     data[:endDate] = data[:startDate] + Dates.Day(data[:clearForDays])
 
     data[:skipEarlyAuctions] = hasproperty(cfg_df,"Skip Early Auctions") && cfg_df[!,"Skip Early Auctions"][1] !== missing ? Int(cfg_df[!,"Skip Early Auctions"][1]) : 0
@@ -237,10 +237,12 @@ function load_input_data_xlsx(path::String)
         gen = Dict{String, Any}(
             "bidPrice" => genRow["Bid Price"],
             "capacity" => genRow["Capacity"],
-            "rampRate" => genRow["Ramp Rate"],
             "initialQuantity" => genRow["Initial Quantity"],
             "emissionFactor" => genRow["Emission Factor"],
         )
+        # only set the ramp keys that are filled in: the models pick the formulation by haskey(gen, "rampRate")
+        hasproperty(genRow, "Ramp Rate") && genRow["Ramp Rate"] !== missing ? gen["rampRate"] = genRow["Ramp Rate"] : false
+        hasproperty(genRow, "Ramp Rate LD") && genRow["Ramp Rate LD"] !== missing ? gen["rampRateLD"] = genRow["Ramp Rate LD"] : false
         gen["conversionFactor"] = hasproperty(genRow, "Conversion Factor") && genRow["Conversion Factor"] !== missing ? Float64(genRow["Conversion Factor"]) : .001
         data[:dispatchableGenerators][String(genRow["Name"])] = gen
     end
@@ -253,10 +255,10 @@ function load_input_data_xlsx(path::String)
             "capacity" => genRow["Capacity"],
         )
 
-        genRow["Profile"] !== missing ? gen["profile"] = parse.(Float64,split(strip(genRow["Profile"],['"','[',']']),',')) : false
-        genRow["Profile File"] !== missing ? gen["profile_file"] = genRow["Profile File"] : false
+        hasproperty(genRow, "Profile") && genRow["Profile"] !== missing ? gen["profile"] = parse.(Float64,split(strip(genRow["Profile"],['"','[',']']),',')) : false
+        hasproperty(genRow, "Profile File") && genRow["Profile File"] !== missing ? gen["profile_file"] = genRow["Profile File"] : false
         hasproperty(genRow, "Profile Files") && genRow["Profile Files"] !== missing ? gen["profile_files"] = String.(strip.(split(strip(genRow["Profile Files"],['"','[',']']),','))) : false
-        genRow["Profile Type"] !== missing ? gen["profile_type"] = genRow["Profile Type"] : false
+        hasproperty(genRow, "Profile Type") && genRow["Profile Type"] !== missing ? gen["profile_type"] = genRow["Profile Type"] : false
         gen["conversionFactor"] = hasproperty(genRow, "Conversion Factor") && genRow["Conversion Factor"] !== missing ? Float64(genRow["Conversion Factor"]) : .001
         data[:variableGenerators][String(genRow["Name"])] = gen
     end
@@ -268,9 +270,9 @@ function load_input_data_xlsx(path::String)
         dem = Dict{String, Any}(
             "bidPrice" => dRow["Bid Price"],
         )
-        dRow["Profile"] !== missing ? dem["profile"] = parse.(Float64,split(strip(dRow["Profile"],['"','[',']']),',')) : false
-        dRow["Profile File"] !== missing ? dem["profile_file"] = dRow["Profile File"] : false
-        dRow["Profile Type"] !== missing ? dem["profile_type"] = dRow["Profile Type"] : false
+        hasproperty(dRow, "Profile") && dRow["Profile"] !== missing ? dem["profile"] = parse.(Float64,split(strip(dRow["Profile"],['"','[',']']),',')) : false
+        hasproperty(dRow, "Profile File") && dRow["Profile File"] !== missing ? dem["profile_file"] = dRow["Profile File"] : false
+        hasproperty(dRow, "Profile Type") && dRow["Profile Type"] !== missing ? dem["profile_type"] = dRow["Profile Type"] : false
         hasproperty(dRow, "Quantity Constant") && dRow["Quantity Constant"] !== missing ? dem["quantity_constant"] = Float64(dRow["Quantity Constant"]) : false
         dem["conversionFactor"] = hasproperty(dRow, "Conversion Factor") && dRow["Conversion Factor"] !== missing ? Float64(dRow["Conversion Factor"]) : .001
 
