@@ -127,6 +127,7 @@ function PlotAnomalyFrequencyPercent(case, df)
 end
 
 function PerformAnalysis(; time_range=DEFAULT_TIME_RANGE, output_base=PostAnalysisCommon.NewAnalysisOutputDir(PostAnalysisSolverComparison.AllResultDirs(); label=DEFAULT_LABEL))
+	println("starting analysis: storage anomalies solver comparison")
 	analysis_dir_path = "$output_base/storage_anomalies_solver_comparison"
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 

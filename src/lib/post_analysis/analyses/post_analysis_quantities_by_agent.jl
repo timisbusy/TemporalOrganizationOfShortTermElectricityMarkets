@@ -17,7 +17,7 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 
 	analysis_dir_path = "$output_base/post_analysis_quantities_by_agent"
 
-	println("starting analysis")
+	println("starting analysis: quantities by agent")
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 
 	# fresh per-case agent indicators - see PostAnalysisCommon.CalculateCaseIndicators for why this
