@@ -29,3 +29,7 @@ end
 @testset "Time range Tests" begin
 	include("time_range_tests.jl")
 end
+
+@testset "MarketTimeline Tests" begin
+	include("market_timeline_tests.jl")
+end
