@@ -1,14 +1,12 @@
 module LatestMarketModel
 
 using JuMP
-using HiGHS
-using Gurobi
 
 using ..Helpers.MarketDataStorage
+using ..SolverSelection
 
 include("../helpers/helper_input_data.jl")
 
-const gurobi_env = Gurobi.Env()
 
 # NOTE: THIS IS A COPY OF THE FLEXIBLE MODEL with explicit handling for adjustment market periods (those for which a dispatch has already been made)
 
@@ -401,28 +399,13 @@ end
 # data - information about assets - prices, availability factors, etc
 # market - defines when the window for which this market clears and the market name
 
-DEFAULT_SOLVER = "gurobi"
-DEFAULT_SOLVER_METHOD = "simplex"
-
-# solver is chosen via data[:optimizationModelConfig]["solver"] ("gurobi" or "highs"), defaulting to DEFAULT_SOLVER
-function select_optimizer(solver)
-    
-    if solver == "gurobi"
-        return () -> Gurobi.Optimizer(gurobi_env)
-    elseif solver == "highs"
-        return HiGHS.Optimizer
-    else
-        throw("unknown solver \"$solver\" in optimizationModelConfig - supported solvers are \"gurobi\" and \"highs\"")
-    end
-end
-
 function build(time_period, marketresults, initialization, data, market)
 
-	# create the optimisation model with the configured solver (default Gurobi)
-    solver = haskey(data, :optimizationModelConfig) && haskey(data[:optimizationModelConfig], "solver") ? lowercase(String(data[:optimizationModelConfig]["solver"])) : DEFAULT_SOLVER
-    solver_method = haskey(data, :optimizationModelConfig) && haskey(data[:optimizationModelConfig], "solver_method") ? lowercase(String(data[:optimizationModelConfig]["solver_method"])) : DEFAULT_SOLVER_METHOD
+	# create the optimisation model with the configured solver (default HiGHS)
+    solver = SolverSelection.solver(data)
+    solver_method = SolverSelection.solver_method(data)
 
-    m = Model(select_optimizer(solver))
+    m = Model(SolverSelection.select_optimizer(solver))
 
     set_silent(m)
 

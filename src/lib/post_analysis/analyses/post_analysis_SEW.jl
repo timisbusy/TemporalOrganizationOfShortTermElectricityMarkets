@@ -50,7 +50,7 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 
 	analysis_dir_path = "$output_base/post_analysis_SEW"
 
-	println("starting analysis")
+	println("starting analysis: socioeconomic welfare")
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 
 	# fresh per-case (economic_indicators, agent_indicators, transactions, finalDispatchDecisions,

@@ -51,19 +51,61 @@ const DEFAULT_TIME_RANGE = 24:695
 # experiment config copy. A module passed an explicit time_range (e.g. post_analysis_laura_kpis.jl's
 # 12:672) uses it as given.
 
-# The experiment yaml copied into a run's Config/ folder: the one with a clearForDays key (the market
-# and agent copies beside it have none). `nothing` if the run has no such copy. Read from the run
-# rather than src/configs/ so the window is what the run was actually configured with.
-function ExperimentConfigPath(case_path)
+# The experiment config copied into a run's Config/ folder, with the window keys sample_time_range reads:
+# (path, Dict) for the yaml with a clearForDays key (the market and agent copies beside it have none) or
+# the xlsx whose "data" sheet has a "Clear for Days" column. `nothing` if the run has no such copy. Read
+# from the run rather than src/configs/ so the window is what the run was actually configured with.
+function ExperimentConfig(case_path)
 	config_dir = joinpath(case_path, "Config")
 	isdir(config_dir) || return nothing
 	for f in sort(readdir(config_dir))
-		endswith(f, ".yaml") || continue
+		startswith(f, "~\$") && continue # Excel lock file
 		path = joinpath(config_dir, f)
-		cfg = YAML.load_file(path)
-		cfg isa AbstractDict && haskey(cfg, "clearForDays") && return path
+		if endswith(f, ".yaml")
+			cfg = YAML.load_file(path)
+			cfg isa AbstractDict && haskey(cfg, "clearForDays") && return (path, cfg)
+		elseif endswith(f, ".xlsx")
+			cfg = DataImporter.experiment_window_config_xlsx(path)
+			cfg === nothing || return (path, cfg)
+		end
 	end
 	return nothing
+end
+
+ExperimentConfigPath(case_path) = (c = ExperimentConfig(case_path); c === nothing ? nothing : first(c))
+
+# A run's copied experiment/market/agent configs from its Config/ folder as the nested Dicts the yamls
+# load to - from yaml copies, or from the Excel workbooks an Excel-driven run copies. Each is classified
+# by content rather than filename (the names differ per case); `nothing` for any role with no copy.
+function LoadCaseConfigsByRole(case_path)
+	config_dir = joinpath(case_path, "Config")
+	experiment_cfg = market_cfg = agent_cfg = nothing
+	for f in sort(readdir(config_dir))
+		startswith(f, "~\$") && continue # Excel lock file
+		path = joinpath(config_dir, f)
+		if endswith(f, ".yaml")
+			cfg = YAML.load_file(path)
+			cfg isa AbstractDict || continue
+			if haskey(cfg, "marketSequence")
+				market_cfg = cfg
+			elseif haskey(cfg, "variableGenerators") || haskey(cfg, "dispatchableGenerators")
+				agent_cfg = cfg
+			elseif haskey(cfg, "clearForDays")
+				experiment_cfg = cfg
+			end
+		elseif endswith(f, ".xlsx")
+			sheets = XLSX.openxlsx(XLSX.sheetnames, path)
+			if "MarketSequence" in sheets
+				market_cfg = DataImporter.market_config_raw_xlsx(path)
+			elseif "Generators" in sheets
+				agent_cfg = DataImporter.load_agent_config_xlsx(path)
+			elseif "data" in sheets
+				cfg = DataImporter.experiment_window_config_xlsx(path)
+				cfg === nothing || (experiment_cfg = cfg)
+			end
+		end
+	end
+	return (experiment_cfg, market_cfg, agent_cfg)
 end
 
 # MTUs of the clearings exported to a run's RAW/ folder. The final auction for MTU t is clearing t, so
@@ -82,9 +124,9 @@ end
 # actually has a final auction for (a run stopped short by lastAuctionMTU has none past that).
 # `nothing` if the run has no experiment config copy.
 function CaseTimeRange(case_path)
-	config_path = ExperimentConfigPath(case_path)
-	config_path === nothing && return nothing
-	range = DataImporter.sample_time_range(YAML.load_file(config_path))
+	experiment = ExperimentConfig(case_path)
+	experiment === nothing && return nothing
+	range = DataImporter.sample_time_range(last(experiment))
 	clearings = RawClearingMTUs(case_path)
 	isempty(clearings) && return range
 	return max(first(range), minimum(clearings)):min(last(range), maximum(clearings))
