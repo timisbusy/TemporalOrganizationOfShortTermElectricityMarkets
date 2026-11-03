@@ -34,9 +34,9 @@ const BALANCING = :balancing
 # in lifecycle order, which is also the legend order
 const KINDS = [INITIAL, ADJUSTMENT, BALANCING]
 const KIND_LABELS = Dict(
-    INITIAL => "Initial dispatch (decisions first created)",
-    ADJUSTMENT => "Adjustment opportunity (MTU already dispatched)",
-    BALANCING => "Balancing (first MTU, locked)",
+    INITIAL => "Initial Dispatch",
+    ADJUSTMENT => "Adjustment",
+    BALANCING => "Balancing",
 )
 
 # chart surface and ink as in the other analysis figures; strong and light blue for the dispatch / adjustment pair,
@@ -102,10 +102,11 @@ function RowLabels(auctions)
     return [held_at[a.clearing_mtu] > 1 ? "$(a.clearing_mtu) · $(a.market)" : string(a.clearing_mtu) for a in auctions]
 end
 
-# market_config: file name under src/configs/markets/ or a path. The auctions held in the first `days` days of
+# market_config: file name under src/configs/markets/ or a path. `design` names the market design in the title
+# ("<design> - Auctions 24-59"), the config name by default. The auctions held in the first `days` days of
 # the run (or in `clearing_range`, MTUs) are drawn. The figure is returned and, unless output_path is nothing,
 # saved there (default results/figures/market_timeline_<config name>.png).
-function Plot(market_config::String; restrict_mtu1_trading::Bool=true, skip_early_auctions::Int=0, days::Int=3, clearing_range=nothing, output_path="")
+function Plot(market_config::String; restrict_mtu1_trading::Bool=true, skip_early_auctions::Int=0, days::Int=3, clearing_range=nothing, design=nothing, output_path="")
     (markets, time_periods_per_day, path) = LoadMarkets(market_config)
     shown = clearing_range === nothing ? (0:(days * time_periods_per_day - 1)) : clearing_range
     auctions = filter(a -> a.clearing_mtu in shown, ClassifyAuctions(markets, 0:last(shown); restrict_mtu1_trading=restrict_mtu1_trading, skip_early_auctions=skip_early_auctions))
@@ -126,7 +127,7 @@ function Plot(market_config::String; restrict_mtu1_trading::Bool=true, skip_earl
 
     p = Plots.plot(; background_color=SURFACE, foreground_color=AXIS, foreground_color_text=INK_SECONDARY, foreground_color_guide=INK_SECONDARY,
                    titlefontcolor=INK, legendfontcolor=INK_SECONDARY, framestyle=:box, grid=:x, gridalpha=0.5, gridcolor=AXIS,
-                   title="Auction timeline: $name · auctions held at MTU $(first(auctions).clearing_mtu)–$(last(auctions).clearing_mtu)", titlefontsize=12, xlabel="Delivery MTU (market time unit)", ylabel="Auction (clearing MTU)",
+                   title="$(design === nothing ? name : design) - Auctions $(first(auctions).clearing_mtu)-$(last(auctions).clearing_mtu)", titlefontsize=12, xlabel="Delivery MTU", ylabel="Auction MTU",
                    size=(1100, clamp(300 + 11 * n, 620, 1500)), xlims=(x_min, x_max), ylims=(0.4, n + 0.6), yflip=true,
                    xticks=(ceil(Int, x_min / x_step) * x_step):x_step:x_max, yticks=(collect(labelled), RowLabels(auctions)[labelled]),
                    legend=:outerbottom, legendfontsize=9, legend_columns=count(k -> !isempty(blocks[k][1]), KINDS), left_margin=6Plots.mm, bottom_margin=8Plots.mm)
