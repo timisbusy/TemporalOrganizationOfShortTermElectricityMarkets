@@ -26,9 +26,9 @@ mutable struct MarketResult
 	TerminationStatus::MathOptInterface.TerminationStatusCode
 	ObjectiveValue::Number
 
-	# MTU whose adjustment the model locked (restrict_mtu1_trading) - the balancing market of this clearing;
+	# MTUs whose adjustment the model locked (the market's locked MTU count, from the start of the window) - the balancing market of this clearing;
 	# nothing when no lock was applied (first clearing, override, restriction off)
-	LockedMTU1::Union{Int, Nothing}
+	LockedMTUs::Union{UnitRange{Int}, Nothing}
 
 	# detailed outcomes for market agents
 	DecisionVariables::DataFrame
@@ -92,7 +92,7 @@ function AddMarketResult!(market_result_container, model, time_cleared, market_n
 	mr.VariableGenerators = HelperModelResults.VariableGenerators(model)
 	mr.TerminationStatus = termination_status(model)
 	mr.ObjectiveValue = objective_value(model)
-	mr.LockedMTU1 = get(model.ext, :locked_mtu1, nothing)
+	mr.LockedMTUs = get(model.ext, :locked_mtus, nothing)
 	mr.DecisionVariables = HelperModelResults.DecisionVariables(optimization_window, agent_map, model) # todo: docs on this
 	(transactions, adjustment_anomalies) = HelperModelResults.Transactions(mr, GetFinalDispatchDecisions(market_result_container), market_name, market_result_container.Results, model) # todo: docs on this
 	mr.Transactions = transactions

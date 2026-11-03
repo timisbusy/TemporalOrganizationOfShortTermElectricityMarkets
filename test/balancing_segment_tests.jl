@@ -12,7 +12,7 @@ using .ClearMarket.TwoStageMarketModel
 using .ClearMarket.StorageMipMarketModel
 
 # the restrict_mtu1_trading lock names these three generators, so the fixture has to define them
-function balancing_segment_fixture(; restrict, override=false, look_ahead=0)
+function balancing_segment_fixture(; restrict, override=false, look_ahead=0, locked=nothing, window=3)
 	demand_profile = DataFrame(mtu=0:20, Value=fill(8.0, 21))
 	solar_profile = DataFrame(mtu=0:20, Value=fill(1.0, 21))
 	data = Dict{Symbol,Any}(
@@ -30,7 +30,8 @@ function balancing_segment_fixture(; restrict, override=false, look_ahead=0)
 		:optimizationModelConfig => Dict{String,Any}("demand_adjust" => true, "ex_post_transactions" => false, "restrict_mtu1_trading" => restrict),
 	)
 	initialization = Dict(:SOC => 0.0, :Q_gen => Dict("3G_Base" => 0.0, "4G_Shoulder" => 0.0, "5G_Peak" => 0.0, "7G_Solar" => 0.0))
-	market = Dict{Symbol,Any}(:name => "TestMarket", :lookAheadDistance => look_ahead, :optimizationWindow => 3, :enforceRampRates => false, :overrideMTU1Restriction => override)
+	market = Dict{Symbol,Any}(:name => "TestMarket", :lookAheadDistance => look_ahead, :optimizationWindow => window, :enforceRampRates => false, :overrideMTU1Restriction => override)
+	locked === nothing || (market[:lockedMTUs] = locked)
 	return (data, initialization, market, demand_profile)
 end
 
@@ -59,7 +60,7 @@ for (model_name, build) in models
 			container = clear_sequence(build, fixture)
 
 			# the first clearing has nothing to lock against; later ones lock their first MTU
-			@test [mr.LockedMTU1 for mr in container.Results] == [nothing, 1, 2]
+			@test [mr.LockedMTUs for mr in container.Results] == [nothing, 1:1, 2:2]
 
 			tx = MarketDataStorage.GetTransactions(container)
 			@test "Segment" in names(tx)
@@ -86,7 +87,7 @@ for (model_name, build) in models
 		@testset "unlocked runs are all Energy" begin
 			for fixture in (balancing_segment_fixture(restrict=false), balancing_segment_fixture(restrict=true, override=true))
 				container = clear_sequence(build, fixture)
-				@test all(isnothing, [mr.LockedMTU1 for mr in container.Results])
+				@test all(isnothing, [mr.LockedMTUs for mr in container.Results])
 				@test all(MarketDataStorage.GetTransactions(container).Segment .== "Energy")
 			end
 		end
@@ -95,6 +96,39 @@ for (model_name, build) in models
 			fixture = balancing_segment_fixture(restrict=true, look_ahead=2)
 			# the first clearing is never locked, so the failure comes with the second
 			@test_throws ErrorException clear_sequence(build, fixture)
+		end
+
+		@testset "lockedMTUs = N locks the first N MTUs of every clearing after the first" begin
+			for n in (1, 2, 3)
+				fixture = balancing_segment_fixture(restrict=false, locked=n)
+				container = clear_sequence(build, fixture; times=0:3)
+				@test [mr.LockedMTUs for mr in container.Results] == [nothing, (1:n), (2:(1 + n)), (3:(2 + n))]
+
+				tx = MarketDataStorage.GetTransactions(container)
+				locked_rows = [row["Clearing MTU"] > 0 && row["Clearing MTU"] <= row["Market Time Unit"] < row["Clearing MTU"] + n for row in eachrow(tx)]
+				@test (tx.Segment .== "Balancing") == locked_rows
+				balancing = tx[tx.Segment .== "Balancing", :]
+				@test !any(in.(balancing.Agent, Ref(["3G_Base", "4G_Shoulder", "7G_Solar"])))
+			end
+		end
+
+		@testset "lockedMTUs = 0 locks nothing, even with restrict_mtu1_trading off the table" begin
+			container = clear_sequence(build, balancing_segment_fixture(restrict=false, locked=0))
+			@test all(isnothing, [mr.LockedMTUs for mr in container.Results])
+			@test all(MarketDataStorage.GetTransactions(container).Segment .== "Energy")
+		end
+
+		@testset "lockedMTUs = 1 matches the restrict_mtu1_trading lock" begin
+			legacy = clear_sequence(build, balancing_segment_fixture(restrict=true))
+			explicit = clear_sequence(build, balancing_segment_fixture(restrict=false, locked=1))
+			@test [mr.LockedMTUs for mr in legacy.Results] == [mr.LockedMTUs for mr in explicit.Results]
+			a = MarketDataStorage.GetTransactions(legacy)
+			b = MarketDataStorage.GetTransactions(explicit)
+			@test a == b
+		end
+
+		@testset "a lock longer than the optimization window is rejected" begin
+			@test_throws ErrorException clear_sequence(build, balancing_segment_fixture(restrict=false, locked=4))
 		end
 	end
 end
@@ -275,6 +309,33 @@ end
 	@testset "runs without a Segment column are rejected" begin
 		@test_throws String Q.AgentQuantityBySegment(select(final, Not(:Segment)), energy, tx, agent_map, 0:4; agents=agents)
 		@test_throws String Q.GrossTradedVolumeBySegment(select(tx, Not("Segment")), 0:4; generators=["5G_Peak"])
+	end
+end
+
+@testset "analyses reconcile when more than one MTU is locked" begin
+	container = clear_sequence(LatestMarketModel.build, balancing_segment_fixture(restrict=false, locked=2); times=0:4)
+	final = MarketDataStorage.GetFinalDispatchDecisions(container)
+	energy = MarketDataStorage.GetEnergyFinalDispatchDecisions(container)
+	tx = MarketDataStorage.GetTransactions(container)
+	generators = ["3G_Base", "4G_Shoulder", "5G_Peak", "7G_Solar"]
+	# every analysis module carries its own copy of the agent-type enum, so each needs a map keyed by its own
+	map_for(mod) = Dict(mod.HelperModelResults.AGENT_DEMAND => ["D"], mod.HelperModelResults.AGENT_GENERATOR => generators)
+	surplus_map = map_for(BalancingEnergySurpluses)
+	quantity_map = Dict(BalancingEnergyQuantities.BalancingEnergySEW.HelperModelResults.AGENT_DEMAND => ["D"], BalancingEnergyQuantities.BalancingEnergySEW.HelperModelResults.AGENT_GENERATOR => generators)
+	agent_map = map_for(BalancingEnergySEW)
+
+	# each clearing t >= 1 locks t and t+1, so every MTU from 1 on is delivered through a balancing row
+	@test all(r.Segment == (r.mtu >= 1 ? "Balancing" : "Energy") for r in eachrow(final) if r.mtu <= 5)
+	@test all(energy.Segment .== "Energy")
+
+	sew = BalancingEnergySEW.SewBySegment(final, energy, tx, agent_map, 0:5) # throws if energy + balancing != total
+	total = sew.values[sew.indicator_names[1]]
+	@test total["Total"] ≈ total["Energy"] + total["Balancing"]
+	surplus = BalancingEnergySurpluses.AgentSurplusBySegment(final, energy, tx, surplus_map, 0:5; agents=["D"; generators])
+	quantity = BalancingEnergyQuantities.AgentQuantityBySegment(final, energy, tx, quantity_map, 0:5; agents=["D"; generators])
+	for agent in ["D"; generators]
+		@test surplus[agent]["Energy"] + surplus[agent]["Balancing"] ≈ surplus[agent]["Total"]
+		@test quantity[agent]["Energy"] + quantity[agent]["Balancing"] ≈ quantity[agent]["Total"]
 	end
 end
 
