@@ -126,7 +126,7 @@ function Plot(market_config::String; restrict_mtu1_trading::Bool=true, skip_earl
 
     p = Plots.plot(; background_color=SURFACE, foreground_color=AXIS, foreground_color_text=INK_SECONDARY, foreground_color_guide=INK_SECONDARY,
                    titlefontcolor=INK, legendfontcolor=INK_SECONDARY, framestyle=:box, grid=:x, gridalpha=0.5, gridcolor=AXIS,
-                   title="Auction timeline: $name", titlefontsize=12, xlabel="Delivery MTU (market time unit)", ylabel="Auction (clearing MTU)",
+                   title="Auction timeline: $name · auctions held at MTU $(first(auctions).clearing_mtu)–$(last(auctions).clearing_mtu)", titlefontsize=12, xlabel="Delivery MTU (market time unit)", ylabel="Auction (clearing MTU)",
                    size=(1100, clamp(300 + 11 * n, 620, 1500)), xlims=(x_min, x_max), ylims=(0.4, n + 0.6), yflip=true,
                    xticks=(ceil(Int, x_min / x_step) * x_step):x_step:x_max, yticks=(collect(labelled), RowLabels(auctions)[labelled]),
                    legend=:outerbottom, legendfontsize=9, legend_columns=count(k -> !isempty(blocks[k][1]), KINDS), left_margin=6Plots.mm, bottom_margin=8Plots.mm)
