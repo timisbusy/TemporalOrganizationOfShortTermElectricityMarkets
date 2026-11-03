@@ -276,6 +276,10 @@ end
 function load_input_data_xlsx(path::String)
     # Read the YAML file into a nested Julia Dict/Array structure
     cfg_df = DataFrame(XLSX.readtable(path, "data"))
+    # market comparison (compare: market) is a yaml-only feature; fail here, clearly, rather than somewhere
+    # further down on a market-comparison column this loader does not read
+    hasproperty(cfg_df,"Compare") && isequal(cfg_df[!,"Compare"][1], "market") &&
+        error("Excel experiment configurations do not support market comparison (Compare = market): $path - use a yaml experiment configuration with compare: market")
     # cfg = YAML.load_file(path)
     # println(cfg_df)
     # Internal data dictionary that we pass to the other functions
@@ -318,20 +322,10 @@ function load_input_data_xlsx(path::String)
     data[:configFile] = path
     data[:marketConfigFiles] = String[]
 
-    if hasproperty(cfg_df,"Compare") && cfg_df[!,"Compare"][1] == "market"
-        data[:marketSequences] = Dict{String,Any}()
-        for (marketName, marketConfigFilepath) in cfg_df[!,"Market Configs"][1]
-            market_config_path = "$(CONFIG_PATH)/xlsx/markets/$(marketConfigFilepath)"
-            data[:marketSequences][String(marketName)] = load_market_configuration(market_config_path, data[:timePeriodsPerDay])
-            push!(data[:marketConfigFiles], market_config_path)
-        end
-
-    else
-        # if we're not comparing markets, add the single market config
-        market_config_path = "$(CONFIG_PATH)/xlsx/markets/$(cfg_df[!,"Market Configuration"][1])"
-        data[:marketSequence] = load_market_configuration_xlsx(market_config_path, data[:timePeriodsPerDay])
-        push!(data[:marketConfigFiles], market_config_path)
-    end
+    # the single market config (market comparison is not supported for Excel, see the check above)
+    market_config_path = "$(CONFIG_PATH)/xlsx/markets/$(cfg_df[!,"Market Configuration"][1])"
+    data[:marketSequence] = load_market_configuration_xlsx(market_config_path, data[:timePeriodsPerDay])
+    push!(data[:marketConfigFiles], market_config_path)
 
     data[:agentConfigFile] = "$(CONFIG_PATH)/xlsx/agents/$(cfg_df[!,"Agent Configuration"][1])"
     agent = load_agent_config_xlsx(data[:agentConfigFile])

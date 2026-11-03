@@ -29,3 +29,7 @@ end
 @testset "Time range Tests" begin
 	include("time_range_tests.jl")
 end
+
+@testset "Data importer Tests" begin
+	include("data_importer_tests.jl")
+end
