@@ -96,11 +96,11 @@ function AddBlock!(xs, ys, mtu, row)
     append!(ys, (row - 0.42, row - 0.42, row + 0.42, row + 0.42, NaN))
 end
 
-# The auction-held marker: a vertical line on the left edge of the clearing MTU's column, the height of a block,
-# NaN-separated like the blocks so that all the markers are a single series and legend entry.
+# The auction-held marker: a vertical-line marker on the left edge of the clearing MTU's column, centred on the
+# auction's row. A marker series (rather than a path) is what gives the legend a vertical line as its symbol.
 function AddClearingMarker!(xs, ys, clearing_mtu, row)
-    append!(xs, (clearing_mtu, clearing_mtu, NaN))
-    append!(ys, (row - 0.42, row + 0.42, NaN))
+    push!(xs, clearing_mtu)
+    push!(ys, row)
 end
 
 # y tick labels: the clearing MTU, with the market's name where two auctions are held at the same MTU
@@ -151,7 +151,9 @@ function Plot(market_config::String; restrict_mtu1_trading::Bool=true, skip_earl
         Plots.plot!(p, blocks[kind]...; seriestype=:shape, fillcolor=KIND_COLORS[kind], linecolor=SURFACE, linewidth=0.6, label=KIND_LABELS[kind])
     end
 
-    Plots.plot!(p, markers...; seriestype=:path, linecolor=INK, linewidth=2.5, label=CLEARING_LABEL)
+    # about the height of a block (rows share roughly 80% of the figure height), within what stays legible
+    marker_size = clamp(0.8 * (clamp(300 + 11 * n, 620, 1500)) / n * 0.5, 3, 8)
+    Plots.scatter!(p, markers...; marker=:vline, markersize=marker_size, markerstrokecolor=INK, markerstrokewidth=2.5, markercolor=INK, label=CLEARING_LABEL)
 
     if output_path !== nothing
         output_path = isempty(output_path) ? "results/figures/market_timeline_$name.png" : output_path
