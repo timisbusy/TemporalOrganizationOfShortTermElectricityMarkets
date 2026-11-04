@@ -5,6 +5,7 @@
 #   Initial dispatch        - no earlier auction's window included this MTU, so this is where its dispatch
 #                             decisions are first created
 #   Adjustment opportunity  - an earlier auction already dispatched this MTU; this one can revise it
+#   Auction Cleared         - not a kind of block: a vertical line on the left edge of the MTU at which the auction is held
 #   Balancing (locked MTU)  - the first MTU of the window when the restrict_mtu1_trading lock applies: base,
 #                             shoulder and solar generation can no longer be adjusted there
 #
@@ -38,6 +39,8 @@ const KIND_LABELS = Dict(
     ADJUSTMENT => "Adjustment",
     BALANCING => "Balancing",
 )
+
+const CLEARING_LABEL = "Auction Cleared"
 
 # chart surface and ink as in the other analysis figures; strong and light blue for the dispatch / adjustment pair,
 # orange for the locked balancing MTU
@@ -93,6 +96,13 @@ function AddBlock!(xs, ys, mtu, row)
     append!(ys, (row - 0.42, row - 0.42, row + 0.42, row + 0.42, NaN))
 end
 
+# The auction-held marker: a vertical line on the left edge of the clearing MTU's column, the height of a block,
+# NaN-separated like the blocks so that all the markers are a single series and legend entry.
+function AddClearingMarker!(xs, ys, clearing_mtu, row)
+    append!(xs, (clearing_mtu, clearing_mtu, NaN))
+    append!(ys, (row - 0.42, row + 0.42, NaN))
+end
+
 # y tick labels: the clearing MTU, with the market's name where two auctions are held at the same MTU
 function RowLabels(auctions)
     held_at = Dict{Int,Int}()
@@ -117,7 +127,12 @@ function Plot(market_config::String; restrict_mtu1_trading::Bool=true, skip_earl
         AddBlock!(blocks[kind]..., mtu, row)
     end
 
-    x_min = minimum(first(a.window) for a in auctions)
+    markers = (Float64[], Float64[])
+    for (row, a) in enumerate(auctions)
+        AddClearingMarker!(markers..., a.clearing_mtu, row)
+    end
+
+    x_min = minimum(min(first(a.window), a.clearing_mtu) for a in auctions)
     x_max = maximum(last(a.window) for a in auctions) + 1
     n = length(auctions)
     label_step = max(1, cld(n, 24)) # keep the row labels legible when there are many auctions
@@ -130,11 +145,13 @@ function Plot(market_config::String; restrict_mtu1_trading::Bool=true, skip_earl
                    title="$(design === nothing ? name : design) - Auctions $(first(auctions).clearing_mtu)-$(last(auctions).clearing_mtu)", titlefontsize=12, xlabel="Delivery MTU", ylabel="Auction MTU",
                    size=(1100, clamp(300 + 11 * n, 620, 1500)), xlims=(x_min, x_max), ylims=(0.4, n + 0.6), yflip=true,
                    xticks=(ceil(Int, x_min / x_step) * x_step):x_step:x_max, yticks=(collect(labelled), RowLabels(auctions)[labelled]),
-                   legend=:outerbottom, legendfontsize=9, legend_columns=count(k -> !isempty(blocks[k][1]), KINDS), left_margin=6Plots.mm, bottom_margin=8Plots.mm)
+                   legend=:outerbottom, legendfontsize=9, legend_columns=count(k -> !isempty(blocks[k][1]), KINDS) + 1, left_margin=6Plots.mm, bottom_margin=8Plots.mm)
     for kind in KINDS
         isempty(blocks[kind][1]) && continue
         Plots.plot!(p, blocks[kind]...; seriestype=:shape, fillcolor=KIND_COLORS[kind], linecolor=SURFACE, linewidth=0.6, label=KIND_LABELS[kind])
     end
+
+    Plots.plot!(p, markers...; seriestype=:path, linecolor=INK, linewidth=2.5, label=CLEARING_LABEL)
 
     if output_path !== nothing
         output_path = isempty(output_path) ? "results/figures/market_timeline_$name.png" : output_path
