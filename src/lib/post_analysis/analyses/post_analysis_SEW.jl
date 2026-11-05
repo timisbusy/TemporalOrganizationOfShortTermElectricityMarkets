@@ -4,17 +4,10 @@ using XLSX, DataFrames, Plots, Statistics, Latexify
 
 include("../post_analysis_common.jl")
 
-# Mean Final Auction Price is already an intensive €/MWh average (like
-# PostAnalysisWindowLengthStorageKPIs' Avg Charging/Discharging Price), not a total over
-# time_range, so it passes through the daily_average sheet unscaled rather than being divided by
-# days like every other (extensive) indicator in this table.
-const INTENSIVE_INDICATORS = Set([PostAnalysisCommon.MEAN_FINAL_AUCTION_PRICE_INDICATOR])
-
 # "Name (Unit)" -> "Name (Unit/day)" for the daily-average table, so its row labels can't be
 # mistaken for the same totals reported in the "totals" sheet just by glancing at the Indicator
 # column - see PostAnalysisWindowLengthKPIs.DailyIndicatorLabel, which this mirrors exactly.
 function DailyIndicatorLabel(indicator)
-	indicator in INTENSIVE_INDICATORS && return indicator
 	m = match(r"^(.*)\(([^()]*)\)$", indicator)
 	m === nothing && return "$indicator (per day)"
 	return "$(m.captures[1])($(m.captures[2])/day)"
@@ -81,9 +74,6 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 	push_indicator_row!(PostAnalysisCommon.WIND_CURTAILED_INDICATOR,
 		Dict(case => PostAnalysisCommon.WindCurtailed(indicators_by_case[case].final_dispatch_decisions) for case in cases))
 
-	push_indicator_row!(PostAnalysisCommon.MEAN_FINAL_AUCTION_PRICE_INDICATOR,
-		Dict(case => PostAnalysisCommon.LoadMeanEnergyFinalAuctionPrice(case_paths[case], time_range) for case in cases))
-
 	println(final_indicators_df)
 
 	# average daily value = total / MTU count in time_range * 24 (MTU per day) - % difference is
@@ -94,7 +84,7 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 
 	daily_avg_df = empty_indicators_table()
 	for row in eachrow(final_indicators_df)
-		scale = row.Indicator in INTENSIVE_INDICATORS ? 1.0 : 24 / mtu_count
+		scale = 24 / mtu_count
 		new_row = Any[DailyIndicatorLabel(row.Indicator)]
 		append!(new_row, [row[Symbol(case)] * scale for case in cases])
 		append!(new_row, [row[Symbol(col)] for col in diff_cols])
@@ -107,8 +97,8 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 
 	XLSX.writetable("$analysis_dir_path/sew_details.xlsx", "totals" => final_indicators_df, "daily_average" => daily_avg_df; overwrite=true)
 
-	totals_tex_df = PostAnalysisCommon.FormatIndicatorRowForLatex(PostAnalysisCommon.EscapeForLatex(final_indicators_df), PostAnalysisCommon.MEAN_FINAL_AUCTION_PRICE_INDICATOR, cases)
-	daily_avg_tex_df = PostAnalysisCommon.FormatIndicatorRowsForLatex(PostAnalysisCommon.EscapeForLatex(daily_avg_df), [PostAnalysisCommon.MEAN_FINAL_AUCTION_PRICE_INDICATOR], cases)
+	totals_tex_df = PostAnalysisCommon.EscapeForLatex(final_indicators_df)
+	daily_avg_tex_df = PostAnalysisCommon.EscapeForLatex(daily_avg_df)
 	totals_tex = latexify(totals_tex_df; env = :table, booktabs = true, snakecase=true, latex=false,fmt="%'\''d\n")
 	daily_avg_tex = latexify(daily_avg_tex_df; env = :table, booktabs = true, snakecase=true, latex=false,fmt="%'\''d\n")
 
