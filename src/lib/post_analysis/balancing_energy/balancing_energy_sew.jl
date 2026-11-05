@@ -44,6 +44,9 @@ const IMBALANCE_POSITION = 7
 #                       agent, fuel cost for a generator
 #   cash(agent)       - sum of quantity * price over the agent's balancing transactions: payments for a demand
 #                       agent, revenue for a generator
+# Assumption: bid prices do not change between auctions (true of the current agent configs), so valuing every
+# adjustment at the bid price of the MTU's final balancing row equals valuing it at the bid price of the auction
+# that created it. If bids ever vary by auction, this must read the bid from the creating clearing instead.
 function BalancingTerms(final_dispatch_decisions, transactions, time_range)
 	in_range(mtus) = time_range.start .<= mtus .<= time_range.stop
 	balancing_rows = final_dispatch_decisions[in_range(final_dispatch_decisions.mtu) .& (final_dispatch_decisions.Segment .== BalancingEnergySplit.BALANCING), :]
