@@ -42,6 +42,12 @@ function experiment_window_config_xlsx(path::String)
     return cfg
 end
 
+# the number of MTUs a market locks (see HelperMtuLock.LockedMTUCount): a non-negative whole number, nothing else
+function parse_locked_mtus(value, market_name)
+    (value isa Real && isinteger(value) && value >= 0) || error("lockedMTUs of market $market_name must be a non-negative whole number, got $(repr(value))")
+    return Int(value)
+end
+
 # create a market configuration object from a file
 
 function load_market_configuration(path::String, expTimePeriodsPerDay::Int)
@@ -51,6 +57,7 @@ function load_market_configuration(path::String, expTimePeriodsPerDay::Int)
     marketTimePeriodsPerDay = get(marketCfg,"timePeriodsPerDay", Int) 
     expTimePeriodsPerDay == marketTimePeriodsPerDay || throw("market and experiment configurations do not match: $(marketTimePeriodsPerDay) !== $(expTimePeriodsPerDay)")
     overrideMTU1Restriction = haskey(marketCfg,"overrideMTU1Restriction") ? get(marketCfg,"overrideMTU1Restriction", Bool) : false
+    defaultLockedMTUs = get(marketCfg, "lockedMTUs", nothing) # file-level default for markets that do not state their own
     
     marketSequence = []
     for (name, market) in get(marketCfg,"marketSequence",Dict())
@@ -58,6 +65,8 @@ function load_market_configuration(path::String, expTimePeriodsPerDay::Int)
         addMarket[:name] = name
         addMarket[:timePeriodsPerDay] = expTimePeriodsPerDay
         addMarket[:overrideMTU1Restriction] = overrideMTU1Restriction
+        lockedMTUs = get(market, "lockedMTUs", defaultLockedMTUs)
+        lockedMTUs === nothing || (addMarket[:lockedMTUs] = parse_locked_mtus(lockedMTUs, name))
         addMarket[:clearingInterval] = get(market,"clearingInterval", Int) # number of time periods between market clearing/optimization rounds
         addMarket[:optimizationWindow] = get(market,"optimizationWindow", Int) # number of time periods to consider in each round
         addMarket[:lookAheadDistance] = get(market,"lookAheadDistance", Int) # window under consideration starts lookAheadDistance time periods ahead
@@ -89,6 +98,7 @@ function load_market_configuration_xlsx(path::String, expTimePeriodsPerDay::Int)
         addMarket[:clockTimeBegin] = Int(marketDef["Clock Time Begin"]) # expressed in market clearing periods - how long from the beginning of the day should this sequence begin?
         addMarket[:enforceRampRates] = hasproperty(marketDef, "Enforce Ramp Rates") ? Bool(marketDef["Enforce Ramp Rates"]) : true # default to true. if false, ramp rates for conventional generators will be disabled in this market
         addMarket[:overrideMTU1Restriction] = hasproperty(marketDef, "Override MTU1 Restriction") ? Bool(marketDef["Override MTU1 Restriction"]) : false
+        hasproperty(marketDef, "Locked MTUs") && !ismissing(marketDef["Locked MTUs"]) && (addMarket[:lockedMTUs] = parse_locked_mtus(marketDef["Locked MTUs"], addMarket[:name]))
         push!(marketSequence, addMarket)
     end
 

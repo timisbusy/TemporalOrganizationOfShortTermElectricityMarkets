@@ -1,7 +1,7 @@
 # Month-by-month roll-up for long (multi-month) runs such as the full-year 2025 fixed_36/rolling_36
 # pair - the daily analysis (post_analysis_daily.jl) gives one point per day, which is too fine to
 # read off a year; this aggregates the same final_dispatch_decisions/mtu_economic_results data per
-# calendar month instead, so seasonal effects (winter wind vs. summer solar, storage cycling, price
+# calendar month instead (energy segment only; no Imbalance Energy column, it is always 0 there), so seasonal effects (winter wind vs. summer solar, storage cycling, price
 # spreads) are visible.
 #
 # Months are derived from each MTU's own calendar date, start_date + (mtu ÷ MTUs per day) days - pass
@@ -15,7 +15,6 @@ using XLSX, DataFrames, Plots, Statistics, Dates, Latexify
 include("../post_analysis_common.jl")
 
 const SEW = Symbol("Socioeconomic Welfare (€)")
-const IMBALANCE = Symbol("Imbalance Energy (MWh)")
 const PRODUCTION_COSTS = Symbol("Production Costs (€)")
 const SHOULDER_PEAK = Symbol("Shoulder + Peak Dispatch (MWh)")
 const GROSS_TRADED = Symbol("Gross Traded Volume (MWh)")
@@ -30,7 +29,6 @@ const COMPARED_METRICS = [
 	Symbol("Mean Final Price (€/MWh)"),
 	Symbol("Wind Curtailed (MWh)"),
 	Symbol("Storage Throughput (MWh)"),
-	IMBALANCE,
 	SHOULDER_PEAK,
 	GROSS_TRADED,
 	PRODUCTION_COSTS,
@@ -65,7 +63,6 @@ function MonthlyIndicators(final_dispatch_decisions, mtu_economic_indicators, tr
 	mei[!, :Month] = [MonthLabel(start_date, m, mtus_per_day) for m in mei.MTU]
 	monthly_mei = combine(groupby(mei, :Month),
 		SEW => sum => SEW,
-		IMBALANCE => sum => IMBALANCE,
 		PRODUCTION_COSTS => sum => PRODUCTION_COSTS,
 	)
 
@@ -88,7 +85,7 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 
 	monthly_by_case = Dict{String,DataFrame}()
 	for case in cases
-		(economic_indicators, agent_indicators, transactions, final_dispatch_decisions, mtu_economic_indicators) = PostAnalysisCommon.CalculateCaseIndicators(case_paths, case; time_range=time_range, imbalance_agents=PostAnalysisCommon.DEFAULT_IMBALANCE_AGENTS)
+		(economic_indicators, agent_indicators, transactions, final_dispatch_decisions, mtu_economic_indicators) = PostAnalysisCommon.CalculateCaseEnergyIndicators(case_paths, case; time_range=time_range)
 		monthly_by_case[case] = MonthlyIndicators(final_dispatch_decisions, mtu_economic_indicators, transactions, start_date, mtus_per_day)
 		println("$case monthly indicators:")
 		println(monthly_by_case[case])

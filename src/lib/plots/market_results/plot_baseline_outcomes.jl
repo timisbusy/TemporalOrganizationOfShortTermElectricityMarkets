@@ -43,6 +43,9 @@ function plot(marketresult, config, test_range, test_id)
 
     XLSX.writetable("results/$(test_id)/final_dispatch_decisions.xlsx", "data" => final_dispatch_decisions, "interpretation" => Interpretations.DecisionVariablesInterpretation)
 
+    # the same table built from the energy-market rows only (see MarketDataStorage.EnergyFinalDispatchDecisions)
+    XLSX.writetable("results/$(test_id)/final_dispatch_decisions_energy.xlsx", "data" => MarketDataStorage.GetEnergyFinalDispatchDecisionsForRange(marketresult, test_range), "interpretation" => Interpretations.DecisionVariablesInterpretation)
+
     XLSX.writetable("results/$(test_id)/mtu_economic_results.xlsx", "data" => mtu_economic_outcomes)
 
     # written last: the only export that can exceed Excel's row limit (see write_transactions)
@@ -74,7 +77,9 @@ function plotCompare(market_results, config, test_range, test_id)
         write_transactions("results/$(test_id)/RAW/transactions_$(marketConfiguration)", transactions)
 
         XLSX.writetable("results/$(test_id)/RAW/final_dispatch_decisions_$(marketConfiguration).xlsx", "data" => final_dispatch_decisions, "interpretation" => Interpretations.DecisionVariablesInterpretation)
-        
+
+        XLSX.writetable("results/$(test_id)/RAW/final_dispatch_decisions_energy_$(marketConfiguration).xlsx", "data" => MarketDataStorage.GetEnergyFinalDispatchDecisionsForRange(marketResult, test_range), "interpretation" => Interpretations.DecisionVariablesInterpretation)
+
         XLSX.writetable("results/$(test_id)/mtu_economic_results_$(marketConfiguration).xlsx", "data" => mtu_economic_outcomes) #, "interpretation" => Interpretations.DecisionVariablesInterpretation)
 
         # println("MTU level results for $marketConfiguration")
