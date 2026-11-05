@@ -36,5 +36,4 @@ optimizationModelConfig:
   solver_method: simplex
   demand_adjust: false
   ex_post_transactions: false
-  restrict_mtu1_trading: false
 
