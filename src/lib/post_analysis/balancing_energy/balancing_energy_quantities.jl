@@ -110,6 +110,7 @@ function InterpretationTable()
 		Interpretation=[
 			"Delivered dispatch per agent. Energy is the energy-only final dispatch (the plan before the balancing market); Balancing is the net adjustment from the agent's balancing transactions; Energy + Balancing = Total (checked).",
 			"Sum of |quantity| over the generator's transactions (including every clearing's look-ahead adjustments), split by the transactions' Segment; Energy + Balancing = Total.",
+			"Storage discharge and charge summed over the range. Total: the final dispatch (overall). Energy: the energy-only final dispatch (as dispatched by the energy markets, before the balancing market). No Balancing column.",
 			"Subject case vs each base case, for Total and Energy; not given for Balancing.",
 		],
 	)
@@ -129,6 +130,7 @@ function PerformAnalysis(case_paths; cases=collect(keys(case_paths)), output_bas
 		transactions = PostAnalysisCommon.LoadCaseFile(case_paths, c, "transactions.xlsx")
 		quantities[c] = AgentQuantityBySegment(final, energy, transactions, agent_map, time_range; agents=agents)
 		gross_traded[c] = GrossTradedVolumeBySegment(transactions, time_range; generators=generators)
+		storage_flows[c] = StorageFlowsBySegment(final, energy, time_range)
 	end
 
 	quantity_table = BalancingEnergySurpluses.SurplusTable(cases, quantities; agents=agents, metric_label="Quantity (MWh)")

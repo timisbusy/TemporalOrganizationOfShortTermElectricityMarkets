@@ -308,6 +308,20 @@ end
 		@test "Subject vs Base Energy % Diff" in names(table)
 		@test_throws String Q.StorageFlowsBySegment(select(final, Not(:Segment)), energy, 0:4)
 	end
+
+	@testset "PerformAnalysis writes the storage_flows sheet" begin
+		mktempdir() do dir
+			case_path = joinpath(dir, "case")
+			mkpath(case_path)
+			XLSX.writetable(joinpath(case_path, "final_dispatch_decisions.xlsx"), "data" => final)
+			XLSX.writetable(joinpath(case_path, "final_dispatch_decisions_energy.xlsx"), "data" => energy)
+			XLSX.writetable(joinpath(case_path, "transactions.xlsx"), "data" => tx)
+			result = Q.PerformAnalysis(Dict("Case A" => case_path); output_base=joinpath(dir, "out"), time_range=0:4, agent_map=agent_map, agents=["D", "3G_Base", "4G_Shoulder", "5G_Peak", "7G_Solar"], generators=["3G_Base", "4G_Shoulder", "5G_Peak", "7G_Solar"])
+			@test nrow(result.storage_flows) == 2
+			sheets = XLSX.sheetnames(XLSX.readxlsx(joinpath(dir, "out", "post_analysis_balancing_energy_quantities", "agent_quantities_by_segment.xlsx")))
+			@test "storage_flows" in sheets
+		end
+	end
 end
 
 @testset "Float noise in segment values is reported as zero" begin
