@@ -61,8 +61,8 @@ function DecisionVariables(optimization_window::UnitRange{Int}, agent_map::Dict{
 	end
 
 	# which market each row belongs to - see RowSegment; appended last so existing column positions are unchanged
-	locked_mtu1 = get(m.ext, :locked_mtu1, nothing)
-	df[!,"Segment"] = [RowSegment(locked_mtu1, mtu) for mtu in optimization_window]
+	locked_mtus = get(m.ext, :locked_mtus, nothing)
+	df[!,"Segment"] = [RowSegment(locked_mtus, mtu) for mtu in optimization_window]
 
 	return df
 end
@@ -233,18 +233,18 @@ mutable struct Transaction
 	Transaction() = new()
 end
 
-# Which market a transaction belongs to: the first MTU of a clearing whose model applied the
-# restrict_mtu1_trading lock (marketresult.LockedMTU1, set from the model's own m.ext[:locked_mtu1])
+# Which market a transaction belongs to: the locked MTUs (the first N of the window) of a clearing whose model applied the
+# MTU lock (marketresult.LockedMTUs, set from the model's own m.ext[:locked_mtus])
 # is the balancing market, every other MTU - and every MTU of an unlocked clearing - the energy market.
 const SEGMENT_BALANCING = "Balancing"
 const SEGMENT_ENERGY = "Energy"
 
-# the one rule for a row of a clearing: Balancing at the clearing's locked MTU (nothing if no lock was applied), else Energy
-RowSegment(locked_mtu1, mtu) = locked_mtu1 !== nothing && mtu == locked_mtu1 ? SEGMENT_BALANCING : SEGMENT_ENERGY
+# the one rule for a row of a clearing: Balancing at the clearing's locked MTUs (nothing if no lock was applied), else Energy
+RowSegment(locked_mtus, mtu) = locked_mtus !== nothing && mtu in locked_mtus ? SEGMENT_BALANCING : SEGMENT_ENERGY
 
 function TransactionSegment(marketresult, mtu)
-	locked_mtu1 = isdefined(marketresult, :LockedMTU1) ? marketresult.LockedMTU1 : nothing
-	return RowSegment(locked_mtu1, mtu)
+	locked_mtus = isdefined(marketresult, :LockedMTUs) ? marketresult.LockedMTUs : nothing
+	return RowSegment(locked_mtus, mtu)
 end
 
 # compare clearing outcomes with previous clearings to generate a set of transactions
