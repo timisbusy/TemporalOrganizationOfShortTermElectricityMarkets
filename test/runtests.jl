@@ -41,3 +41,7 @@ end
 @testset "Market config lockedMTUs Tests" begin
 	include("market_config_lock_tests.jl")
 end
+
+@testset "Data importer Tests" begin
+	include("data_importer_tests.jl")
+end
