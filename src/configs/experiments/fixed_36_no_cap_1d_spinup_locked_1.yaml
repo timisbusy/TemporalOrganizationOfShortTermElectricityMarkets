@@ -27,7 +27,7 @@ windOffset: 11
 marketConfig: fixed_laura_locked_1.yaml
 
 # choose an agent configuration from the agents directory
-agentConfig: validate_laura_agents.yaml
+agentConfig: final_nl_agent.yaml
 
 # for optimization model customization
 optimizationModelConfig:
