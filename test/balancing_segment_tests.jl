@@ -385,6 +385,35 @@ end
 	end
 end
 
+@testset "Storage by segment when more than one MTU is locked" begin
+	Q = BalancingEnergyQuantities
+	(data, initialization, market, demand_profile) = balancing_segment_fixture(restrict=false, locked=2)
+	data[:batteryStorage] = Dict{String,Any}("energyCapacity" => 20.0, "powerCapacity" => 5.0, "efficiency" => 0.9, "initialSOC" => 0.0, "endSOC" => 0.0)
+	demand_profile[demand_profile.mtu .>= 3, :Value] .= 16.0 # base at 20, then shoulder at 50, so storage has something to arbitrage
+	container = clear_sequence(LatestMarketModel.build, (data, initialization, market, demand_profile); times=0:4)
+	final = MarketDataStorage.GetFinalDispatchDecisions(container)
+	energy = MarketDataStorage.GetEnergyFinalDispatchDecisions(container)
+	tx = MarketDataStorage.GetTransactions(container)
+	generators = ["3G_Base", "4G_Shoulder", "5G_Peak", "7G_Solar"]
+	agent_map = Dict(Q.BalancingEnergySEW.HelperModelResults.AGENT_DEMAND => ["D"], Q.BalancingEnergySEW.HelperModelResults.AGENT_GENERATOR => generators)
+	storage_tx = tx[tx.Agent .== "Storage", :]
+	in_range = 0 .<= storage_tx[!, "Market Time Unit"] .<= 5
+
+	@test nrow(storage_tx) > 0 # otherwise this testset checks nothing
+	@test any(storage_tx.Segment .== "Balancing") # storage trades in the locked MTUs too, or the partition below is trivial
+
+	result = Q.BalancingEnergySEW.SewBySegment(final, energy, tx, agent_map, 0:5) # throws if energy + balancing != total
+	rev = result.values[result.indicator_names[6]] # storage revenue
+	@test rev["Total"] ≈ rev["Energy"] + rev["Balancing"]
+	@test rev["Total"] ≈ sum(storage_tx[in_range, "Quantity (MWh)"] .* storage_tx[in_range, "Price (€/MWh)"])
+	balancing_rows = in_range .& (storage_tx.Segment .== "Balancing")
+	@test rev["Balancing"] ≈ sum(storage_tx[balancing_rows, "Quantity (MWh)"] .* storage_tx[balancing_rows, "Price (€/MWh)"])
+
+	flows = Q.StorageFlowsBySegment(final, energy, 0:5)
+	@test flows["Discharge"]["Total"] ≈ sum(final[0 .<= final.mtu .<= 5, :StorageDischarge])
+	@test flows["Charge"]["Energy"] ≈ sum(energy[0 .<= energy.mtu .<= 5, :StorageCharge])
+end
+
 @testset "Float noise in segment values is reported as zero" begin
 	noise = DataFrame("Quantity (MWh)" => [1.5, -1.5 + 1e-13, 2e-13], "Price (€/MWh)" => [40.0, 40.0, 40.0])
 	totals = BalancingEnergySplit.SegmentTotals(noise)

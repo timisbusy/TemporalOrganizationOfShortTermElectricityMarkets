@@ -413,9 +413,9 @@ end
 
 # The energy-market counterpart of GetFinalDispatchDecisions: one row per MTU, built only from the
 # Segment == Energy rows of the per-clearing decision variables (given in clearing order). The final
-# clearing of a delivered MTU holds it as its locked first MTU, so that row is the balancing market's
+# clearing of a delivered MTU holds it among its locked MTUs, so that row is the balancing market's
 # and is skipped - the MTU's row here is the last clearing that traded it as an energy MTU, normally the
-# clearing before (its price becomes FinalAuctionPrice, as in GetFinalDispatchDecisions). An MTU with
+# clearing before the first one that locked it (its price becomes FinalAuctionPrice, as in GetFinalDispatchDecisions). An MTU with
 # no energy row at all (e.g. a window of a single MTU) has no energy-market outcome to report, so this
 # throws rather than silently dropping it.
 function EnergyFinalDispatchDecisions(decision_variables_in_clearing_order)
@@ -424,7 +424,7 @@ function EnergyFinalDispatchDecisions(decision_variables_in_clearing_order)
 	hasproperty(all_rows, :Segment) || throw("decision variables have no \"Segment\" column - this run predates the balancing/energy split and is not supported (rerun it)")
 	energy_rows = all_rows[all_rows.Segment .== HelperModelResults.SEGMENT_ENERGY, :]
 	no_energy_row = setdiff(unique(all_rows.mtu), unique(energy_rows.mtu))
-	isempty(no_energy_row) || throw("no energy-market row for MTUs $(sort(no_energy_row)) - every clearing that traded them held them as its locked first MTU")
+	isempty(no_energy_row) || throw("no energy-market row for MTUs $(sort(no_energy_row)) - every clearing that traded them held them among its locked MTUs")
 	energy_rows = unique(energy_rows, "mtu"; keep=:last)
 	rename!(energy_rows, :price => :FinalAuctionPrice)
 	return energy_rows

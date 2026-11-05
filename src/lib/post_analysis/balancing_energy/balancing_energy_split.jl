@@ -1,5 +1,5 @@
-# Splits a run's transactions into the balancing market (the first MTU of a clearing whose
-# restrict_mtu1_trading lock was applied - see MarketDataStorage / HelperModelResults.TransactionSegment)
+# Splits a run's transactions into the balancing market (the locked MTUs of a clearing whose
+# MTU lock was applied: the first lockedMTUs MTUs of its window, or the first one under restrict_mtu1_trading - see MarketDataStorage / HelperModelResults.TransactionSegment)
 # and the energy market (every other transaction). The split is read from the "Segment" column the
 # simulation wrote, never re-derived here, so it can't disagree with the lock the model actually applied;
 # runs from before that column existed are rejected rather than guessed at.
@@ -95,8 +95,8 @@ function InterpretationTable()
 	return DataFrame(
 		DataPoint=["Balancing", "Energy", "Total", "transactions_balancing / transactions_energy"],
 		Interpretation=[
-			"Transactions in the first MTU of a clearing whose restrict_mtu1_trading lock was applied, as tagged by the model that cleared it.",
-			"Every other transaction, including all of the first clearing and of markets that override the lock.",
+			"Transactions in the locked MTUs of a clearing whose MTU lock was applied (the first lockedMTUs MTUs of its window, or the first one under restrict_mtu1_trading), as tagged by the model that cleared it.",
+			"Every other transaction, including all of the first clearing and of markets that lock nothing (lockedMTUs 0 or an override).",
 			"All transactions in the range; checked to equal Balancing + Energy for every indicator.",
 			"The two halves of the run's transactions, as separate derived tables. The run's own transactions file is unchanged.",
 		],

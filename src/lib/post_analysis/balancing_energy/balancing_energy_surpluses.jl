@@ -82,7 +82,7 @@ function InterpretationTable()
 		Interpretation=[
 			"The existing agent surplus: final dispatch decisions and all transactions.",
 			"The same calculation on final_dispatch_decisions_energy and the Energy-segment transactions.",
-			"Read directly from the agent's balancing transactions and the bid prices of the balancing rows. Energy + Balancing = Total for every agent (checked). Zero for the generators the restrict_mtu1_trading lock pins (base, shoulder, solar).",
+			"Read directly from the agent's balancing transactions and the bid prices of the balancing rows. Energy + Balancing = Total for every agent (checked). Zero for the generators the MTU lock pins (base, shoulder, solar).",
 			"Subject case vs each base case, for Total and Energy; not given for Balancing (small values that can change sign).",
 		],
 	)
