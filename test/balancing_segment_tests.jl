@@ -422,3 +422,61 @@ end
 	@test totals.rows == 3
 	@test totals.gross_mwh ≈ 3.0
 end
+
+if !isdefined(Main, :PostAnalysisBalancingTradeQuantities)
+	include("../src/lib/post_analysis/analyses/post_analysis_balancing_trade_quantities.jl")
+end
+
+@testset "Balancing trade quantities by agent" begin
+	B = PostAnalysisBalancingTradeQuantities
+	container = clear_sequence(LatestMarketModel.build, balancing_segment_fixture(restrict=true))
+	tx = MarketDataStorage.GetTransactions(container)
+	balancing = tx[tx.Segment .== "Balancing", :]
+	@test nrow(balancing) > 0 # otherwise this testset checks nothing
+
+	@testset "per-agent metrics are read from the balancing transactions only" begin
+		quantities = B.BalancingTradeQuantities(tx, 0:10; agents=["3G_Base", "D"])
+		for agent in ("3G_Base", "D")
+			q = balancing[balancing.Agent .== agent, "Quantity (MWh)"]
+			@test quantities[agent][B.NET] ≈ sum(q)
+			@test quantities[agent][B.GROSS] ≈ sum(abs, q)
+			@test quantities[agent][B.INCREASES] + quantities[agent][B.DECREASES] ≈ quantities[agent][B.NET]
+			@test quantities[agent][B.INCREASES] - quantities[agent][B.DECREASES] ≈ quantities[agent][B.GROSS]
+		end
+	end
+
+	@testset "the time range scopes by delivery MTU" begin
+		early = B.BalancingTradeQuantities(tx, 0:1; agents=["D"])["D"][B.GROSS]
+		all_mtus = B.BalancingTradeQuantities(tx, 0:10; agents=["D"])["D"][B.GROSS]
+		@test early <= all_mtus
+	end
+
+	@testset "float noise is reported as zero" begin
+		@test B.TradeQuantities([1.5, -1.5 + 1e-13])[B.NET] == 0.0
+	end
+
+	@testset "runs without a Segment column are rejected" begin
+		@test_throws String B.BalancingTradeQuantities(select(tx, Not(:Segment)), 0:10)
+	end
+
+	@testset "table layout: adjacent-pair or subject-relative % differences" begin
+		q = B.BalancingTradeQuantities(tx, 0:10; agents=["4G_Shoulder", "3G_Base"])
+		by_case = Dict("A" => q, "B" => q, "C" => q)
+		adjacent = B.BuildTable(by_case, ["A", "B", "C"]; agents=["4G_Shoulder", "3G_Base"])
+		@test nrow(adjacent) == 2 * length(B.METRICS)
+		@test names(adjacent)[end-1:end] == ["B vs A", "C vs B"]
+		subject = B.BuildTable(by_case, ["A", "B", "C"]; agents=["4G_Shoulder", "3G_Base"], compare_to_subject=true)
+		@test names(subject)[end-1:end] == ["C vs A", "C vs B"]
+	end
+
+	@testset "PerformAnalysis writes the table" begin
+		mktempdir() do dir
+			case_path = joinpath(dir, "case")
+			mkpath(case_path)
+			XLSX.writetable(joinpath(case_path, "transactions.xlsx"), "data" => tx)
+			df = B.PerformAnalysis(Dict("Case A" => case_path, "Case B" => case_path); cases=["Case A", "Case B"], output_base=joinpath(dir, "out"), time_range=0:10)
+			@test isfile(joinpath(dir, "out", "balancing_trade_quantities", "balancing_trade_quantities.xlsx"))
+			@test "Case B vs Case A" in names(df)
+		end
+	end
+end
