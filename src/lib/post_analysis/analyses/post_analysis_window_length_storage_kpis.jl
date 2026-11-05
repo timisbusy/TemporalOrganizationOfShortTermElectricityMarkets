@@ -3,11 +3,11 @@
 # a %% difference column between each pair of adjacent window lengths), but for storage-specific
 # indicators computed directly from each case's own final_dispatch_decisions.xlsx (StorageCharge/
 # StorageDischarge/FinalAuctionPrice) rather than PostAnalysisCommon.CalculateCaseIndicators'
-# aggregate economic indicators - Storage Revenue there uses the same net-revenue definition as
-# this module's Net Revenue (discharge-minus-charge, each priced at its own MTU's
-# FinalAuctionPrice - the realized settlement price for that MTU, matching MarketDataStorage.
-# CalculateEconomicIndicators' storage_revenue), just computed independently here so this analysis
-# doesn't need transactions.xlsx or an agent map.
+# aggregate economic indicators. This module's Net Revenue is discharge-minus-charge, each priced
+# at its own MTU's FinalAuctionPrice (the realized settlement price for that MTU), computed
+# independently here so this analysis doesn't need transactions.xlsx or an agent map. It is NOT
+# the "Storage Revenue (€)" of MarketDataStorage.CalculateEconomicIndicators, which since the switch
+# to transactions is the sum of quantity * price over all of storage's transactions.
 
 module PostAnalysisWindowLengthStorageKPIs
 
@@ -95,8 +95,8 @@ end
 
 # Charge/Discharge Energy: total MWh over time_range. Throughput: their sum. Net Revenue: discharge
 # revenue minus charge cost, each MTU priced at its own FinalAuctionPrice (the realized settlement
-# price for that MTU - see MarketDataStorage.CalculateEconomicIndicators' storage_revenue for the
-# same definition). Avg Charging/Discharging Price: quantity-weighted average FinalAuctionPrice
+# price for that MTU - the definition CalculateEconomicIndicators' storage_revenue used before it
+# moved to transactions). Avg Charging/Discharging Price: quantity-weighted average FinalAuctionPrice
 # over MTUs where the corresponding flow is nonzero, i.e. total €paid-or-earned / total MWh.
 function CalculateStorageKPIs(case_path, time_range)
 	dd = PostAnalysisCommon.LoadFile(joinpath(case_path, "final_dispatch_decisions.xlsx"))
