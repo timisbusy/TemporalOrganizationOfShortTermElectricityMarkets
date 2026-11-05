@@ -489,3 +489,49 @@ end
 		end
 	end
 end
+
+if !isdefined(Main, :PostAnalysisSpillage)
+	include("../src/lib/post_analysis/analyses/post_analysis_spillage.jl")
+end
+
+@testset "Wind and solar spillage of the balancing dispatch" begin
+	W = PostAnalysisSpillage
+	# mtu 0..3; available wind 10, dispatched 6, 10, 4, 10 => spilled 4, 0, 6, 0; solar available 5, dispatched
+	# 5, 1, 5, 5 => spilled 0, 4, 0, 0; one non-balancing row is ignored
+	dd = DataFrame(mtu=[0, 1, 2, 3, 3], Segment=["Balancing", "Balancing", "Balancing", "Balancing", "Energy"],
+		Q_6G_Wind=[10.0, 10.0, 10.0, 10.0, 99.0], var"6G_Wind"=[6.0, 10.0, 4.0, 10.0, 0.0],
+		Q_7G_Solar=[5.0, 5.0, 5.0, 5.0, 99.0], var"7G_Solar"=[5.0, 1.0, 5.0, 5.0, 0.0])
+
+	@testset "spillage is read from the balancing rows in the time range" begin
+		all_mtus = W.Spillage(dd, 0:3)
+		@test all_mtus["Wind Available (MWh)"] ≈ 40.0
+		@test all_mtus["Wind Spillage (MWh)"] ≈ 10.0
+		@test all_mtus["Wind Spillage (% of available)"] ≈ 25.0
+		@test all_mtus["Solar Available (MWh)"] ≈ 20.0
+		@test all_mtus["Solar Spillage (MWh)"] ≈ 4.0
+		@test all_mtus["Solar Spillage (% of available)"] ≈ 20.0
+		@test W.Spillage(dd, 0:1)["Wind Spillage (MWh)"] ≈ 4.0
+	end
+
+	@testset "runs without a Segment column or without wind or solar are rejected" begin
+		@test_throws String W.Spillage(select(dd, Not(:Segment)), 0:3)
+		@test_throws String W.Spillage(select(dd, Not(:Q_6G_Wind)), 0:3)
+		@test_throws String W.Spillage(select(dd, Not(:Q_7G_Solar)), 0:3)
+	end
+
+	@testset "PerformAnalysis writes the totals, daily and interpretation sheets" begin
+		mktempdir() do dir
+			for case in ("A", "B")
+				mkpath(joinpath(dir, case))
+				XLSX.writetable(joinpath(dir, case, "final_dispatch_decisions.xlsx"), "data" => dd)
+			end
+			paths = Dict("A" => joinpath(dir, "A"), "B" => joinpath(dir, "B"))
+			totals = W.PerformAnalysis(paths; cases=["A", "B"], output_base=joinpath(dir, "out"), time_range=0:3)
+			@test "B vs A" in names(totals)
+			@test totals[totals.Indicator .== "Solar Spillage (MWh)", "A"] == [4.0]
+			file = joinpath(dir, "out", "spillage", "spillage.xlsx")
+			@test XLSX.sheetnames(XLSX.readxlsx(file)) == ["totals", "daily_average", "interpretation"]
+			@test isfile(joinpath(dir, "out", "spillage", "spillage.tex"))
+		end
+	end
+end

@@ -1,8 +1,7 @@
 # Same aggregate economic KPIs as PostAnalysisSEW (SEW, DemandUtility, ProductionCosts,
 # ProducerSurplus, ConsumerSurplus, StorageRevenue, ImbalanceEnergy via
-# PostAnalysisCommon.CalculateCaseEnergyIndicators (energy segment only; Imbalance Energy is omitted), plus Wind Curtailed -
-# see PostAnalysisCommon.WindCurtailed, shared with PostAnalysisSEW so
-# the two can't drift apart), but compared across the three rolling-horizon optimization-window-
+# PostAnalysisCommon.CalculateCaseEnergyIndicators (energy segment only; Imbalance Energy is omitted; wind spillage is reported separately by
+# PostAnalysisSpillage), but compared across the three rolling-horizon optimization-window-
 # length cases (36h/48h/72h) instead of PostAnalysisSEW's Fixed/Rolling pair - same shape/defaults
 # as PostAnalysisConventionalGenerationCost and PostAnalysisPriceByHour. Adds a percent-difference
 # column between each pair of adjacent window lengths (48h vs 36h, 72h vs 48h) rather than a single
@@ -59,11 +58,6 @@ function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, out
 		long_v = economic_indicators_by_case[long][1, indicator]
 		push!(final_indicators_df, [indicator, short_v, mid_v, long_v, PostAnalysisCommon.PercentDiffString(mid_v, short_v), PostAnalysisCommon.PercentDiffString(long_v, mid_v)])
 	end
-
-	curtailed_by_case = Dict(case => PostAnalysisCommon.WindCurtailed(indicators_by_case[case].final_dispatch_decisions) for case in cases)
-	push!(final_indicators_df, [PostAnalysisCommon.WIND_CURTAILED_INDICATOR, curtailed_by_case[short], curtailed_by_case[mid], curtailed_by_case[long],
-		PostAnalysisCommon.PercentDiffString(curtailed_by_case[mid], curtailed_by_case[short]),
-		PostAnalysisCommon.PercentDiffString(curtailed_by_case[long], curtailed_by_case[mid])])
 
 	println(final_indicators_df)
 

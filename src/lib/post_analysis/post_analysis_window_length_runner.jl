@@ -2,7 +2,7 @@
 # window length rather than PostAnalysisRunner's Fixed/Rolling Horizon pair) - currently
 # PostAnalysisConventionalGenerationCost, PostAnalysisPriceByHour, PostAnalysisWindowLengthKPIs,
 # PostAnalysisWindowLengthStorageKPIs, PostAnalysisWindowLengthResidenceTime,
-# PostAnalysisRollingHorizonChurn, PostAnalysisBalancingTradeQuantities, and PostAnalysisWindForecastError, all of which already share
+# PostAnalysisRollingHorizonChurn, PostAnalysisBalancingTradeQuantities, PostAnalysisSpillage, and PostAnalysisWindForecastError, all of which already share
 # the same DEFAULT_CASE_PATHS/DEFAULT_CASES/DefaultLabel shape (the latter two default to their own
 # separately re-run case_paths - see their own module comments - but are fully generic over
 # whatever case_paths/cases this Run call is given, same as every other submodule here). Mirrors
@@ -19,6 +19,7 @@ include("./analyses/post_analysis_window_length_storage_kpis.jl")
 include("./analyses/post_analysis_window_length_residence_time.jl")
 include("./analyses/post_analysis_rolling_horizon_churn.jl")
 include("./analyses/post_analysis_balancing_trade_quantities.jl")
+include("./analyses/post_analysis_spillage.jl")
 include("./analyses/post_analysis_wind_forecast_error.jl")
 
 const DEFAULT_CASE_PATHS = PostAnalysisConventionalGenerationCost.DEFAULT_CASE_PATHS
@@ -34,6 +35,7 @@ function Run(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, label=PostAnaly
 	PostAnalysisWindowLengthResidenceTime.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
 	PostAnalysisRollingHorizonChurn.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
 	PostAnalysisBalancingTradeQuantities.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
+	PostAnalysisSpillage.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
 	PostAnalysisWindForecastError.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
 
 	return output_base
