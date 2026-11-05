@@ -41,6 +41,9 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 	for case in cases
 		# LoadCaseFile also reads transactions.csv when the table was exported as CSV instead of .xlsx
 		ts = PostAnalysisCommon.LoadCaseFile(case_paths, case, "transactions.xlsx")
+		# energy segment only: the balancing adjustments of the locked MTUs are excluded
+		hasproperty(ts, PostAnalysisCommon.SEGMENT_COLUMN) || throw("transactions of case \"$case\" have no \"$(PostAnalysisCommon.SEGMENT_COLUMN)\" column - this run predates the balancing/energy split; rerun it")
+		ts = ts[ts[!, PostAnalysisCommon.SEGMENT_COLUMN] .== PostAnalysisCommon.ENERGY_SEGMENT, :]
 		ts[!,Symbol("Hour")] = ts[!,mtuSymbol] .% 24
 		ts[!,Symbol("Day")] = (ts[!,mtuSymbol] .- ts[!,Symbol("Hour")]) ./ 24
 		transactions_by_case[case] = ts[start_day .<= ts[!,Symbol("Day")] .<= end_day,:]

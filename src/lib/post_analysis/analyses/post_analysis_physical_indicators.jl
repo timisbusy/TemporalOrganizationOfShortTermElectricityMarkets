@@ -14,7 +14,7 @@ PHYSICAL_INDICATORS = [Symbol("SOC"), Symbol("6G_Wind"), Symbol("2D_ModerateBid"
 INTERVAL_INDICATORS = [
 	(symbol=Symbol("Socioeconomic Welfare (€)"), label="Socioeconomic Welfare (€)", file="sew"),
 	(symbol=Symbol("Storage Revenue (€)"), label="Storage Revenue (€)", file="storage_revenue"),
-	(symbol=Symbol("Imbalance Energy (MWh)"), label="Imbalance Energy (MWh)", file="imbalance_energy"),
+	# Imbalance Energy is omitted: on the energy segment it is always 0 (same-hour adjustments are balancing transactions)
 ]
 
 # cases is any N case_paths keys (not just the module-default "Fixed Horizon"/"Rolling Horizon"
@@ -42,7 +42,7 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 
-	dispatch_decision_paths = Dict(case => joinpath(case_paths[case], "final_dispatch_decisions.xlsx") for case in cases)
+	dispatch_decision_paths = Dict(case => joinpath(case_paths[case], "final_dispatch_decisions_energy.xlsx") for case in cases) # energy segment only
 	dds = PostAnalysisDaily.GetDispatchDecisions(cases, dispatch_decision_paths)
 
 	for indicator in PHYSICAL_INDICATORS
@@ -51,7 +51,7 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 
 	mtu_economic_indicators = Dict{String,DataFrame}()
 	for case in cases
-		(economic_indicators, agent_indicators, transactions, finalDispatchDecisions, mtu_ei) = PostAnalysisCommon.CalculateCaseIndicators(case_paths, case; time_range=time_range, imbalance_agents=imbalance_agents)
+		(economic_indicators, agent_indicators, transactions, finalDispatchDecisions, mtu_ei) = PostAnalysisCommon.CalculateCaseEnergyIndicators(case_paths, case; time_range=time_range)
 		PostAnalysisDaily.AddDayAndHour!(mtu_ei, Symbol("MTU"))
 		mtu_economic_indicators[case] = mtu_ei
 	end
