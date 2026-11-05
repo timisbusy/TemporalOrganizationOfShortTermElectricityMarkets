@@ -469,6 +469,15 @@ end
 		@test names(subject)[end-1:end] == ["C vs A", "C vs B"]
 	end
 
+	@testset "the LaTeX table is reduced to energy traded, plus storage increases and decreases" begin
+		by_case = Dict("A" => B.BalancingTradeQuantities(tx, 0:10), "B" => B.BalancingTradeQuantities(tx, 0:10))
+		tex = B.TexTable(B.BuildTable(by_case, ["A", "B"]))
+		@test !any(in(["Base", "Shoulder", "Solar"]), tex.Agent)
+		@test Set(tex.Metric) == Set(["Energy traded (MWh)", "Energy increases (MWh)", "Energy decreases (MWh)"])
+		@test Set(tex[tex.Metric .!= "Energy traded (MWh)", :Agent]) == Set(["Storage"])
+		@test sort(unique(tex.Agent)) == sort(["High Bid", "Moderate Bid", "Peak", "Wind", "Storage"])
+	end
+
 	@testset "PerformAnalysis writes the table" begin
 		mktempdir() do dir
 			case_path = joinpath(dir, "case")

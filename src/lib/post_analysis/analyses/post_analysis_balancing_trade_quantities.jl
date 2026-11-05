@@ -76,6 +76,22 @@ function BuildTable(quantities_by_case, cases; agents=AGENTS, compare_to_subject
 	return df
 end
 
+# The LaTeX table is a reduced view of the full table (which the xlsx keeps): Net traded only, labelled "Energy
+# traded (MWh)", plus Energy increases / decreases for storage; Base, Shoulder and Solar are left out since the lock
+# keeps them from trading in the balancing segment.
+const TEX_EXCLUDED_AGENTS = ["3G_Base", "4G_Shoulder", "7G_Solar"]
+const TEX_METRIC_LABELS = Dict(NET => "Energy traded (MWh)", INCREASES => "Energy increases (MWh)", DECREASES => "Energy decreases (MWh)")
+const TEX_STORAGE_ONLY_METRICS = [INCREASES, DECREASES]
+
+function TexTable(df)
+	excluded = DisplayName.(TEX_EXCLUDED_AGENTS)
+	storage = DisplayName("Storage")
+	keep = [!(row.Agent in excluded) && (row.Metric == NET || (row.Agent == storage && row.Metric in TEX_STORAGE_ONLY_METRICS)) for row in eachrow(df)]
+	out = df[keep, :]
+	out[!, :Metric] = [TEX_METRIC_LABELS[m] for m in out.Metric]
+	return out
+end
+
 function InterpretationTable()
 	return DataFrame(
 		Metric=METRICS,
@@ -103,7 +119,7 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 
 	XLSX.writetable("$analysis_dir_path/balancing_trade_quantities.xlsx", "data" => df, "interpretation" => InterpretationTable(); overwrite=true)
 	write("$analysis_dir_path/balancing_trade_quantities.tex",
-		latexify(PostAnalysisCommon.EscapeForLatex(df); env=:table, booktabs=true, snakecase=true, latex=false, fmt="%'\''d\n"))
+		latexify(PostAnalysisCommon.EscapeForLatex(TexTable(df)); env=:table, booktabs=true, snakecase=true, latex=false, fmt="%'\''d\n"))
 	return df
 end
 
