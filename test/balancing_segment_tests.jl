@@ -278,6 +278,38 @@ end
 	end
 end
 
+@testset "Storage by segment" begin
+	Q = BalancingEnergyQuantities
+	(data, initialization, market, demand_profile) = balancing_segment_fixture(restrict=true)
+	data[:batteryStorage] = Dict{String,Any}("energyCapacity" => 20.0, "powerCapacity" => 5.0, "efficiency" => 0.9, "initialSOC" => 0.0, "endSOC" => 0.0)
+	# cheap-then-dear demand (base at 20, then shoulder at 50) so that storage has something to arbitrage
+	demand_profile[demand_profile.mtu .>= 2, :Value] .= 16.0
+	container = clear_sequence(LatestMarketModel.build, (data, initialization, market, demand_profile))
+	final = MarketDataStorage.GetFinalDispatchDecisions(container)
+	energy = MarketDataStorage.GetEnergyFinalDispatchDecisions(container)
+	tx = MarketDataStorage.GetTransactions(container)
+	agent_map = Dict(Q.BalancingEnergySEW.HelperModelResults.AGENT_DEMAND => ["D"], Q.BalancingEnergySEW.HelperModelResults.AGENT_GENERATOR => ["3G_Base", "4G_Shoulder", "5G_Peak", "7G_Solar"])
+	storage_tx = tx[tx.Agent .== "Storage", :]
+
+	@testset "storage revenue partitions by segment" begin
+		@test nrow(storage_tx) > 0 # otherwise this testset checks nothing
+		result = Q.BalancingEnergySEW.SewBySegment(final, energy, tx, agent_map, 0:4) # throws if energy + balancing != total
+		rev = result.values[result.indicator_names[6]] # storage revenue
+		@test rev["Total"] ≈ rev["Energy"] + rev["Balancing"]
+		@test rev["Total"] ≈ sum(storage_tx[0 .<= storage_tx[!, "Market Time Unit"] .<= 4, "Quantity (MWh)"] .* storage_tx[0 .<= storage_tx[!, "Market Time Unit"] .<= 4, "Price (€/MWh)"])
+	end
+
+	@testset "storage flows: total from the final dispatch, energy from the energy-only dispatch" begin
+		flows = Q.StorageFlowsBySegment(final, energy, 0:4)
+		@test flows["Discharge"]["Total"] ≈ sum(final[0 .<= final.mtu .<= 4, :StorageDischarge])
+		@test flows["Charge"]["Energy"] ≈ sum(energy[0 .<= energy.mtu .<= 4, :StorageCharge])
+		table = Q.StorageFlowTable(["Base", "Subject"], Dict("Base" => flows, "Subject" => flows))
+		@test table.Flow == ["Storage discharged", "Storage charged"]
+		@test "Subject vs Base Energy % Diff" in names(table)
+		@test_throws String Q.StorageFlowsBySegment(select(final, Not(:Segment)), energy, 0:4)
+	end
+end
+
 @testset "Float noise in segment values is reported as zero" begin
 	noise = DataFrame("Quantity (MWh)" => [1.5, -1.5 + 1e-13, 2e-13], "Price (€/MWh)" => [40.0, 40.0, 40.0])
 	totals = BalancingEnergySplit.SegmentTotals(noise)

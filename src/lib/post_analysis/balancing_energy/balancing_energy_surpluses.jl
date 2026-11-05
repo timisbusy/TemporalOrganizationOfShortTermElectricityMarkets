@@ -8,7 +8,7 @@
 #                at the agent's bid price (see BalancingEnergySEW.BalancingTerms).
 #
 # Per agent, Energy + Balancing = Total is checked (a mismatch throws). Storage is not listed, as in the
-# existing table: its surplus is storage revenue, which does not split additively (see balancing_energy_sew.jl).
+# existing table; its revenue is split in the SEW table (see balancing_energy_sew.jl).
 # % Diff columns are given for Total and Energy only - balancing surpluses are small and can change sign between
 # cases, which makes a percentage misleading.
 

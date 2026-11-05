@@ -10,6 +10,10 @@
 #                               Energy and Balancing are the sums over the Segment == Energy / Balancing
 #                               transactions, which partition the total (checked).
 #
+#   Storage charge / discharge (MWh) - sum of the final dispatch's StorageCharge / StorageDischarge over the range.
+#                               Total: overall (all markets, i.e. after balancing). Energy: as dispatched by the
+#                               energy markets (the energy-only final dispatch). No Balancing column.
+#
 # % Diff columns are given for Total and Energy only, as in the surplus table.
 
 module BalancingEnergyQuantities
@@ -69,9 +73,40 @@ function GrossTradedVolumeBySegment(transactions, time_range; generators=DEFAULT
 	return result
 end
 
+const STORAGE_FLOWS = ["Discharge", "Charge"]
+const STORAGE_SEGMENTS = ["Total", "Energy"]
+
+# flow ("Discharge"/"Charge") => segment => MWh over time_range
+function StorageFlowsBySegment(final_dispatch_decisions, energy_final_dispatch_decisions, time_range)
+	hasproperty(final_dispatch_decisions, :Segment) || throw("final dispatch decisions have no \"Segment\" column - this run predates the balancing/energy split and is not supported (rerun it)")
+	scoped(df) = df[time_range.start .<= df.mtu .<= time_range.stop, :]
+	total, energy = scoped(final_dispatch_decisions), scoped(energy_final_dispatch_decisions)
+	flow(df, f) = MarketDataStorage.snap0(sum(skipmissing(df[!, Symbol("Storage$f")]); init=0.0))
+	return Dict(f => Dict("Total" => flow(total, f), "Energy" => flow(energy, f)) for f in STORAGE_FLOWS)
+end
+
+# Flow | per case: Total, Energy | "{subject} vs {base} Total/Energy % Diff" for each base case
+function StorageFlowTable(cases, results)
+	subject = cases[end]
+	base_cases = cases[1:end-1]
+	pairs = Any["Flow" => String[]]
+	append!(pairs, ["$case $segment Storage (MWh)" => Float64[] for case in cases for segment in STORAGE_SEGMENTS])
+	append!(pairs, ["$subject vs $base $segment % Diff" => String[] for base in base_cases for segment in STORAGE_SEGMENTS])
+	table = DataFrame(pairs...)
+	for f in STORAGE_FLOWS
+		row = Any["Storage $(lowercase(f))d"]
+		append!(row, [results[case][f][segment] for case in cases for segment in STORAGE_SEGMENTS])
+		for base in base_cases, segment in STORAGE_SEGMENTS
+			push!(row, PostAnalysisCommon.PercentDiffString(results[subject][f][segment], results[base][f][segment]))
+		end
+		push!(table, row)
+	end
+	return table
+end
+
 function InterpretationTable()
 	return DataFrame(
-		Sheet=["quantities", "gross_traded_volume", "% Diff"],
+		Sheet=["quantities", "gross_traded_volume", "storage_flows", "% Diff"],
 		Interpretation=[
 			"Delivered dispatch per agent. Energy is the energy-only final dispatch (the plan before the balancing market); Balancing is the net adjustment from the agent's balancing transactions; Energy + Balancing = Total (checked).",
 			"Sum of |quantity| over the generator's transactions (including every clearing's look-ahead adjustments), split by the transactions' Segment; Energy + Balancing = Total.",
@@ -87,6 +122,7 @@ function PerformAnalysis(case_paths; cases=collect(keys(case_paths)), output_bas
 
 	quantities = Dict{String,Any}()
 	gross_traded = Dict{String,Any}()
+	storage_flows = Dict{String,Any}()
 	for c in cases
 		final = PostAnalysisCommon.LoadCaseFile(case_paths, c, "final_dispatch_decisions.xlsx")
 		energy = PostAnalysisCommon.LoadCaseFile(case_paths, c, "final_dispatch_decisions_energy.xlsx")
@@ -97,10 +133,12 @@ function PerformAnalysis(case_paths; cases=collect(keys(case_paths)), output_bas
 
 	quantity_table = BalancingEnergySurpluses.SurplusTable(cases, quantities; agents=agents, metric_label="Quantity (MWh)")
 	gross_table = BalancingEnergySurpluses.SurplusTable(cases, gross_traded; agents=generators, metric_label="Gross Traded Volume (MWh)")
+	storage_table = StorageFlowTable(cases, storage_flows)
 	println(quantity_table)
 	println(gross_table)
-	XLSX.writetable("$analysis_dir_path/agent_quantities_by_segment.xlsx", "quantities" => quantity_table, "gross_traded_volume" => gross_table, "interpretation" => InterpretationTable(); overwrite=true)
-	return (quantities=quantity_table, gross_traded_volume=gross_table)
+	println(storage_table)
+	XLSX.writetable("$analysis_dir_path/agent_quantities_by_segment.xlsx", "quantities" => quantity_table, "gross_traded_volume" => gross_table, "storage_flows" => storage_table, "interpretation" => InterpretationTable(); overwrite=true)
+	return (quantities=quantity_table, gross_traded_volume=gross_table, storage_flows=storage_table)
 end
 
 end

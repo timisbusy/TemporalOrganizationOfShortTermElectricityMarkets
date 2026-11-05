@@ -10,10 +10,10 @@
 #                final dispatch decisions (demand utility = sum adjustment * bid, production costs likewise);
 #                payments, revenues and storage revenue come from the same transactions.
 #
-# Total = Energy + Balancing holds for SEW, demand utility, production costs and both surpluses, and is
-# checked (a mismatch throws). It does not hold for storage revenue: Total values the final storage dispatch
-# at the final auction price, while Energy and Balancing are each valued at their own clearing's price, so the
-# repricing of the energy position is in neither. Imbalance energy (defined on same-hour adjustments), wind
+# Total = Energy + Balancing holds for SEW, demand utility, production costs, both surpluses and storage revenue,
+# and is checked (a mismatch throws). Storage revenue is the sum of quantity * price over storage's own
+# transactions, so it partitions by Segment: Balancing is what storage earned (spent) on its balancing
+# adjustments, Energy the rest. Imbalance energy (defined on same-hour adjustments), wind
 # curtailed (available wind differs between the two dispatch tables, as the forecast updates) and the mean
 # price (an average) have no additive balancing part and are reported where they are defined only.
 #
@@ -35,8 +35,7 @@ const SEGMENTS = ["Total", "Energy", "Balancing"]
 snap(x) = MarketDataStorage.snap0(x)
 
 # indicators of economic_indicators (after header renaming) with an additive balancing part, in column order
-const ADDITIVE_INDICATOR_POSITIONS = [1, 2, 3, 4, 5] # SEW, demand utility, production costs, producer and consumer surplus
-const STORAGE_REVENUE_POSITION = 6
+const ADDITIVE_INDICATOR_POSITIONS = [1, 2, 3, 4, 5, 6] # SEW, demand utility, production costs, producer and consumer surplus, storage revenue
 const IMBALANCE_POSITION = 7
 
 # The two per-agent building blocks of every balancing-side indicator, read from the balancing transactions
@@ -143,7 +142,7 @@ function InterpretationTable()
 		Interpretation=[
 			"The existing indicator: final dispatch decisions and all transactions.",
 			"The same calculation on final_dispatch_decisions_energy (per MTU, the last clearing that traded it as an energy MTU) and the Energy-segment transactions.",
-			"Read directly from the balancing transactions (adjustment quantities, payments, revenues) and the balancing rows' bid prices. For SEW, demand utility, production costs and the surpluses, Energy + Balancing = Total (checked). Storage revenue is the balancing transactions' revenue; Total is the final storage dispatch at the final auction price, so Energy + Balancing does not equal it.",
+			"Read directly from the balancing transactions (adjustment quantities, payments, revenues) and the balancing rows' bid prices. For SEW, demand utility, production costs and the surpluses, Energy + Balancing = Total (checked), including storage revenue (the sum of quantity * price over storage's transactions of that segment).",
 			"Not defined for that segment: imbalance energy is a same-hour adjustment measure (Total only); wind curtailed and the mean price have no additive balancing part.",
 		],
 	)
