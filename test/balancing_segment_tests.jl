@@ -224,6 +224,27 @@ end
 		# runs from before the Segment column are rejected
 		@test_throws String E.SewBySegment(select(final, Not(:Segment)), energy, tx, agent_map, 0:4)
 	end
+
+	@testset "default run exports are energy-only and have no imbalance column" begin
+		E = BalancingEnergySEW
+		agent_map = container.Results[1].AgentMap
+		time_range = 0:4
+		exported = MarketDataStorage.GetEnergyEconomicIndicatorsForRange(container, time_range)
+		@test !("Imbalance Energy (MWh)" in names(exported.economic_indicators))
+		@test !("Imbalance Energy (MWh)" in names(exported.mtu_economic_indicators))
+
+		# the same calculation the post-analysis SEW / agents tables run (PostAnalysisCommon.CalculateCaseEnergyIndicators)
+		energy_tx = tx[tx.Segment .== "Energy", :]
+		expected = MarketDataStorage.CalculateEconomicIndicators(energy, energy_tx, agent_map, time_range)
+		for name in names(exported.economic_indicators)
+			@test exported.economic_indicators[1, name] ≈ expected.economic_indicators[1, name]
+		end
+		@test exported.agent_indicators == expected.agent_indicators
+
+		# and differs from the Total view: the balancing adjustment is not in it
+		total = MarketDataStorage.GetEconomicIndicatorsForRange(container, time_range)
+		@test exported.economic_indicators[1, "Socioeconomic Welfare (€)"] ≈ total.economic_indicators[1, "Socioeconomic Welfare (€)"] - 2 * 4 * (100 - 80)
+	end
 end
 
 if !isdefined(Main, :BalancingEnergySurpluses)

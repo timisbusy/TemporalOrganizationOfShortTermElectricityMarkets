@@ -32,7 +32,7 @@ function ClearingMTUs(raw_dir)
 	return sort(mtus)
 end
 
-function Rebuild(result_dir; test_range, output_dir=result_dir, imbalance_agents=("6G_Wind", "5G_Peak"), agent_map=PostAnalysisCommon.DEFAULT_AGENT_MAP, csv_above_rows=EXCEL_MAX_DATA_ROWS)
+function Rebuild(result_dir; test_range, output_dir=result_dir, agent_map=PostAnalysisCommon.DEFAULT_AGENT_MAP, csv_above_rows=EXCEL_MAX_DATA_ROWS)
 	raw_dir = joinpath(result_dir, "RAW")
 	dv_prefix = PostAnalysisCommon.DiscoverRawDispatchPrefix(result_dir)
 	tx_prefix = joinpath(raw_dir, replace(basename(dv_prefix), "decisionvariables_" => "transactions_"; count=1))
@@ -55,8 +55,12 @@ function Rebuild(result_dir; test_range, output_dir=result_dir, imbalance_agents
 		i % 500 == 0 && println("  read $i / $(length(mtus)) clearings")
 	end
 
-	(indicators, agent_indicators, transactions, final_dispatch_decisions, mtu_economic_outcomes) =
-		MDS.GetEconomicIndicatorsForRange(container, test_range; imbalance_agents=imbalance_agents)
+	# the indicator tables are energy-segment only, like PlotBaselineOutcomes.plot's; transactions and
+	# final_dispatch_decisions stay the full (Total) exports
+	energy = MDS.GetEnergyEconomicIndicatorsForRange(container, test_range)
+	(indicators, agent_indicators, mtu_economic_outcomes) = (energy.economic_indicators, energy.agent_indicators, energy.mtu_economic_indicators)
+	final_dispatch_decisions = MDS.GetFinalDispatchDecisionsForRange(container, test_range)
+	transactions = MDS.GetTransactionsForRange(container, test_range)
 	container = nothing
 
 	mkpath(output_dir)
