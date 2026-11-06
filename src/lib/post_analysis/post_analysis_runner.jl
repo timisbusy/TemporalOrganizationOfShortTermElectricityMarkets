@@ -7,6 +7,7 @@ include("./analyses/post_analysis_lead_time.jl")
 include("./analyses/post_analysis_quantities_by_agent.jl")
 include("./analyses/post_analysis_SEW.jl")
 include("./analyses/post_analysis_balancing_trade_quantities.jl")
+include("./analyses/post_analysis_spillage.jl")
 include("./analyses/post_analysis_storage.jl")
 include("./analyses/post_analysis_prices.jl")
 include("./analyses/post_analysis_daily.jl")
@@ -41,7 +42,7 @@ const HIGH_STORAGE_THREE_WAY_CASE_PATHS = Dict{String,String}(
 # PostAnalysisSEW.PerformAnalysis for the convention (cases[end] is the "subject", every preceding
 # case its own "base case") and RollingSubjectCases below for how Run gets `cases` into that shape
 # regardless of the order its own `cases` argument was given in. PostAnalysisSEW,
-# PostAnalysisQuantitiesByAgent, PostAnalysisBalancingTradeQuantities, PostAnalysisStorage, PostAnalysisDaily,
+# PostAnalysisQuantitiesByAgent, PostAnalysisBalancingTradeQuantities, PostAnalysisSpillage, PostAnalysisStorage, PostAnalysisDaily,
 # PostAnalysisLeadTime, and PostAnalysisPhysicalIndicators are wired to RollingSubjectCases(cases) below;
 # PostAnalysisAuctionSnapshots produces one independent plot per case with no cross-case comparison
 # or ordering to get right, so it's wired to the shared `cases` unchanged.
@@ -108,6 +109,7 @@ function Run(case_paths=PostAnalysisCommon.DEFAULT_CASE_PATHS; cases=PostAnalysi
 	PostAnalysisQuantitiesByAgent.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base, time_range=time_range)
 	PostAnalysisSEW.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base, time_range=time_range)
 	PostAnalysisBalancingTradeQuantities.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base, time_range=time_range, compare_to_subject=true)
+	PostAnalysisSpillage.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base, time_range=time_range, compare_to_subject=true)
 	PostAnalysisDaily.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base, time_range=time_range, highlight_days=highlight_days)
 	# PostAnalysisPrices is deliberately NOT given `cases` here - its "5 evolving forecast vintages
 	# for the same delivery period" concept assumes a near-every-MTU clearing cadence (true for

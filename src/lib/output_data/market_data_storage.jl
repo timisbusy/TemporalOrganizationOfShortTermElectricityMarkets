@@ -534,6 +534,25 @@ function GetEconomicIndicatorsForRange(market_result_container,time_range; imbal
 
 end
 
+# The indicators exported by default at the end of a run (economic_indicators.xlsx, agent_indicators.xlsx,
+# mtu_economic_results.xlsx): the energy segment only - the energy-only final dispatch decisions
+# (GetEnergyFinalDispatchDecisionsForRange) and the Segment == Energy transactions - exactly what
+# PostAnalysisCommon.CalculateCaseEnergyIndicators computes for the post-analysis SEW / agents tables, so the
+# two agree. Imbalance Energy is not reported: same-hour adjustments are balancing-segment transactions, so on the
+# energy segment it is always 0. (GetEconomicIndicatorsForRange stays the Total view.)
+function GetEnergyEconomicIndicatorsForRange(market_result_container, time_range)
+	energy_final_dispatch_decisions = GetEnergyFinalDispatchDecisionsForRange(market_result_container, time_range)
+	transactions = GetTransactionsForRange(market_result_container, time_range)
+	if nrow(transactions) > 0
+		hasproperty(transactions, :Segment) || throw("transactions have no \"Segment\" column - this run predates the balancing/energy split and is not supported (rerun it)")
+		transactions = transactions[transactions.Segment .== HelperModelResults.SEGMENT_ENERGY, :]
+	end
+	agentMap = market_result_container.Results[1].AgentMap
+	indicators = CalculateEconomicIndicators(energy_final_dispatch_decisions, transactions, agentMap, time_range)
+	imbalance = "Imbalance Energy (MWh)"
+	return (economic_indicators=select(indicators.economic_indicators, Not(imbalance)), agent_indicators=indicators.agent_indicators, mtu_economic_indicators=select(indicators.mtu_economic_indicators, Not(imbalance)))
+end
+
 function CalculateEconomicIndicators(finalDispatchDecisions, transactions, agentMap, time_range; imbalance_agents::Union{Nothing,Tuple{String,String}}=nothing)
 	# scope both inputs to the requested delivery-MTU range ourselves - time_range is part of this
 	# function's signature, so its contract should not depend on the caller having already filtered

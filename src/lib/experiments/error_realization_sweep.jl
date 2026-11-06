@@ -11,12 +11,16 @@
 #
 # Each design is cleared with the same loop as ClearMarket.ClearSimple, minus the per-clearing
 # RAW exports and the plots; KPIs come straight from the in-memory results
-# (MarketDataStorage.GetEconomicIndicatorsForRange, the call PlotBaselineOutcomes makes) over the
-# analysis window the config defines (samplePeriodExcludeSpinUp/End).
+# over the analysis window the config defines (samplePeriodExcludeSpinUp/End). KPI definitions follow the post-analysis
+# suites: SEW is the energy segment only (MarketDataStorage.GetEnergyEconomicIndicatorsForRange, what the default run
+# exports report); wind and solar spillage are read from the balancing dispatch (the last dispatch of each MTU, see
+# PostAnalysisSpillage); peak_balancing is the 5G_Peak agent's net quantity in the Balancing-segment transactions; and
+# imbalance is the original Imbalance Energy KPI (Total view, same-hour counterbalanced adjustments of wind and peak),
+# kept so the two can be compared - they are the same quantity as peak_balancing whenever peak only trades same-hour.
 #
 # Output, under results/sweep_{name}/:
 #   kpis.csv             one row per completed seed (appended and flushed as each finishes):
-#                        per-design SEW / imbalance / wind and solar curtailment, rolling - fixed
+#                        per-design SEW / imbalance / peak balancing / wind and solar spillage, rolling - fixed
 #                        differences, run time, and the number of non-OPTIMAL clearings
 #   progress.log         one line per completed seed
 #   batch_summaries.log  a running summary every `batch_size` seeds (the file to watch)
@@ -43,7 +47,9 @@ const SEW = Symbol("Socioeconomic Welfare (€)")
 const IMBALANCE = Symbol("Imbalance Energy (MWh)")
 
 # the per-design KPI columns, in kpis.csv order
-const KPI_NAMES = ["sew", "imbalance", "wind_curtailed", "solar_curtailed"]
+const KPI_NAMES = ["sew", "imbalance", "peak_balancing", "wind_spillage", "solar_spillage"]
+
+const PEAK_AGENT = "5G_Peak"
 
 # Same sizing as HelperInputData.load_or_create_wind_forecast_error_scenario! uses when it generates a scenario.
 function WindErrorsForSeed(config, simulation_hours::Int, longest_market_window::Int, seed::Int)
@@ -95,14 +101,21 @@ function ClearDesign(design, seed::Int)
     end
 
     test_range = range(config[:timePeriodsPerDay] * config[:samplePeriodExcludeSpinUp], config[:timePeriodsPerDay] * (config[:clearForDays] - config[:samplePeriodExcludeEnd]) - 1)
-    (indicators, _, _, final_dispatch_decisions, _) = ClearMarket.MarketDataStorage.GetEconomicIndicatorsForRange(marketresult, test_range; imbalance_agents=IMBALANCE_AGENTS)
+    MDS = ClearMarket.MarketDataStorage
+    # the original (Total view) Imbalance Energy KPI, and the final dispatch / transactions the other KPIs read
+    (total_indicators, _, transactions, final_dispatch_decisions, _) = MDS.GetEconomicIndicatorsForRange(marketresult, test_range; imbalance_agents=IMBALANCE_AGENTS)
+    energy_indicators = MDS.GetEnergyEconomicIndicatorsForRange(marketresult, test_range).economic_indicators
     dd = final_dispatch_decisions[in.(final_dispatch_decisions.mtu, Ref(test_range)), :]
-    # same definition as PostAnalysisCommon.WindCurtailed: Q_<agent> is the available capacity, so Q - dispatched is what went undispatched
+    # the final dispatch decisions are the balancing dispatch (the last clearing of each MTU, locked in it); as in
+    # PostAnalysisSpillage, Q_<agent> is the available capacity, so Q - dispatched is what was spilled
+    all(dd.Segment .== "Balancing") || error("final dispatch decisions of the sweep include non-balancing rows - the spillage KPIs assume a locked design")
+    balancing_peak = transactions[(transactions.Agent .== PEAK_AGENT) .& (transactions.Segment .== "Balancing"), Symbol("Quantity (MWh)")]
     kpis = (
-        sew=float(indicators[1, SEW]),
-        imbalance=float(indicators[1, IMBALANCE]),
-        wind_curtailed=sum(dd[!, Symbol("Q_6G_Wind")] .- dd[!, Symbol("6G_Wind")]),
-        solar_curtailed=sum(dd[!, Symbol("Q_7G_Solar")] .- dd[!, Symbol("7G_Solar")]),
+        sew=float(energy_indicators[1, SEW]),
+        imbalance=float(total_indicators[1, IMBALANCE]),
+        peak_balancing=MDS.snap0(sum(Float64.(balancing_peak); init=0.0)),
+        wind_spillage=MDS.snap0(sum(dd[!, Symbol("Q_6G_Wind")] .- dd[!, Symbol("6G_Wind")])),
+        solar_spillage=MDS.snap0(sum(dd[!, Symbol("Q_7G_Solar")] .- dd[!, Symbol("7G_Solar")])),
     )
     return (kpis=kpis, n_non_optimal=n_non_optimal)
 end
@@ -148,9 +161,9 @@ function BatchSummary(df, batch_seeds, n_total, batch_number, n_batches)
     last_batch = df[in.(df.seed, Ref(batch_seeds)), :]
     lines = String[]
     push!(lines, "[batch $batch_number/$n_batches] seeds $(first(batch_seeds))-$(last(batch_seeds)) done - $(nrow(df))/$n_total completed")
-    push!(lines, "  rolling - fixed, mean ± s.e. over all $(nrow(df)) seeds:  SEW $(DiffSummary(df, :d_sew, "%+.0f")) € ($(DiffSummary(df, :d_sew_pct, "%+.3f")) %);  wind curtailed $(DiffSummary(df, :d_wind_curtailed, "%+.0f")) MWh;  solar curtailed $(DiffSummary(df, :d_solar_curtailed, "%+.0f")) MWh;  imbalance $(DiffSummary(df, :d_imbalance, "%+.0f")) MWh")
-    push!(lines, "  rolling has higher SEW in $(count(>(0), df.d_sew))/$(nrow(df)) seeds;  less wind curtailment in $(count(<(0), df.d_wind_curtailed))/$(nrow(df));  less imbalance in $(count(<(0), df.d_imbalance))/$(nrow(df))")
-    push!(lines, @sprintf("  this batch (n=%d) mean:  SEW %+.0f €;  wind curtailed %+.0f MWh;  solar curtailed %+.0f MWh;  imbalance %+.0f MWh", nrow(last_batch), mean(last_batch.d_sew), mean(last_batch.d_wind_curtailed), mean(last_batch.d_solar_curtailed), mean(last_batch.d_imbalance)))
+    push!(lines, "  rolling - fixed, mean ± s.e. over all $(nrow(df)) seeds:  SEW $(DiffSummary(df, :d_sew, "%+.0f")) € ($(DiffSummary(df, :d_sew_pct, "%+.3f")) %);  wind spillage $(DiffSummary(df, :d_wind_spillage, "%+.0f")) MWh;  solar spillage $(DiffSummary(df, :d_solar_spillage, "%+.0f")) MWh;  imbalance $(DiffSummary(df, :d_imbalance, "%+.0f")) MWh;  peak balancing $(DiffSummary(df, :d_peak_balancing, "%+.0f")) MWh")
+    push!(lines, "  rolling has higher SEW in $(count(>(0), df.d_sew))/$(nrow(df)) seeds;  less wind spillage in $(count(<(0), df.d_wind_spillage))/$(nrow(df));  less imbalance in $(count(<(0), df.d_imbalance))/$(nrow(df));  less peak balancing in $(count(<(0), df.d_peak_balancing))/$(nrow(df))")
+    push!(lines, @sprintf("  this batch (n=%d) mean:  SEW %+.0f €;  wind spillage %+.0f MWh;  solar spillage %+.0f MWh;  imbalance %+.0f MWh;  peak balancing %+.0f MWh", nrow(last_batch), mean(last_batch.d_sew), mean(last_batch.d_wind_spillage), mean(last_batch.d_solar_spillage), mean(last_batch.d_imbalance), mean(last_batch.d_peak_balancing)))
     bad = count(r -> r.fixed_non_optimal > 0 || r.rolling_non_optimal > 0, eachrow(df))
     bad > 0 && push!(lines, "  note: $bad seed(s) had clearings that were not OPTIMAL (fixed_non_optimal / rolling_non_optimal in kpis.csv)")
     return join(lines, "\n")
@@ -186,7 +199,7 @@ function Run(name::String, fixed_config::String, rolling_config::String; first_s
             rolling_result = ClearDesign(rolling, seed)
             row = KpiRow(seed, fixed_result, rolling_result, time() - started)
             AppendRow(kpis_path, row)
-            LogLine(progress_log, @sprintf("seed %d done in %.1f min:  rolling - fixed  SEW %+.0f € (%+.3f %%),  wind curtailed %+.0f MWh,  solar curtailed %+.0f MWh,  imbalance %+.0f MWh", seed, row.run_seconds / 60, row.d_sew, row.d_sew_pct, row.d_wind_curtailed, row.d_solar_curtailed, row.d_imbalance))
+            LogLine(progress_log, @sprintf("seed %d done in %.1f min:  rolling - fixed  SEW %+.0f € (%+.3f %%),  wind spillage %+.0f MWh,  solar spillage %+.0f MWh,  imbalance %+.0f MWh,  peak balancing %+.0f MWh", seed, row.run_seconds / 60, row.d_sew, row.d_sew_pct, row.d_wind_spillage, row.d_solar_spillage, row.d_imbalance, row.d_peak_balancing))
         catch e
             LogLine(failure_log, "seed $seed failed after $(round((time() - started) / 60, digits=1)) min: $(sprint(showerror, e))")
             continue

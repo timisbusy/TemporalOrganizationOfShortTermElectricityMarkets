@@ -71,9 +71,6 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 		push_indicator_row!(indicator, Dict(case => economic_indicators_by_case[case][1, indicator] for case in cases))
 	end
 
-	push_indicator_row!(PostAnalysisCommon.WIND_CURTAILED_INDICATOR,
-		Dict(case => PostAnalysisCommon.WindCurtailed(indicators_by_case[case].final_dispatch_decisions) for case in cases))
-
 	println(final_indicators_df)
 
 	# average daily value = total / MTU count in time_range * 24 (MTU per day) - % difference is

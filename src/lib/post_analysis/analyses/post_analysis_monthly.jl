@@ -27,7 +27,6 @@ const GENERATOR_NAMES = ["3G_Base", "4G_Shoulder", "5G_Peak", "6G_Wind", "7G_Sol
 # metrics the monthly comparison tables report a subject-minus-base difference for, besides SEW
 const COMPARED_METRICS = [
 	Symbol("Mean Final Price (€/MWh)"),
-	Symbol("Wind Curtailed (MWh)"),
 	Symbol("Storage Throughput (MWh)"),
 	SHOULDER_PEAK,
 	GROSS_TRADED,
@@ -43,8 +42,6 @@ MonthLabel(start_date, mtu, mtus_per_day) = Dates.format(start_date + Dates.Day(
 function MonthlyIndicators(final_dispatch_decisions, mtu_economic_indicators, transactions, start_date, mtus_per_day)
 	dd = copy(final_dispatch_decisions)
 	dd[!, :Month] = [MonthLabel(start_date, m, mtus_per_day) for m in dd.mtu]
-	dd[!, :WindCurtailed] = dd[!, Symbol("Q_6G_Wind")] .- dd[!, Symbol("6G_Wind")]
-	dd[!, :SolarCurtailed] = dd[!, Symbol("Q_7G_Solar")] .- dd[!, Symbol("7G_Solar")]
 	dd[!, :ShoulderPeak] = dd[!, Symbol("4G_Shoulder")] .+ dd[!, Symbol("5G_Peak")]
 
 	monthly_dd = combine(groupby(dd, :Month),
@@ -53,8 +50,6 @@ function MonthlyIndicators(final_dispatch_decisions, mtu_economic_indicators, tr
 		:FinalAuctionPrice => std => Symbol("Price Std Dev (€/MWh)"),
 		:FinalAuctionPrice => (p -> count(<=(0), p)) => Symbol("MTUs Price ≤ 0"),
 		:FinalAuctionPrice => (p -> count(>=(150), p)) => Symbol("MTUs Price ≥ 150"),
-		:WindCurtailed => sum => Symbol("Wind Curtailed (MWh)"),
-		:SolarCurtailed => sum => Symbol("Solar Curtailed (MWh)"),
 		:ShoulderPeak => sum => Symbol("Shoulder + Peak Dispatch (MWh)"),
 		[:StorageCharge, :StorageDischarge] => ((c, d) -> sum(c) + sum(d)) => Symbol("Storage Throughput (MWh)"),
 	)

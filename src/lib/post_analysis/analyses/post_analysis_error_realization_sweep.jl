@@ -33,13 +33,26 @@ const FIXED_COLOR = "#2a78d6"
 const ROLLING_COLOR = "#eb6834"
 
 # (diff column, fixed column, rolling column, title, unit)
-const DIFFERENCE_KPIS = [
+# sweeps run before the balancing/energy split (kpis.csv with wind_curtailed / solar_curtailed columns)
+const LEGACY_DIFFERENCE_KPIS = [
     (diff=:d_sew, fixed=:fixed_sew, rolling=:rolling_sew, title="Socioeconomic welfare", unit="EUR"),
     (diff=:d_wind_curtailed, fixed=:fixed_wind_curtailed, rolling=:rolling_wind_curtailed, title="Wind curtailment", unit="MWh"),
     (diff=:d_solar_curtailed, fixed=:fixed_solar_curtailed, rolling=:rolling_solar_curtailed, title="Solar curtailment", unit="MWh"),
     (diff=:d_imbalance, fixed=:fixed_imbalance, rolling=:rolling_imbalance, title="Peak agent balancing energy", unit="MWh"),
 ]
-const LEVEL_KPIS = DIFFERENCE_KPIS[2:4]
+# current sweeps: energy-segment SEW, balancing spillage, the original imbalance KPI and the peak agent's balancing net
+const DIFFERENCE_KPIS = [
+    (diff=:d_sew, fixed=:fixed_sew, rolling=:rolling_sew, title="Socioeconomic welfare (energy)", unit="EUR"),
+    (diff=:d_wind_spillage, fixed=:fixed_wind_spillage, rolling=:rolling_wind_spillage, title="Wind spillage (balancing)", unit="MWh"),
+    (diff=:d_solar_spillage, fixed=:fixed_solar_spillage, rolling=:rolling_solar_spillage, title="Solar spillage (balancing)", unit="MWh"),
+    (diff=:d_imbalance, fixed=:fixed_imbalance, rolling=:rolling_imbalance, title="Imbalance energy (original KPI)", unit="MWh"),
+    (diff=:d_peak_balancing, fixed=:fixed_peak_balancing, rolling=:rolling_peak_balancing, title="Peak agent energy in balancing segment", unit="MWh"),
+]
+KpisFor(df) = hasproperty(df, :d_wind_spillage) ? DIFFERENCE_KPIS : LEGACY_DIFFERENCE_KPIS
+# every KPI but SEW, which is indistinguishable between the designs at the scale of its level
+LevelKpis(kpis) = kpis[2:end]
+# lower is better for everything but SEW
+const LOWER_IS_BETTER = [:d_wind_curtailed, :d_solar_curtailed, :d_wind_spillage, :d_solar_spillage, :d_imbalance, :d_peak_balancing]
 
 standard_error(x) = length(x) > 1 ? std(x) / sqrt(length(x)) : NaN
 
@@ -96,7 +109,7 @@ end
 function DifferencePanel(df, kpi)
     x = df[!, kpi.diff]
     stats = BoxStatistics(x)
-    better = kpi.diff in (:d_wind_curtailed, :d_solar_curtailed, :d_imbalance) ? count(<(0), x) : count(>(0), x)
+    better = kpi.diff in LOWER_IS_BETTER ? count(<(0), x) : count(>(0), x)
     subtitle = "mean $(stats.mean >= 0 ? "+" : "")$(WithSeparators(stats.mean)) ± $(WithSeparators(stats.std_error)) · rolling better in $better of $(stats.n) seeds"
     p = Plots.plot(; panel_style()..., title="$(kpi.title)\n$subtitle", ylabel="rolling − fixed ($(kpi.unit))", xlims=(0.4, 1.6), xticks=false,
                    ylims=PaddedLimits(x), legend=false, titlefontsize=10, left_margin=8Plots.mm)
@@ -125,7 +138,7 @@ end
 
 function StatisticsTable(df)
     rows = NamedTuple[]
-    for kpi in DIFFERENCE_KPIS
+    for kpi in KpisFor(df)
         push!(rows, merge((kpi=String(kpi.diff), series="rolling − fixed"), BoxStatistics(df[!, kpi.diff])))
         for (series, column) in (("fixed", kpi.fixed), ("rolling", kpi.rolling))
             push!(rows, merge((kpi=String(column), series=series), BoxStatistics(df[!, column])))
@@ -146,14 +159,19 @@ function PerformAnalysis(sweep_name::String="fixed_vs_rolling_36"; output_dir::S
 
     caption = Caption(key)
 
-    panels = [DifferencePanel(df, kpi) for kpi in DIFFERENCE_KPIS]
-    differences = Plots.plot(panels..., caption; layout=Plots.@layout([grid(2, 2); c{0.05h}]), size=(1100, 850), background_color=SURFACE,
+    kpis = KpisFor(df)
+    panels = [DifferencePanel(df, kpi) for kpi in kpis]
+    # a 2 x 2 grid for four KPIs, 2 x 3 (one slot left empty) for five
+    n_columns = cld(length(panels), 2)
+    append!(panels, [Plots.plot(; framestyle=:none, grid=false, ticks=false, legend=false, background_color=SURFACE) for _ in 1:(2 * n_columns - length(panels))])
+    differences = Plots.plot(panels..., caption; layout=Plots.@layout([grid(2, n_columns); c{0.05h}]), size=(550 * n_columns, 850), background_color=SURFACE,
                              plot_title="Rolling vs Fixed Horizon Difference over $n Wind Forecast Error Realizations",
                              plot_titlefontsize=12, plot_titlefontcolor=INK, plot_titlevspan=0.05)
     savefig(differences, "$output_dir/paired_differences.png")
 
-    level_panels = [LevelsPanel(df, kpi; legend=(i == 1)) for (i, kpi) in enumerate(LEVEL_KPIS)]
-    levels = Plots.plot(level_panels..., caption; layout=Plots.@layout([grid(1, 3); c{0.08h}]), size=(1300, 520), background_color=SURFACE,
+    level_kpis = LevelKpis(kpis)
+    level_panels = [LevelsPanel(df, kpi; legend=(i == 1)) for (i, kpi) in enumerate(level_kpis)]
+    levels = Plots.plot(level_panels..., caption; layout=Plots.@layout([grid(1, length(level_kpis)); c{0.08h}]), size=(433 * length(level_kpis), 520), background_color=SURFACE,
                         plot_title="KPIs for $n Wind Forecast Error Realizations",
                         plot_titlefontsize=12, plot_titlefontcolor=INK, plot_titlevspan=0.09)
     savefig(levels, "$output_dir/levels_by_design.png")

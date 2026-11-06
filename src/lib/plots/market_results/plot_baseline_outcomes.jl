@@ -29,10 +29,19 @@ function write_transactions(path_without_extension, transactions; csv_above_rows
     end
 end
 
+function energy_indicators(marketresult, test_range)
+    e = MarketDataStorage.GetEnergyEconomicIndicatorsForRange(marketresult, test_range)
+    return (e.economic_indicators, e.agent_indicators, e.mtu_economic_indicators)
+end
+
 function plot(marketresult, config, test_range, test_id)
     # imbalance_agents hardcoded to the Wind/Peak agent config every current experiment uses -
     # revisit if/when a config with different generator names needs this too
-    (indicators, agent_indicators, transactions, final_dispatch_decisions, mtu_economic_outcomes) = MarketDataStorage.GetEconomicIndicatorsForRange(marketresult, test_range; imbalance_agents=("6G_Wind", "5G_Peak"))
+    # the indicator tables are energy-segment only (see GetEnergyEconomicIndicatorsForRange); transactions and
+    # final_dispatch_decisions stay the full (Total) exports
+    (indicators, agent_indicators, mtu_economic_outcomes) = energy_indicators(marketresult, test_range)
+    final_dispatch_decisions = MarketDataStorage.GetFinalDispatchDecisionsForRange(marketresult, test_range)
+    transactions = MarketDataStorage.GetTransactionsForRange(marketresult, test_range)
 
     println(indicators)
     println(agent_indicators)
@@ -67,7 +76,9 @@ function plotCompare(market_results, config, test_range, test_id)
     combined_agent_indicators = DataFrame()
     for (marketConfiguration, marketResult) in market_results
         println("calculating indicators for: $marketConfiguration")
-        (indicators, agent_indicators, transactions, final_dispatch_decisions, mtu_economic_outcomes) = MarketDataStorage.GetEconomicIndicatorsForRange(marketResult, test_range; imbalance_agents=("6G_Wind", "5G_Peak"))
+        (indicators, agent_indicators, mtu_economic_outcomes) = energy_indicators(marketResult, test_range)
+        final_dispatch_decisions = MarketDataStorage.GetFinalDispatchDecisionsForRange(marketResult, test_range)
+        transactions = MarketDataStorage.GetTransactionsForRange(marketResult, test_range)
         indicators[!,Symbol("Market Configuration")] .= marketConfiguration
         combined_indicators = vcat(combined_indicators, indicators)
         agent_indicators[!,Symbol("Market Configuration")] .= marketConfiguration
