@@ -2,11 +2,12 @@ module GenerateWindowLengthConfigs
 
 using Dates
 
-export GenerateConfigs, DESIGNS
+export GenerateConfigs, DEFAULT_DESIGNS
 
-# Market designs to generate: suffix used in the experiment name => market config file
-# (resolved against src/configs/markets/ by DataImporter).
-const DESIGNS = [
+# Default market designs: (name prefix, market config file, window length in hours, used for the
+# end-exclusion). Market config files are resolved against src/configs/markets/ by DataImporter.
+# Override per call via the `designs` keyword of `GenerateConfigs`.
+const DEFAULT_DESIGNS = [
     ("rolling_36", "rolling_laura.yaml",    36),
     ("rolling_48", "rolling_48_laura.yaml", 48),
     ("rolling_72", "rolling_72_laura.yaml", 72),
@@ -40,11 +41,15 @@ function _get_int(lines::Vector{String}, key::String, default::Int)
 end
 
 """
-    GenerateConfigs(source_config, first_day, last_day; output_dir="src/configs/experiments")
+    GenerateConfigs(source_config, first_day, last_day;
+                    designs=DEFAULT_DESIGNS, output_dir="src/configs/experiments")
 
-Write one experiment config per design in `DESIGNS` (rolling 36/48/72 and fixed 36), copying all
-other parameters (agents, noise, optimization model, ...) from `source_config`. Returns the
-written file paths.
+Write one experiment config per design, copying all other parameters (agents, noise,
+optimization model, ...) from `source_config`. Returns the written file paths.
+
+`designs` is a collection of `(name_prefix, market_config_file, window)` tuples; `window` is the
+optimization window plus look-ahead (in hours) and sets the end-exclusion. It defaults to
+`DEFAULT_DESIGNS` (rolling 36/48/72 and fixed 36).
 
 `first_day` and `last_day` (`Date` or "YYYY-MM-DD"; both inclusive) bound the *analyzed* window,
 so every design is compared over identical days. The generated configs then set:
@@ -58,10 +63,12 @@ so every design is compared over identical days. The generated configs then set:
 Spin-up and `skipEarlyAuctions` are taken from `source_config` unchanged.
 """
 function GenerateConfigs(source_config::AbstractString, first_day, last_day;
+                         designs = DEFAULT_DESIGNS,
                          output_dir::AbstractString = "src/configs/experiments")
     first_day = Date(first_day)
     last_day = Date(last_day)
     last_day >= first_day || error("last_day ($last_day) is before first_day ($first_day)")
+    isempty(designs) && error("designs must not be empty")
     analysis_days = Dates.value(last_day - first_day) + 1
 
     source_lines = readlines(source_config)
@@ -71,7 +78,7 @@ function GenerateConfigs(source_config::AbstractString, first_day, last_day;
     mkpath(output_dir)
     tag = "$(Dates.format(first_day, "yyyymmdd"))_$(Dates.format(last_day, "yyyymmdd"))"
     written = String[]
-    for (prefix, market_config, window) in DESIGNS
+    for (prefix, market_config, window) in designs
         name = "$(prefix)_$(tag)"
         exclude_end = cld(window, 24)
         clear_days = analysis_days + spin_up + exclude_end
