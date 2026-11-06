@@ -8,7 +8,7 @@
 # clearings but never became contracted energy. A longer optimizationWindow gives later clearings
 # more opportunity to revise earlier commitments, so Churn is expected to grow with the window.
 #
-# Both figures come straight out of PostAnalysisCommon.CalculateCaseIndicators's agent_indicators
+# Both figures (energy segment only) come straight out of PostAnalysisCommon.CalculateCaseEnergyIndicators's agent_indicators
 # ("Traded Volume (MWh)" and "Quantity (MWh)" respectively - see AgentEconomicMetrics in
 # market_data_storage.jl), scoped to time_range exactly like the rest of this suite, so no
 # transactions/final_dispatch_decisions re-filtering is needed here.
@@ -45,14 +45,19 @@ function DefaultLabel(case_paths, cases)
 	return join(names, "_vs_")
 end
 
-function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=DefaultLabel(case_paths, cases)), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE)
+function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=DefaultLabel(case_paths, cases)), time_range=nothing)
+	println("starting analysis: rolling horizon churn")
+	# nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
+	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
 
 	analysis_dir_path = "$output_base/rolling_horizon_churn"
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 
 	# fresh per-case agent indicators - see PostAnalysisCommon.CalculateCaseIndicators for why this
-	# is computed on demand rather than read from a pre-aggregated agent_indicators.xlsx
-	agent_indicators_by_case = Dict(case => PostAnalysisCommon.CalculateCaseIndicators(case_paths, case; time_range=time_range).agent_indicators for case in cases)
+	# is computed on demand rather than read from a pre-aggregated agent_indicators.xlsx. Energy segment
+	# only (CalculateCaseEnergyIndicators): traded volume counts the Energy-segment transactions and
+	# contracted quantity is the energy-only final dispatch.
+	agent_indicators_by_case = Dict(case => PostAnalysisCommon.CalculateCaseEnergyIndicators(case_paths, case; time_range=time_range).agent_indicators for case in cases)
 
 	df = BuildChurnTable(agent_indicators_by_case, cases)
 

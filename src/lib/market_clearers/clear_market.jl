@@ -7,6 +7,7 @@ using .Helpers.HelperModelResults
 
 include("../data_importer.jl")
 
+include("../models/solver_selection.jl")
 include("../models/flexible_model.jl")
 include("../models/explicit_adjustment_model.jl")
 include("../models/laura_convergence_model.jl")
@@ -15,6 +16,7 @@ include("../models/simple_model.jl")
 include("../models/latest_model.jl")
 include("../models/two_stage_model.jl")
 include("../models/storage_mip_model.jl")
+include("../models/storage_time_biased_penalty_model.jl")
 #=
 include("../plots/plot_hourly_market_equilibrium.jl") # TODO: rename
 include("../plots/plot_market_prices_with_storage.jl")
@@ -79,7 +81,7 @@ end
 
 function GetModel(config)
 	if haskey(config, :optimizationModelConfig)
-		return config[:optimizationModelConfig]["model"] == "latest" ? LatestMarketModel : config[:optimizationModelConfig]["model"] == "two_stage" ? TwoStageMarketModel : config[:optimizationModelConfig]["model"] == "storage_mip" ? StorageMipMarketModel : ExplicitAdjustmentMarketModel # todo: make this more complete
+		return config[:optimizationModelConfig]["model"] == "latest" ? LatestMarketModel : config[:optimizationModelConfig]["model"] == "two_stage" ? TwoStageMarketModel : config[:optimizationModelConfig]["model"] == "storage_mip" ? StorageMipMarketModel : config[:optimizationModelConfig]["model"] == "storage_time_biased_penalty" ? StorageTimeBiasedPenaltyMarketModel : ExplicitAdjustmentMarketModel # todo: make this more complete
 	end
 	return USE_LATEST_MODEL ? LatestMarketModel : USE_EXPLICIT_ADJUSTMENT_MODEL ? ExplicitAdjustmentMarketModel : USE_LAURA_CONVERGENCE_MODEL ? LauraConvergenceMarketModel : USE_LAURA_MINIMUM_MATCH_MODEL ? LauraMinimumMatchModel : SimpleModel
 end
@@ -148,7 +150,7 @@ function ClearSimple(config_file, test_id)
 
 	end
 
-	test_range = range(config[:timePeriodsPerDay]*config[:samplePeriodExcludeSpinUp],config[:timePeriodsPerDay]*(config[:clearForDays] - config[:samplePeriodExcludeEnd]) - 1)
+	test_range = DataImporter.sample_time_range(config[:timePeriodsPerDay], config[:clearForDays], config[:samplePeriodExcludeSpinUp], config[:samplePeriodExcludeEnd])
 	println(test_range.start, test_range.stop)
 
 	MarketDataStorage.WriteStorageAnomalies(marketresult, config[:name], test_id)
@@ -271,7 +273,7 @@ function ClearMarketComparisonForConfig(config, test_id)
 
 	end
 
-	test_range = range(config[:timePeriodsPerDay]*config[:samplePeriodExcludeSpinUp],config[:timePeriodsPerDay]*(config[:clearForDays] - config[:samplePeriodExcludeEnd]) - 1)
+	test_range = DataImporter.sample_time_range(config[:timePeriodsPerDay], config[:clearForDays], config[:samplePeriodExcludeSpinUp], config[:samplePeriodExcludeEnd])
 	# short_test_range = range(config[:timePeriodsPerDay]*3,config[:timePeriodsPerDay]*5 - 1)
 	zoom_19_21 = range(config[:timePeriodsPerDay]*19,config[:timePeriodsPerDay]*22 - 1)
 	println(test_range.start, test_range.stop)

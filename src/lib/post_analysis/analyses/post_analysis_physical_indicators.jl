@@ -14,7 +14,7 @@ PHYSICAL_INDICATORS = [Symbol("SOC"), Symbol("6G_Wind"), Symbol("2D_ModerateBid"
 INTERVAL_INDICATORS = [
 	(symbol=Symbol("Socioeconomic Welfare (€)"), label="Socioeconomic Welfare (€)", file="sew"),
 	(symbol=Symbol("Storage Revenue (€)"), label="Storage Revenue (€)", file="storage_revenue"),
-	(symbol=Symbol("Imbalance Energy (MWh)"), label="Imbalance Energy (MWh)", file="imbalance_energy"),
+	# Imbalance Energy is omitted: on the energy segment it is always 0 (same-hour adjustments are balancing transactions)
 ]
 
 # cases is any N case_paths keys (not just the module-default "Fixed Horizon"/"Rolling Horizon"
@@ -26,7 +26,10 @@ INTERVAL_INDICATORS = [
 # substance (subject=cases[2]=Rolling Horizon, the sole base=cases[1]=Fixed Horizon, matching the
 # previous hardcoded "Rolling Horizon" - "Fixed Horizon" behavior), only the file names gained a
 # suffix they didn't need before.
-function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE, imbalance_agents=PostAnalysisCommon.DEFAULT_IMBALANCE_AGENTS)
+function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=nothing, imbalance_agents=PostAnalysisCommon.DEFAULT_IMBALANCE_AGENTS)
+	println("starting analysis: physical indicators")
+	# nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
+	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
 
 	subject = cases[end]
 	base_cases = cases[1:end-1]
@@ -39,7 +42,7 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 
-	dispatch_decision_paths = Dict(case => joinpath(case_paths[case], "final_dispatch_decisions.xlsx") for case in cases)
+	dispatch_decision_paths = Dict(case => joinpath(case_paths[case], "final_dispatch_decisions_energy.xlsx") for case in cases) # energy segment only
 	dds = PostAnalysisDaily.GetDispatchDecisions(cases, dispatch_decision_paths)
 
 	for indicator in PHYSICAL_INDICATORS
@@ -48,7 +51,7 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 
 	mtu_economic_indicators = Dict{String,DataFrame}()
 	for case in cases
-		(economic_indicators, agent_indicators, transactions, finalDispatchDecisions, mtu_ei) = PostAnalysisCommon.CalculateCaseIndicators(case_paths, case; time_range=time_range, imbalance_agents=imbalance_agents)
+		(economic_indicators, agent_indicators, transactions, finalDispatchDecisions, mtu_ei) = PostAnalysisCommon.CalculateCaseEnergyIndicators(case_paths, case; time_range=time_range)
 		PostAnalysisDaily.AddDayAndHour!(mtu_ei, Symbol("MTU"))
 		mtu_economic_indicators[case] = mtu_ei
 	end

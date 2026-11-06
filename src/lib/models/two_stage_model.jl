@@ -1,15 +1,14 @@
 module TwoStageMarketModel
 
 using JuMP
-using HiGHS
-using Gurobi
 using DataFrames
 
 using ..Helpers.MarketDataStorage
+using ..Helpers.HelperMtuLock
+using ..SolverSelection
 
 include("../helpers/helper_input_data.jl")
 
-const gurobi_env = Gurobi.Env()
 
 # NOTE: This model does a first run with open charge/discharge for storage and then if a simultaneous charge/discharge operation occurs, restricts storage to only the higher of the two for that MTU in the second stage. It verifies that the objective value is the same in both cases and surfaces the objective value, and the MTUs constrained in a data frame which the market clearer will store for analysis.
 
@@ -400,13 +399,19 @@ function build_market_clearing!(m::Model, time_period::Int, marketresults, initi
 
     end
 
-    if haskey(data, :optimizationModelConfig) && data[:optimizationModelConfig]["restrict_mtu1_trading"] == true && !market[:overrideMTU1Restriction]
+    locked_mtu_count = HelperMtuLock.LockedMTUCount(data, market)
+    if locked_mtu_count > 0
         
         # TAtoLLD Change 1: replicate Laura's limit on trading for base/shoulder/solar in the first MTU
-        if length(marketresults.Results) != 0 && time_period == start_at_period
-            for g in ["3G_Base", "4G_Shoulder", "7G_Solar"]
-                @constraint(m, Qg_adj[g,start_at_period] == 0)
+        if length(marketresults.Results) != 0
+            # the balancing/energy split of the results (MarketDataStorage Segment) treats a locked window's first MTU as the
+            # balancing market, which only holds when that MTU is the clearing MTU itself
+            time_period == start_at_period || error("the MTU lock requires the optimization window to start at the clearing MTU, but the clearing at $time_period starts its window at $start_at_period")
+            locked_mtus = HelperMtuLock.LockedMTURange(locked_mtu_count, start_at_period)
+            for g in ["3G_Base", "4G_Shoulder", "7G_Solar"], t in locked_mtus
+                @constraint(m, Qg_adj[g,t] == 0)
             end
+            m.ext[:locked_mtus] = locked_mtus
         end
     end
 
@@ -429,27 +434,12 @@ end
 # data - information about assets - prices, availability factors, etc
 # market - defines when the window for which this market clears and the market name
 
-DEFAULT_SOLVER = "gurobi"
-
-# solver is chosen via data[:optimizationModelConfig]["solver"] ("gurobi" or "highs"), defaulting to DEFAULT_SOLVER
-function select_optimizer(data::Dict{Symbol,Any})
-    solver = haskey(data, :optimizationModelConfig) && haskey(data[:optimizationModelConfig], "solver") ? lowercase(String(data[:optimizationModelConfig]["solver"])) : DEFAULT_SOLVER
-
-    if solver == "gurobi"
-        return () -> Gurobi.Optimizer(gurobi_env)
-    elseif solver == "highs"
-        return HiGHS.Optimizer
-    else
-        throw("unknown solver \"$solver\" in optimizationModelConfig - supported solvers are \"gurobi\" and \"highs\"")
-    end
-end
-
 function build(time_period, marketresults, initialization, data, market)
 
-	# create the optimisation model with the configured solver (default Gurobi)
+	# create the optimisation model with the configured solver (default HiGHS)
 
     # Stage 1: solve with open (unconstrained) storage charge/discharge
-    m1 = Model(select_optimizer(data))
+    m1 = Model(SolverSelection.select_optimizer(data))
     set_silent(m1)
     define_sets!(m1, time_period, marketresults, initialization, data, market)
     process_time_series_data!(m1, time_period, marketresults, initialization, data, market)
@@ -476,7 +466,7 @@ function build(time_period, marketresults, initialization, data, market)
     # Stage 2: re-solve with the smaller of charge/discharge forced to zero at each flagged MTU,
     # restricting storage to only the higher of the two operations there - build_market_clearing!
     # adds these constraints itself, since m.ext[:two_stage_forced_zero] is set below before it runs
-    m2 = Model(select_optimizer(data))
+    m2 = Model(SolverSelection.select_optimizer(data))
     set_silent(m2)
     define_sets!(m2, time_period, marketresults, initialization, data, market)
     process_time_series_data!(m2, time_period, marketresults, initialization, data, market)

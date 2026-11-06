@@ -1,7 +1,7 @@
 # Month-by-month roll-up for long (multi-month) runs such as the full-year 2025 fixed_36/rolling_36
 # pair - the daily analysis (post_analysis_daily.jl) gives one point per day, which is too fine to
 # read off a year; this aggregates the same final_dispatch_decisions/mtu_economic_results data per
-# calendar month instead, so seasonal effects (winter wind vs. summer solar, storage cycling, price
+# calendar month instead (energy segment only; no Imbalance Energy column, it is always 0 there), so seasonal effects (winter wind vs. summer solar, storage cycling, price
 # spreads) are visible.
 #
 # Months are derived from each MTU's own calendar date, start_date + (mtu ÷ MTUs per day) days - pass
@@ -15,7 +15,6 @@ using XLSX, DataFrames, Plots, Statistics, Dates, Latexify
 include("../post_analysis_common.jl")
 
 const SEW = Symbol("Socioeconomic Welfare (€)")
-const IMBALANCE = Symbol("Imbalance Energy (MWh)")
 const PRODUCTION_COSTS = Symbol("Production Costs (€)")
 const SHOULDER_PEAK = Symbol("Shoulder + Peak Dispatch (MWh)")
 const GROSS_TRADED = Symbol("Gross Traded Volume (MWh)")
@@ -28,9 +27,7 @@ const GENERATOR_NAMES = ["3G_Base", "4G_Shoulder", "5G_Peak", "6G_Wind", "7G_Sol
 # metrics the monthly comparison tables report a subject-minus-base difference for, besides SEW
 const COMPARED_METRICS = [
 	Symbol("Mean Final Price (€/MWh)"),
-	Symbol("Wind Curtailed (MWh)"),
 	Symbol("Storage Throughput (MWh)"),
-	IMBALANCE,
 	SHOULDER_PEAK,
 	GROSS_TRADED,
 	PRODUCTION_COSTS,
@@ -45,8 +42,6 @@ MonthLabel(start_date, mtu, mtus_per_day) = Dates.format(start_date + Dates.Day(
 function MonthlyIndicators(final_dispatch_decisions, mtu_economic_indicators, transactions, start_date, mtus_per_day)
 	dd = copy(final_dispatch_decisions)
 	dd[!, :Month] = [MonthLabel(start_date, m, mtus_per_day) for m in dd.mtu]
-	dd[!, :WindCurtailed] = dd[!, Symbol("Q_6G_Wind")] .- dd[!, Symbol("6G_Wind")]
-	dd[!, :SolarCurtailed] = dd[!, Symbol("Q_7G_Solar")] .- dd[!, Symbol("7G_Solar")]
 	dd[!, :ShoulderPeak] = dd[!, Symbol("4G_Shoulder")] .+ dd[!, Symbol("5G_Peak")]
 
 	monthly_dd = combine(groupby(dd, :Month),
@@ -55,8 +50,6 @@ function MonthlyIndicators(final_dispatch_decisions, mtu_economic_indicators, tr
 		:FinalAuctionPrice => std => Symbol("Price Std Dev (€/MWh)"),
 		:FinalAuctionPrice => (p -> count(<=(0), p)) => Symbol("MTUs Price ≤ 0"),
 		:FinalAuctionPrice => (p -> count(>=(150), p)) => Symbol("MTUs Price ≥ 150"),
-		:WindCurtailed => sum => Symbol("Wind Curtailed (MWh)"),
-		:SolarCurtailed => sum => Symbol("Solar Curtailed (MWh)"),
 		:ShoulderPeak => sum => Symbol("Shoulder + Peak Dispatch (MWh)"),
 		[:StorageCharge, :StorageDischarge] => ((c, d) -> sum(c) + sum(d)) => Symbol("Storage Throughput (MWh)"),
 	)
@@ -65,7 +58,6 @@ function MonthlyIndicators(final_dispatch_decisions, mtu_economic_indicators, tr
 	mei[!, :Month] = [MonthLabel(start_date, m, mtus_per_day) for m in mei.MTU]
 	monthly_mei = combine(groupby(mei, :Month),
 		SEW => sum => SEW,
-		IMBALANCE => sum => IMBALANCE,
 		PRODUCTION_COSTS => sum => PRODUCTION_COSTS,
 	)
 
@@ -78,14 +70,17 @@ end
 
 # case_paths/cases/output_base as in the other post-analysis modules - cases[end] is the "subject"
 # design (e.g. Rolling Horizon) compared against each preceding case, matching PostAnalysisSEW/Daily.
-function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE, start_date=Date(2024, 12, 29), mtus_per_day=24)
+function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=nothing, start_date=Date(2024, 12, 29), mtus_per_day=24)
+	println("starting analysis: monthly")
+	# nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
+	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
 
 	analysis_dir_path = "$output_base/post_analysis_monthly"
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 
 	monthly_by_case = Dict{String,DataFrame}()
 	for case in cases
-		(economic_indicators, agent_indicators, transactions, final_dispatch_decisions, mtu_economic_indicators) = PostAnalysisCommon.CalculateCaseIndicators(case_paths, case; time_range=time_range, imbalance_agents=PostAnalysisCommon.DEFAULT_IMBALANCE_AGENTS)
+		(economic_indicators, agent_indicators, transactions, final_dispatch_decisions, mtu_economic_indicators) = PostAnalysisCommon.CalculateCaseEnergyIndicators(case_paths, case; time_range=time_range)
 		monthly_by_case[case] = MonthlyIndicators(final_dispatch_decisions, mtu_economic_indicators, transactions, start_date, mtus_per_day)
 		println("$case monthly indicators:")
 		println(monthly_by_case[case])

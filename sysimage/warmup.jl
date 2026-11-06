@@ -13,8 +13,16 @@ const WARMUP_CONFIG = "src/configs/experiments/rolling_36_no_cap_1d_spinup_wind_
 DegeneracyScan.RunScan(WARMUP_CONFIG, "sysimage_warmup_highs", 24:25;
     solver="highs", max_workers=1, exclude_prefixes=["Qd_adj["])
 
-# Gurobi path: same, one analysed auction
-DegeneracyScan.RunScan(WARMUP_CONFIG, "sysimage_warmup_gurobi", 24:24;
+# Gurobi path: same, one analysed auction - skipped when this machine has no Gurobi license, so the
+# sysimage can still be built (it just won't have the Gurobi solve path precompiled)
+const GUROBI_AVAILABLE = try
+    Gurobi.Env()
+    true
+catch
+    @warn "no usable Gurobi license - skipping the Gurobi part of the warmup"
+    false
+end
+GUROBI_AVAILABLE && DegeneracyScan.RunScan(WARMUP_CONFIG, "sysimage_warmup_gurobi", 24:24;
     solver="gurobi", max_workers=1, exclude_prefixes=["Qd_adj["])
 
 # generic helpers the notebooks use

@@ -17,7 +17,8 @@ DecisionVariablesInterpretation = DataFrame([
 	(DataPoint="Wind", Interpretation="Wind generator dispatch quantity (MWh)"),
 	(DataPoint="Solar", Interpretation="Solar generator dispatch quantity (MWh)"),
 	(DataPoint="Q_{Agent}", Interpretation="Agent bid quantity (MWh)"),
-	(DataPoint="P_{Agent}", Interpretation="Agent bid price (€)")
+	(DataPoint="P_{Agent}", Interpretation="Agent bid price (€)"),
+	(DataPoint="Segment", Interpretation="Balancing for the locked MTUs (the first lockedMTUs of the window) of a clearing whose lock was applied (the balancing market), otherwise Energy. final_dispatch_decisions_energy holds only Energy rows: for an MTU delivered via a balancing row, the last clearing that traded it as an energy MTU")
 	])
 
 TransactionsInterpretation = DataFrame([
@@ -28,6 +29,7 @@ TransactionsInterpretation = DataFrame([
 	(DataPoint="Market Time Unit", Interpretation="Market Time Unit for which energy is dispatched, counted from beginning of experiment period"), 
 	(DataPoint="Clearing MTU", Interpretation="Market Time Unit in which this market was held (gate closure), counted from beginning of experiment period"), 
 	(DataPoint="Agent Type", Interpretation="Identifies the type of agent - Demand, Generator, or Storage"), 
+	(DataPoint="Segment", Interpretation="Balancing for the locked MTUs (the first lockedMTUs of the window) of a clearing whose lock was applied (the balancing market), otherwise Energy"),
 	(DataPoint="Payments/Revenues (€)", Interpretation="Payments or revenues for transaction i.e., Quantity*Price (€)")
 	])
 
@@ -35,7 +37,7 @@ EconomicIndicatorsInterpretation = DataFrame([
 	(DataPoint="SEW", Interpretation="Socioeconomic Welfare generated in test period (€)"), 
 	(DataPoint="ProducerSurplus", Interpretation="Producer Surplus generated in test period (€)"),
 	(DataPoint="ConsumerSurplus", Interpretation="Consumer Surplus generated in test period (€)"), 
-	(DataPoint="StorageRevenue", Interpretation="Storage net revenue (revenues received - payments made) in test period (€)")
+	(DataPoint="StorageRevenue", Interpretation="Storage net revenue in test period (€): the sum of quantity * price over all of storage's transactions, each at its own clearing's price")
 	])
 
 AgentIndicatorsInterpretation = DataFrame([

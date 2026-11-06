@@ -60,6 +60,10 @@ function DecisionVariables(optimization_window::UnitRange{Int}, agent_map::Dict{
 		df[!,"P_$agent"] =  [value(agent_type_price_data[agent,t]) for t in optimization_window]
 	end
 
+	# which market each row belongs to - see RowSegment; appended last so existing column positions are unchanged
+	locked_mtus = get(m.ext, :locked_mtus, nothing)
+	df[!,"Segment"] = [RowSegment(locked_mtus, mtu) for mtu in optimization_window]
+
 	return df
 end
 
@@ -225,7 +229,22 @@ mutable struct Transaction
 	ClearingMTU::Int
 	TimesCleared::Int
 	AgentType::AgentTypeEnum
+	Segment::String
 	Transaction() = new()
+end
+
+# Which market a transaction belongs to: the locked MTUs (the first N of the window) of a clearing whose model applied the
+# MTU lock (marketresult.LockedMTUs, set from the model's own m.ext[:locked_mtus])
+# is the balancing market, every other MTU - and every MTU of an unlocked clearing - the energy market.
+const SEGMENT_BALANCING = "Balancing"
+const SEGMENT_ENERGY = "Energy"
+
+# the one rule for a row of a clearing: Balancing at the clearing's locked MTUs (nothing if no lock was applied), else Energy
+RowSegment(locked_mtus, mtu) = locked_mtus !== nothing && mtu in locked_mtus ? SEGMENT_BALANCING : SEGMENT_ENERGY
+
+function TransactionSegment(marketresult, mtu)
+	locked_mtus = isdefined(marketresult, :LockedMTUs) ? marketresult.LockedMTUs : nothing
+	return RowSegment(locked_mtus, mtu)
 end
 
 # compare clearing outcomes with previous clearings to generate a set of transactions
@@ -345,13 +364,14 @@ function Transactions(marketresult, previous_dispatch, market_name, resultset, m
 		end
 	end
 
-	transactions_df = DataFrame(MarketName=String[], Agent=String[], Quantity=Float64[], Price=Float64[], MTU=Int[], ClearingMTU=Int[], TimesCleared=Int[], AgentType=String[])
+	transactions_df = DataFrame(MarketName=String[], Agent=String[], Quantity=Float64[], Price=Float64[], MTU=Int[], ClearingMTU=Int[], TimesCleared=Int[], AgentType=String[], Segment=String[])
 	for t in transactions
-		push!(transactions_df, [t.MarketName, t.Agent, t.Quantity, t.Price, t.MTU, t.ClearingMTU, t.TimesCleared, string(Symbol(t.AgentType))])
+		t.Segment = TransactionSegment(marketresult, t.MTU)
+		push!(transactions_df, [t.MarketName, t.Agent, t.Quantity, t.Price, t.MTU, t.ClearingMTU, t.TimesCleared, string(Symbol(t.AgentType)), t.Segment])
 	end
 
-	long_names = ["Market Name", "Agent", "Quantity (MWh)", "Price (€/MWh)", "Market Time Unit", "Clearing MTU", "Times Cleared", "Agent Type"]
-	short_names = ["MarketName", "Agent", "Quantity", "Price", "MTU", "ClearingMTU", "TimesCleared", "AgentType"]
+	long_names = ["Market Name", "Agent", "Quantity (MWh)", "Price (€/MWh)", "Market Time Unit", "Clearing MTU", "Times Cleared", "Agent Type", "Segment"]
+	short_names = ["MarketName", "Agent", "Quantity", "Price", "MTU", "ClearingMTU", "TimesCleared", "AgentType", "Segment"]
 	rename!(transactions_df, short_names .=> long_names)
 
 	adjustment_anomalies_df = DataFrame(MarketName=String[], Agent=String[], AgentType=String[], MTU=Int[], ClearingMTU=Int[], AdjustmentQ=Float64[], ExpectedAdjustmentQ=Float64[], Diff=Float64[])

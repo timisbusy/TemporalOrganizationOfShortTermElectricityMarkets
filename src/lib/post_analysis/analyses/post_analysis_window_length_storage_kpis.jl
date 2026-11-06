@@ -1,13 +1,11 @@
 # Storage economics compared across the three rolling-horizon optimization-window-length cases
 # (36h/48h/72h) - same table shape as PostAnalysisWindowLengthKPIs (totals + daily_average sheets,
 # a %% difference column between each pair of adjacent window lengths), but for storage-specific
-# indicators computed directly from each case's own final_dispatch_decisions.xlsx (StorageCharge/
-# StorageDischarge/FinalAuctionPrice) rather than PostAnalysisCommon.CalculateCaseIndicators'
-# aggregate economic indicators - Storage Revenue there uses the same net-revenue definition as
-# this module's Net Revenue (discharge-minus-charge, each priced at its own MTU's
-# FinalAuctionPrice - the realized settlement price for that MTU, matching MarketDataStorage.
-# CalculateEconomicIndicators' storage_revenue), just computed independently here so this analysis
-# doesn't need transactions.xlsx or an agent map.
+# indicators: charge/discharge energy come from the energy-only
+# final_dispatch_decisions_energy.xlsx (StorageCharge/StorageDischarge), while Net Revenue is
+# the transaction-based Storage Revenue (€) of MarketDataStorage.CalculateEconomicIndicators on the energy
+# segment: the sum of quantity * price over storage's Energy-segment transactions, so it equals the Storage
+# Revenue row of the SEW / window-length KPI tables.
 
 module PostAnalysisWindowLengthStorageKPIs
 
@@ -19,17 +17,15 @@ include("./post_analysis_conventional_generation_cost.jl")
 const DEFAULT_CASE_PATHS = PostAnalysisConventionalGenerationCost.DEFAULT_CASE_PATHS
 const DEFAULT_CASES = PostAnalysisConventionalGenerationCost.DEFAULT_CASES
 
-const INDICATOR_NAMES = ["Charge Energy (MWh)", "Discharge Energy (MWh)", "Throughput (MWh)", "Net Revenue (€)", "Avg Charging Price (€/MWh)", "Avg Discharging Price (€/MWh)"]
+const INDICATOR_NAMES = ["Charge Energy (MWh)", "Discharge Energy (MWh)", "Throughput (MWh)", "Net Revenue (€)"]
 
 # indicators that are extensive totals over time_range (MWh or €), so the daily_average table
-# divides them by the number of days - the two average-price indicators are already intensive
-# (€/MWh, independent of how many days they're averaged over) and pass through unscaled.
+# divides them by the number of days.
 const PER_DAY_INDICATORS = Set(["Charge Energy (MWh)", "Discharge Energy (MWh)", "Throughput (MWh)", "Net Revenue (€)"])
 
 # "Name (Unit)" -> "Name (Unit/day)" for the daily-average table, so its row labels can't be
 # mistaken for the same totals reported in the "totals" sheet just by glancing at the Indicator
-# column - the two average-price indicators (already a rate, not scaled by day count) are left
-# unchanged.
+# column.
 function DailyIndicatorLabel(indicator)
 	indicator in PER_DAY_INDICATORS || return indicator
 	m = match(r"^(.*)\(([^()]*)\)$", indicator)
@@ -37,7 +33,10 @@ function DailyIndicatorLabel(indicator)
 	return "$(m.captures[1])($(m.captures[2])/day)"
 end
 
-function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=PostAnalysisConventionalGenerationCost.DefaultLabel(case_paths, cases)), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE)
+function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=PostAnalysisConventionalGenerationCost.DefaultLabel(case_paths, cases)), time_range=nothing)
+	println("starting analysis: window length storage KPIs")
+	# nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
+	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
 
 	length(cases) == 3 || throw("PostAnalysisWindowLengthStorageKPIs compares exactly 3 window lengths (for the adjacent-pair %% difference columns); got $(length(cases)): $cases")
 	short, mid, long = cases
@@ -45,7 +44,7 @@ function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, out
 	analysis_dir_path = "$output_base/storage_kpis"
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 
-	storage_kpis_by_case = Dict(case => CalculateStorageKPIs(case_paths[case], time_range) for case in cases)
+	storage_kpis_by_case = Dict(case => CalculateStorageKPIs(case_paths, case, time_range) for case in cases)
 
 	mid_vs_short_col = "$mid vs $short"
 	long_vs_mid_col = "$long vs $mid"
@@ -62,8 +61,7 @@ function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, out
 	println(final_indicators_df)
 
 	# extensive indicators (energy/€ totals) are divided by days for a daily rate, same as
-	# PostAnalysisWindowLengthKPIs - the two average-price indicators are left unscaled since
-	# they're already a per-MWh average, not a total. %% differences are unaffected either way.
+	# PostAnalysisWindowLengthKPIs. %% differences are unaffected either way.
 	mtu_count = length(time_range)
 	days = mtu_count / 24
 
@@ -90,33 +88,25 @@ function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, out
 	return (final_indicators_df, daily_avg_df)
 end
 
-# Charge/Discharge Energy: total MWh over time_range. Throughput: their sum. Net Revenue: discharge
-# revenue minus charge cost, each MTU priced at its own FinalAuctionPrice (the realized settlement
-# price for that MTU - see MarketDataStorage.CalculateEconomicIndicators' storage_revenue for the
-# same definition). Avg Charging/Discharging Price: quantity-weighted average FinalAuctionPrice
-# over MTUs where the corresponding flow is nonzero, i.e. total €paid-or-earned / total MWh.
-function CalculateStorageKPIs(case_path, time_range)
-	dd = PostAnalysisCommon.LoadFile(joinpath(case_path, "final_dispatch_decisions.xlsx"))
+# Charge/Discharge Energy: total MWh over time_range. Throughput: their sum. Net Revenue: the
+# transaction-based storage revenue (see the header).
+function CalculateStorageKPIs(case_paths, case, time_range)
+	dd = PostAnalysisCommon.LoadFile(joinpath(case_paths[case], "final_dispatch_decisions_energy.xlsx")) # energy segment only
 	dd = dd[time_range.start .<= dd.mtu .<= time_range.stop, :]
 
 	charge_energy = sum(dd.StorageCharge)
 	discharge_energy = sum(dd.StorageDischarge)
 	throughput = charge_energy + discharge_energy
 
-	charge_cost = sum(dd.StorageCharge .* dd.FinalAuctionPrice)
-	discharge_revenue = sum(dd.StorageDischarge .* dd.FinalAuctionPrice)
-	net_revenue = discharge_revenue - charge_cost
-
-	avg_charging_price = charge_energy > 0 ? charge_cost / charge_energy : 0.0
-	avg_discharging_price = discharge_energy > 0 ? discharge_revenue / discharge_energy : 0.0
+	# transaction-based, as the Storage Revenue of the other economic-indicator tables: the sum of quantity *
+	# price over storage's Energy-segment transactions (not discharge - charge priced at FinalAuctionPrice)
+	net_revenue = Float64(PostAnalysisCommon.CalculateCaseEnergyIndicators(case_paths, case; time_range=time_range).economic_indicators[1, "Storage Revenue (€)"])
 
 	return Dict(
 		"Charge Energy (MWh)" => charge_energy,
 		"Discharge Energy (MWh)" => discharge_energy,
 		"Throughput (MWh)" => throughput,
 		"Net Revenue (€)" => net_revenue,
-		"Avg Charging Price (€/MWh)" => avg_charging_price,
-		"Avg Discharging Price (€/MWh)" => avg_discharging_price,
 	)
 end
 

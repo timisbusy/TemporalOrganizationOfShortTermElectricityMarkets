@@ -13,15 +13,19 @@ include("../agent_renaming.jl")
 
 quantitySymbol = Symbol("Quantity (MWh)")
 
-# time_range: MTU window the daily SEW/driver statistics cover (see PostAnalysisCommon.DEFAULT_TIME_RANGE).
+# time_range: MTU window the daily SEW/driver statistics cover - nothing (the default) is the window the
+# runs' own configs define (see PostAnalysisCommon.ResolveTimeRange).
 # highlight_days: (label, day index) pairs to plot hour-by-hour; day index d spans MTU [24d, 24d+23]
 # and maps to calendar date startDate + d days - with startDate: 2025-05-01 (day 0 = May 1), May 4
-# is day index 3 and May 5 is day index 4 (the default). Each highlighted day must lie inside time_range.
-function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE, highlight_days=[("May 4", 3), ("May 5", 4)])
+# is day index 3 and May 5 is day index 4 (the default). Highlighted days that do not lie wholly inside time_range are skipped with a warning.
+function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=nothing, highlight_days=[("May 4", 3), ("May 5", 4)])
+	println("starting analysis: daily")
+    # nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
+    time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
 
     analysis_dir_path = "$output_base/post_analysis_daily"
 
-    dispatch_decision_paths = Dict(case => joinpath(case_paths[case], "final_dispatch_decisions.xlsx") for case in cases)
+    dispatch_decision_paths = Dict(case => joinpath(case_paths[case], "final_dispatch_decisions_energy.xlsx") for case in cases) # energy segment only
 
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 
@@ -32,6 +36,11 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 
     for (label, day) in highlight_days
         interval = day*24:((day + 1)*24 - 1)
+        # the indicators above only cover time_range, so a day that is not wholly inside it has no data to plot
+        if !(first(interval) in time_range && last(interval) in time_range)
+            println("warning: skipping highlight day $label (MTU $(first(interval)):$(last(interval))) - it is not inside the analysis time range $time_range")
+            continue
+        end
         println("$(uppercase(label)) RESULTS")
         for indicator in ["SOC", "6G_Wind", "2D_ModerateBid", "4G_Shoulder"]
             plotPhysicalIndicator(dds, interval, Symbol(indicator), print_cases, label, analysis_dir_path)
@@ -52,14 +61,14 @@ function GetDispatchDecisions(cases, dispatch_decision_paths)
 end
 
 
-# Computed fresh via CalculateCaseIndicators (final_dispatch_decisions.xlsx + transactions.xlsx),
-# not read from the pre-exported mtu_economic_results.xlsx - that export was written without
-# imbalance_agents set, so it has no real Imbalance Energy figures (see AnalyzeDrivers' imbalance
-# driver plot, which needs them).
-function GetMTUEconomicIndicators(cases, case_paths, time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE)
+# Computed fresh via CalculateCaseEnergyIndicators (final_dispatch_decisions_energy.xlsx + the Energy-segment
+# transactions), not read from the pre-exported mtu_economic_results.xlsx - energy segment only, like every
+# daily table and plot here. There is no Imbalance Energy driver plot: that indicator is always 0 on the
+# energy segment (same-hour adjustments are balancing transactions).
+function GetMTUEconomicIndicators(cases, case_paths, time_range=nothing)
     inds = Dict{String,Any}()
     for case in cases
-        (economic_indicators, agent_indicators, transactions, finalDispatchDecisions, mtu_economic_indicators) = PostAnalysisCommon.CalculateCaseIndicators(case_paths, case; time_range=time_range, imbalance_agents=PostAnalysisCommon.DEFAULT_IMBALANCE_AGENTS)
+        (economic_indicators, agent_indicators, transactions, finalDispatchDecisions, mtu_economic_indicators) = PostAnalysisCommon.CalculateCaseEnergyIndicators(case_paths, case; time_range=time_range)
         inds[case] = mtu_economic_indicators
         AddDayAndHour!(inds[case], Symbol("MTU"))
     end
@@ -239,13 +248,6 @@ function AnalyzeDrivers(print_cases, mtu_economic_indicators, dispatch_decisions
     end
     println(daily_net_discharges)
 
-    daily_imbalances = Dict{String,Any}()
-    for (marketConfiguration, mei) in mtu_economic_indicators
-        daily_mei = groupby(mei, :Day)
-        daily_imbalance = combine(daily_mei, imbalanceSymbol => sum => imbalanceSymbol)
-        daily_imbalances[marketConfiguration] = daily_imbalance
-    end
-
     daily_demand_utilities = Dict{String,Any}()
     for (marketConfiguration, mei) in mtu_economic_indicators
         daily_mei = groupby(mei, :Day)
@@ -267,7 +269,6 @@ function AnalyzeDrivers(print_cases, mtu_economic_indicators, dispatch_decisions
         sew_diffs = DiffByDay(daily_sews[subject], daily_sews[base], sewSymbol)
         net_discharge_diffs = DiffByDay(daily_net_discharges[subject], daily_net_discharges[base], Symbol("Net Discharge"))
         shoulder_peak_dispatch_diffs = DiffByDay(daily_shoulder_peak_dispatches[subject], daily_shoulder_peak_dispatches[base], shoulderPeakDispatchSymbol)
-        imbalance_diffs = DiffByDay(daily_imbalances[subject], daily_imbalances[base], imbalanceSymbol)
         demand_utility_diffs = DiffByDay(daily_demand_utilities[subject], daily_demand_utilities[base], demandUtilitySymbol)
 
         spec = (feature = :delta_net_storage_discharge_mwh, title = "Net storage discharge ($pair_label)", xlabel = "Delta net storage discharge [MWh]", filepath = "$analysis_dir_path/net_storage_driver_$suffix.png")
@@ -276,10 +277,6 @@ function AnalyzeDrivers(print_cases, mtu_economic_indicators, dispatch_decisions
 
         spec = (feature = :delta_mid_peak_dispatch_mwh, title = "Shoulder + peak dispatch ($pair_label)", xlabel = "Delta Mid + Peak dispatch [MWh]", filepath = "$analysis_dir_path/shoulder_peak_dispatch_driver_$suffix.png")
         (x, y) = AlignedXY(shoulder_peak_dispatch_diffs, sew_diffs)
-        PlotDriver(spec, x, y)
-
-        spec = (feature = :delta_imbalance_energy_mwh, title = "Imbalance energy ($pair_label)", xlabel = "Delta imbalance energy [MWh]", filepath = "$analysis_dir_path/imbalance_driver_$suffix.png")
-        (x, y) = AlignedXY(imbalance_diffs, sew_diffs)
         PlotDriver(spec, x, y)
 
         spec = (feature = :delta_demand_utility_eur, title = "Demand utility ($pair_label)", xlabel = "Delta demand utility [EUR]", filepath = "$analysis_dir_path/demand_utility_driver_$suffix.png")

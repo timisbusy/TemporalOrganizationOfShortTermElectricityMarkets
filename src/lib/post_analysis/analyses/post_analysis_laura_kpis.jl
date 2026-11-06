@@ -77,6 +77,7 @@ end
 # runner
 
 function PerformAnalysis()
+	println("starting analysis: Laura KPIs")
 	CleanDirectory(analysis_dir_path)
 
 	transaction_files = LoadFiles("transactions")

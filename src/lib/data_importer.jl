@@ -4,6 +4,50 @@ using YAML, Dates, DataFrames, XLSX
 
 CONFIG_PATH =  "src/configs" # "../configs"
 
+# days trimmed from each end of the run when a config sets neither samplePeriodExcludeSpinUp nor samplePeriodExcludeEnd
+const DEFAULT_SAMPLE_PERIOD_EXCLUDE_DAYS = 2
+
+# The post-hoc analysis window ("test_range") in MTU: everything from `exclude_spin_up_days` days in, up to
+# `exclude_end_days` days before the end of the clearForDays range. The single definition of this window -
+# the market clearers, the degeneracy scan and the post-analysis suite all take it from here.
+function sample_time_range(time_periods_per_day::Int, clear_for_days::Int, exclude_spin_up_days::Int, exclude_end_days::Int)
+    return (time_periods_per_day * exclude_spin_up_days):(time_periods_per_day * (clear_for_days - exclude_end_days) - 1)
+end
+
+# Same window straight from a raw experiment yaml Dict (e.g. the copy in a run's Config/ folder), with the
+# same defaults load_input_data applies - no market/agent files are resolved.
+function sample_time_range(cfg::AbstractDict)
+    return sample_time_range(
+        Int(cfg["timePeriodsPerDay"]),
+        Int(cfg["clearForDays"]),
+        haskey(cfg, "samplePeriodExcludeSpinUp") ? Int(cfg["samplePeriodExcludeSpinUp"]) : DEFAULT_SAMPLE_PERIOD_EXCLUDE_DAYS,
+        haskey(cfg, "samplePeriodExcludeEnd") ? Int(cfg["samplePeriodExcludeEnd"]) : DEFAULT_SAMPLE_PERIOD_EXCLUDE_DAYS,
+    )
+end
+
+# The window-related settings of an Excel experiment sheet (plus startDate), keyed like the experiment yaml so
+# the Dict method above applies to either. `nothing` if the workbook has no "data" sheet with a "Clear for Days" column.
+function experiment_window_config_xlsx(path::String)
+    df = try
+        DataFrame(XLSX.readtable(path, "data"))
+    catch
+        return nothing
+    end
+    hasproperty(df, "Clear for Days") || return nothing
+    cfg = Dict{String,Any}("clearForDays" => df[!,"Clear for Days"][1], "timePeriodsPerDay" => df[!,"MTU per Day"][1])
+    hasproperty(df, "Start Date") && df[!,"Start Date"][1] !== missing && (cfg["startDate"] = df[!,"Start Date"][1])
+    for (column, key) in ("Sample Period Exclude Spin Up" => "samplePeriodExcludeSpinUp", "Sample Period Exclude End" => "samplePeriodExcludeEnd")
+        hasproperty(df, column) && df[!,column][1] !== missing && (cfg[key] = df[!,column][1])
+    end
+    return cfg
+end
+
+# the number of MTUs a market locks (see HelperMtuLock.LockedMTUCount): a non-negative whole number, nothing else
+function parse_locked_mtus(value, market_name)
+    (value isa Real && isinteger(value) && value >= 0) || error("lockedMTUs of market $market_name must be a non-negative whole number, got $(repr(value))")
+    return Int(value)
+end
+
 # create a market configuration object from a file
 
 function load_market_configuration(path::String, expTimePeriodsPerDay::Int)
@@ -13,6 +57,7 @@ function load_market_configuration(path::String, expTimePeriodsPerDay::Int)
     marketTimePeriodsPerDay = get(marketCfg,"timePeriodsPerDay", Int) 
     expTimePeriodsPerDay == marketTimePeriodsPerDay || throw("market and experiment configurations do not match: $(marketTimePeriodsPerDay) !== $(expTimePeriodsPerDay)")
     overrideMTU1Restriction = haskey(marketCfg,"overrideMTU1Restriction") ? get(marketCfg,"overrideMTU1Restriction", Bool) : false
+    defaultLockedMTUs = get(marketCfg, "lockedMTUs", nothing) # file-level default for markets that do not state their own
     
     marketSequence = []
     for (name, market) in get(marketCfg,"marketSequence",Dict())
@@ -20,6 +65,8 @@ function load_market_configuration(path::String, expTimePeriodsPerDay::Int)
         addMarket[:name] = name
         addMarket[:timePeriodsPerDay] = expTimePeriodsPerDay
         addMarket[:overrideMTU1Restriction] = overrideMTU1Restriction
+        lockedMTUs = get(market, "lockedMTUs", defaultLockedMTUs)
+        lockedMTUs === nothing || (addMarket[:lockedMTUs] = parse_locked_mtus(lockedMTUs, name))
         addMarket[:clearingInterval] = get(market,"clearingInterval", Int) # number of time periods between market clearing/optimization rounds
         addMarket[:optimizationWindow] = get(market,"optimizationWindow", Int) # number of time periods to consider in each round
         addMarket[:lookAheadDistance] = get(market,"lookAheadDistance", Int) # window under consideration starts lookAheadDistance time periods ahead
@@ -51,6 +98,7 @@ function load_market_configuration_xlsx(path::String, expTimePeriodsPerDay::Int)
         addMarket[:clockTimeBegin] = Int(marketDef["Clock Time Begin"]) # expressed in market clearing periods - how long from the beginning of the day should this sequence begin?
         addMarket[:enforceRampRates] = hasproperty(marketDef, "Enforce Ramp Rates") ? Bool(marketDef["Enforce Ramp Rates"]) : true # default to true. if false, ramp rates for conventional generators will be disabled in this market
         addMarket[:overrideMTU1Restriction] = hasproperty(marketDef, "Override MTU1 Restriction") ? Bool(marketDef["Override MTU1 Restriction"]) : false
+        hasproperty(marketDef, "Locked MTUs") && !ismissing(marketDef["Locked MTUs"]) && (addMarket[:lockedMTUs] = parse_locked_mtus(marketDef["Locked MTUs"], addMarket[:name]))
         push!(marketSequence, addMarket)
     end
 
@@ -89,8 +137,8 @@ function load_input_data(path::String)
     # than this many rows (0 = always CSV). Unset keeps the default Excel row-limit rule. CSV is streamed, so
     # it avoids the memory spike of building a very large .xlsx sheet in one go on full-year runs.
     data[:transactionsCsvAboveRows] = haskey(cfg,"transactionsCsvAboveRows") ? Int(cfg["transactionsCsvAboveRows"]) : nothing
-    data[:samplePeriodExcludeSpinUp] = haskey(cfg,"samplePeriodExcludeSpinUp") ? Int(cfg["samplePeriodExcludeSpinUp"]) : 2
-    data[:samplePeriodExcludeEnd] = haskey(cfg,"samplePeriodExcludeEnd") ? Int(cfg["samplePeriodExcludeEnd"]) : 2
+    data[:samplePeriodExcludeSpinUp] = haskey(cfg,"samplePeriodExcludeSpinUp") ? Int(cfg["samplePeriodExcludeSpinUp"]) : DEFAULT_SAMPLE_PERIOD_EXCLUDE_DAYS
+    data[:samplePeriodExcludeEnd] = haskey(cfg,"samplePeriodExcludeEnd") ? Int(cfg["samplePeriodExcludeEnd"]) : DEFAULT_SAMPLE_PERIOD_EXCLUDE_DAYS
 
     # optional wind forecast error scenario CSV (generated there if missing) and the seed used
     # to generate it - without these, ClearMarket falls back to the shared ~800 hour scenario file
@@ -143,9 +191,105 @@ function load_input_data(path::String)
     return data
 end
 
+# An Excel agent workbook as the same nested Dict an agent yaml loads to (dispatchableGenerators,
+# variableGenerators, demand.segments, batteryStorage).
+function load_agent_config_xlsx(path::String)
+    genCfg = DataFrame(XLSX.readtable(path, "Generators"))
+    demandCfg = DataFrame(XLSX.readtable(path, "Demands"))
+    storageCfg = DataFrame(XLSX.readtable(path, "Storage"))
+
+    dispatchableGenCfg = genCfg[genCfg[!,"Type"] .== "Dispatchable",:]
+    variableGenCfg = genCfg[genCfg[!,"Type"] .== "Variable",:]
+
+    # generators: separate dictionaries for dispatchable and variable generators
+    dispatchableGenerators = Dict{String, Any}()
+
+    for genRow in eachrow(dispatchableGenCfg)
+        gen = Dict{String, Any}(
+            "bidPrice" => genRow["Bid Price"],
+            "capacity" => genRow["Capacity"],
+            "initialQuantity" => genRow["Initial Quantity"],
+            "emissionFactor" => genRow["Emission Factor"],
+        )
+        # only set the ramp keys that are filled in: the models pick the formulation by haskey(gen, "rampRate")
+        hasproperty(genRow, "Ramp Rate") && genRow["Ramp Rate"] !== missing ? gen["rampRate"] = genRow["Ramp Rate"] : false
+        hasproperty(genRow, "Ramp Rate LD") && genRow["Ramp Rate LD"] !== missing ? gen["rampRateLD"] = genRow["Ramp Rate LD"] : false
+        gen["conversionFactor"] = hasproperty(genRow, "Conversion Factor") && genRow["Conversion Factor"] !== missing ? Float64(genRow["Conversion Factor"]) : .001
+        dispatchableGenerators[String(genRow["Name"])] = gen
+    end
+
+    variableGenerators = Dict{String, Any}()
+
+    for genRow in eachrow(variableGenCfg)
+        gen = Dict{String, Any}(
+            "bidPrice" => genRow["Bid Price"],
+            "capacity" => genRow["Capacity"],
+        )
+
+        hasproperty(genRow, "Profile") && genRow["Profile"] !== missing ? gen["profile"] = parse.(Float64,split(strip(genRow["Profile"],['"','[',']']),',')) : false
+        hasproperty(genRow, "Profile File") && genRow["Profile File"] !== missing ? gen["profile_file"] = genRow["Profile File"] : false
+        hasproperty(genRow, "Profile Files") && genRow["Profile Files"] !== missing ? gen["profile_files"] = String.(strip.(split(strip(genRow["Profile Files"],['"','[',']']),','))) : false
+        hasproperty(genRow, "Profile Type") && genRow["Profile Type"] !== missing ? gen["profile_type"] = genRow["Profile Type"] : false
+        gen["conversionFactor"] = hasproperty(genRow, "Conversion Factor") && genRow["Conversion Factor"] !== missing ? Float64(genRow["Conversion Factor"]) : .001
+        variableGenerators[String(genRow["Name"])] = gen
+    end
+
+    # demand segments: Base and Flex demand, each with a bid and hourly quantities
+    demandSegments = Dict{String, Any}()
+
+    for dRow in eachrow(demandCfg)
+        dem = Dict{String, Any}(
+            "bidPrice" => dRow["Bid Price"],
+        )
+        hasproperty(dRow, "Profile") && dRow["Profile"] !== missing ? dem["profile"] = parse.(Float64,split(strip(dRow["Profile"],['"','[',']']),',')) : false
+        hasproperty(dRow, "Profile File") && dRow["Profile File"] !== missing ? dem["profile_file"] = dRow["Profile File"] : false
+        hasproperty(dRow, "Profile Type") && dRow["Profile Type"] !== missing ? dem["profile_type"] = dRow["Profile Type"] : false
+        hasproperty(dRow, "Quantity Constant") && dRow["Quantity Constant"] !== missing ? dem["quantity_constant"] = Float64(dRow["Quantity Constant"]) : false
+        dem["conversionFactor"] = hasproperty(dRow, "Conversion Factor") && dRow["Conversion Factor"] !== missing ? Float64(dRow["Conversion Factor"]) : .001
+
+        demandSegments[String(dRow["Name"])] = dem
+    end
+    
+    # storage parameters
+    batteryStorage = Dict{String, Any}(
+        "energyCapacity" => Float64(storageCfg[!,"Energy Capacity"][1]),
+        "powerCapacity" => Float64(storageCfg[!,"Power Capacity"][1]),
+        "efficiency" => Float64(storageCfg[!,"Efficiency"][1]),
+        "initialSOC" => Float64(storageCfg[!,"Initial SOC"][1]),
+        "endSOC" => Float64(storageCfg[!,"End SOC"][1]),
+    )
+
+    return Dict{String,Any}(
+        "dispatchableGenerators" => dispatchableGenerators,
+        "variableGenerators" => variableGenerators,
+        "demand" => Dict{String,Any}("segments" => demandSegments),
+        "batteryStorage" => batteryStorage,
+    )
+end
+
+# An Excel market workbook as the nested Dict a market yaml loads to.
+function market_config_raw_xlsx(path::String)
+    marketCfg_df = DataFrame(XLSX.readtable(path, "Validation"))
+    marketSequence_df = DataFrame(XLSX.readtable(path, "MarketSequence"))
+    sequence = Dict{String,Any}()
+    for marketDef in eachrow(marketSequence_df)
+        sequence[String(marketDef["Market Name"])] = Dict{String,Any}(
+            "clearingInterval" => Int(marketDef["Clearing Interval"]),
+            "optimizationWindow" => Int(marketDef["Optimization Window"]),
+            "lookAheadDistance" => Int(marketDef["Look Ahead Distance"]),
+            "clockTimeBegin" => Int(marketDef["Clock Time Begin"]),
+        )
+    end
+    return Dict{String,Any}("timePeriodsPerDay" => Int(marketCfg_df[!,"MTU Per Day"][1]), "marketSequence" => sequence)
+end
+
 function load_input_data_xlsx(path::String)
     # Read the YAML file into a nested Julia Dict/Array structure
     cfg_df = DataFrame(XLSX.readtable(path, "data"))
+    # market comparison (compare: market) is a yaml-only feature; fail here, clearly, rather than somewhere
+    # further down on a market-comparison column this loader does not read
+    hasproperty(cfg_df,"Compare") && isequal(cfg_df[!,"Compare"][1], "market") &&
+        error("Excel experiment configurations do not support market comparison (Compare = market): $path - use a yaml experiment configuration with compare: market")
     # cfg = YAML.load_file(path)
     # println(cfg_df)
     # Internal data dictionary that we pass to the other functions
@@ -156,15 +300,17 @@ function load_input_data_xlsx(path::String)
 
     data[:clearForDays] = Int(cfg_df[!,"Clear for Days"][1])
     data[:timePeriodsPerDay] = Int(cfg_df[!,"MTU per Day"][1]) # number of MTU in each day
-    data[:lastAuctionMTU] = hasproperty(cfg_df,"Last Auction MTU") && cfg_df[!,"Last Auction MTU"][1] != "" ? Int(cfg_df[!,"Last Auction MTU"][1]) : nothing
-    data[:noiseLevel] = float(cfg_df[!,"Noise Level"][1])
-    data[:startDate] = hasproperty(cfg_df,"Start Date") && cfg_df[!,"Start Date"][1] != "" ? cfg_df[!,"Start Date"][1] : Date(2026,1,1)
+    data[:lastAuctionMTU] = hasproperty(cfg_df,"Last Auction MTU") && cfg_df[!,"Last Auction MTU"][1] !== missing ? Int(cfg_df[!,"Last Auction MTU"][1]) : nothing
+    # optional: the std of the generated wind forecast errors. Has no effect when a scenario file already exists
+    # (the default shared one does), so it defaults to the 0.2 the Laura configs use.
+    data[:noiseLevel] = hasproperty(cfg_df,"Noise Level") && cfg_df[!,"Noise Level"][1] !== missing ? float(cfg_df[!,"Noise Level"][1]) : 0.2
+    data[:startDate] = hasproperty(cfg_df,"Start Date") && cfg_df[!,"Start Date"][1] !== missing ? cfg_df[!,"Start Date"][1] : Date(2026,1,1)
     data[:endDate] = data[:startDate] + Dates.Day(data[:clearForDays])
 
     data[:skipEarlyAuctions] = hasproperty(cfg_df,"Skip Early Auctions") && cfg_df[!,"Skip Early Auctions"][1] !== missing ? Int(cfg_df[!,"Skip Early Auctions"][1]) : 0
     data[:windOffset] = hasproperty(cfg_df,"Wind Offset") && cfg_df[!,"Wind Offset"][1] !== missing ? Int(cfg_df[!,"Wind Offset"][1]) : 0
-    data[:samplePeriodExcludeSpinUp] = hasproperty(cfg_df,"Sample Period Exclude Spin Up") && cfg_df[!,"Sample Period Exclude Spin Up"][1] !== missing ? Int(cfg_df[!,"Sample Period Exclude Spin Up"][1]) : 2
-    data[:samplePeriodExcludeEnd] = hasproperty(cfg_df,"Sample Period Exclude End") && cfg_df[!,"Sample Period Exclude End"][1] !== missing ? Int(cfg_df[!,"Sample Period Exclude End"][1]) : 2
+    data[:samplePeriodExcludeSpinUp] = hasproperty(cfg_df,"Sample Period Exclude Spin Up") && cfg_df[!,"Sample Period Exclude Spin Up"][1] !== missing ? Int(cfg_df[!,"Sample Period Exclude Spin Up"][1]) : DEFAULT_SAMPLE_PERIOD_EXCLUDE_DAYS
+    data[:samplePeriodExcludeEnd] = hasproperty(cfg_df,"Sample Period Exclude End") && cfg_df[!,"Sample Period Exclude End"][1] !== missing ? Int(cfg_df[!,"Sample Period Exclude End"][1]) : DEFAULT_SAMPLE_PERIOD_EXCLUDE_DAYS
 
     # optimization model selection and customization - only built when "Optimization Model" is
     # set, mirroring the YAML path's haskey(cfg, "optimizationModelConfig") gate. every subkey is
@@ -173,7 +319,7 @@ function load_input_data_xlsx(path::String)
     if hasproperty(cfg_df,"Optimization Model") && cfg_df[!,"Optimization Model"][1] !== missing
         data[:optimizationModelConfig] = Dict{String,Any}(
             "model" => String(cfg_df[!,"Optimization Model"][1]),
-            "solver" => hasproperty(cfg_df,"Solver") && cfg_df[!,"Solver"][1] !== missing ? String(cfg_df[!,"Solver"][1]) : "gurobi",
+            "solver" => hasproperty(cfg_df,"Solver") && cfg_df[!,"Solver"][1] !== missing ? String(cfg_df[!,"Solver"][1]) : "highs",
             "solver_method" => hasproperty(cfg_df,"Solver Method") && cfg_df[!,"Solver Method"][1] !== missing ? String(cfg_df[!,"Solver Method"][1]) : "simplex",
             "demand_adjust" => hasproperty(cfg_df,"Demand Adjust") && cfg_df[!,"Demand Adjust"][1] !== missing ? Bool(cfg_df[!,"Demand Adjust"][1]) : false,
             "ex_post_transactions" => hasproperty(cfg_df,"Ex Post Transactions") && cfg_df[!,"Ex Post Transactions"][1] !== missing ? Bool(cfg_df[!,"Ex Post Transactions"][1]) : false,
@@ -186,85 +332,17 @@ function load_input_data_xlsx(path::String)
     data[:configFile] = path
     data[:marketConfigFiles] = String[]
 
-    if hasproperty(cfg_df,"Compare") && cfg_df[!,"Compare"][1] == "market"
-        data[:marketSequences] = Dict{String,Any}()
-        for (marketName, marketConfigFilepath) in cfg_df[!,"Market Configs"][1]
-            market_config_path = "$(CONFIG_PATH)/xlsx/markets/$(marketConfigFilepath)"
-            data[:marketSequences][String(marketName)] = load_market_configuration(market_config_path, data[:timePeriodsPerDay])
-            push!(data[:marketConfigFiles], market_config_path)
-        end
-
-    else
-        # if we're not comparing markets, add the single market config
-        market_config_path = "$(CONFIG_PATH)/xlsx/markets/$(cfg_df[!,"Market Configuration"][1])"
-        data[:marketSequence] = load_market_configuration_xlsx(market_config_path, data[:timePeriodsPerDay])
-        push!(data[:marketConfigFiles], market_config_path)
-    end
+    # the single market config (market comparison is not supported for Excel, see the check above)
+    market_config_path = "$(CONFIG_PATH)/xlsx/markets/$(cfg_df[!,"Market Configuration"][1])"
+    data[:marketSequence] = load_market_configuration_xlsx(market_config_path, data[:timePeriodsPerDay])
+    push!(data[:marketConfigFiles], market_config_path)
 
     data[:agentConfigFile] = "$(CONFIG_PATH)/xlsx/agents/$(cfg_df[!,"Agent Configuration"][1])"
-    genCfg = DataFrame(XLSX.readtable(data[:agentConfigFile], "Generators"))
-    demandCfg = DataFrame(XLSX.readtable(data[:agentConfigFile], "Demands"))
-    storageCfg = DataFrame(XLSX.readtable(data[:agentConfigFile], "Storage"))
-
-    dispatchableGenCfg = genCfg[genCfg[!,"Type"] .== "Dispatchable",:]
-    variableGenCfg = genCfg[genCfg[!,"Type"] .== "Variable",:]
-
-    # generators: separate dictionaries for dispatchable and variable generators
-    data[:dispatchableGenerators] = Dict{String, Any}()
-
-    for genRow in eachrow(dispatchableGenCfg)
-        gen = Dict{String, Any}(
-            "bidPrice" => genRow["Bid Price"],
-            "capacity" => genRow["Capacity"],
-            "rampRate" => genRow["Ramp Rate"],
-            "initialQuantity" => genRow["Initial Quantity"],
-            "emissionFactor" => genRow["Emission Factor"],
-        )
-        gen["conversionFactor"] = hasproperty(genRow, "Conversion Factor") && genRow["Conversion Factor"] !== missing ? Float64(genRow["Conversion Factor"]) : .001
-        data[:dispatchableGenerators][String(genRow["Name"])] = gen
-    end
-
-    data[:variableGenerators] = Dict{String, Any}()
-
-    for genRow in eachrow(variableGenCfg)
-        gen = Dict{String, Any}(
-            "bidPrice" => genRow["Bid Price"],
-            "capacity" => genRow["Capacity"],
-        )
-
-        genRow["Profile"] !== missing ? gen["profile"] = parse.(Float64,split(strip(genRow["Profile"],['"','[',']']),',')) : false
-        genRow["Profile File"] !== missing ? gen["profile_file"] = genRow["Profile File"] : false
-        hasproperty(genRow, "Profile Files") && genRow["Profile Files"] !== missing ? gen["profile_files"] = String.(strip.(split(strip(genRow["Profile Files"],['"','[',']']),','))) : false
-        genRow["Profile Type"] !== missing ? gen["profile_type"] = genRow["Profile Type"] : false
-        gen["conversionFactor"] = hasproperty(genRow, "Conversion Factor") && genRow["Conversion Factor"] !== missing ? Float64(genRow["Conversion Factor"]) : .001
-        data[:variableGenerators][String(genRow["Name"])] = gen
-    end
-
-    # demand segments: Base and Flex demand, each with a bid and hourly quantities
-    data[:demandSegments] = Dict{String, Any}()
-
-    for dRow in eachrow(demandCfg)
-        dem = Dict{String, Any}(
-            "bidPrice" => dRow["Bid Price"],
-        )
-        dRow["Profile"] !== missing ? dem["profile"] = parse.(Float64,split(strip(dRow["Profile"],['"','[',']']),',')) : false
-        dRow["Profile File"] !== missing ? dem["profile_file"] = dRow["Profile File"] : false
-        dRow["Profile Type"] !== missing ? dem["profile_type"] = dRow["Profile Type"] : false
-        hasproperty(dRow, "Quantity Constant") && dRow["Quantity Constant"] !== missing ? dem["quantity_constant"] = Float64(dRow["Quantity Constant"]) : false
-        dem["conversionFactor"] = hasproperty(dRow, "Conversion Factor") && dRow["Conversion Factor"] !== missing ? Float64(dRow["Conversion Factor"]) : .001
-
-        data[:demandSegments][String(dRow["Name"])] = dem
-    end
-    
-    # storage parameters
-    data[:batteryStorage] = Dict{String, Any}(
-        "energyCapacity" => Float64(storageCfg[!,"Energy Capacity"][1]),
-        "powerCapacity" => Float64(storageCfg[!,"Power Capacity"][1]),
-        "efficiency" => Float64(storageCfg[!,"Efficiency"][1]),
-        "initialSOC" => Float64(storageCfg[!,"Initial SOC"][1]),
-        "endSOC" => Float64(storageCfg[!,"End SOC"][1]),
-    )
-
+    agent = load_agent_config_xlsx(data[:agentConfigFile])
+    data[:dispatchableGenerators] = agent["dispatchableGenerators"]
+    data[:variableGenerators] = agent["variableGenerators"]
+    data[:demandSegments] = agent["demand"]["segments"]
+    data[:batteryStorage] = agent["batteryStorage"]
 
     return data
 end

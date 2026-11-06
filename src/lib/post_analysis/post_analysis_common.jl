@@ -15,6 +15,8 @@ using .Helpers.HelperModelResults
 
 include("../output_data/market_data_storage.jl")
 
+include("../data_importer.jl")
+
 const CASES = ["Fixed Horizon", "Rolling Horizon"]
 
 # fixed_36/rolling_36 with lastAuctionMTU removed (clearForDays: 31, so there's room for the
@@ -43,6 +45,142 @@ const DEFAULT_IMBALANCE_AGENTS = ("6G_Wind", "5G_Peak")
 # range exactly) before samplePeriodExcludeSpinUp moved from 0 to 1 day, so this suite's own
 # tables/plots no longer line up 1:1 against post_analysis_laura_kpis.jl's 12:672 window.
 const DEFAULT_TIME_RANGE = 24:695
+
+# Analysis modules take `time_range=nothing` and call ResolveTimeRange, which derives the window from
+# the runs' own configs (below) - DEFAULT_TIME_RANGE is then only the fallback for runs that have no
+# experiment config copy. A module passed an explicit time_range (e.g. post_analysis_laura_kpis.jl's
+# 12:672) uses it as given.
+
+# The experiment config copied into a run's Config/ folder, with the window keys sample_time_range reads:
+# (path, Dict) for the yaml with a clearForDays key (the market and agent copies beside it have none) or
+# the xlsx whose "data" sheet has a "Clear for Days" column. `nothing` if the run has no such copy. Read
+# from the run rather than src/configs/ so the window is what the run was actually configured with.
+function ExperimentConfig(case_path)
+	config_dir = joinpath(case_path, "Config")
+	isdir(config_dir) || return nothing
+	for f in sort(readdir(config_dir))
+		startswith(f, "~\$") && continue # Excel lock file
+		path = joinpath(config_dir, f)
+		if endswith(f, ".yaml")
+			cfg = YAML.load_file(path)
+			cfg isa AbstractDict && haskey(cfg, "clearForDays") && return (path, cfg)
+		elseif endswith(f, ".xlsx")
+			cfg = DataImporter.experiment_window_config_xlsx(path)
+			cfg === nothing || return (path, cfg)
+		end
+	end
+	return nothing
+end
+
+ExperimentConfigPath(case_path) = (c = ExperimentConfig(case_path); c === nothing ? nothing : first(c))
+
+# A run's copied experiment/market/agent configs from its Config/ folder as the nested Dicts the yamls
+# load to - from yaml copies, or from the Excel workbooks an Excel-driven run copies. Each is classified
+# by content rather than filename (the names differ per case); `nothing` for any role with no copy.
+function LoadCaseConfigsByRole(case_path)
+	config_dir = joinpath(case_path, "Config")
+	experiment_cfg = market_cfg = agent_cfg = nothing
+	for f in sort(readdir(config_dir))
+		startswith(f, "~\$") && continue # Excel lock file
+		path = joinpath(config_dir, f)
+		if endswith(f, ".yaml")
+			cfg = YAML.load_file(path)
+			cfg isa AbstractDict || continue
+			if haskey(cfg, "marketSequence")
+				market_cfg = cfg
+			elseif haskey(cfg, "variableGenerators") || haskey(cfg, "dispatchableGenerators")
+				agent_cfg = cfg
+			elseif haskey(cfg, "clearForDays")
+				experiment_cfg = cfg
+			end
+		elseif endswith(f, ".xlsx")
+			sheets = XLSX.openxlsx(XLSX.sheetnames, path)
+			if "MarketSequence" in sheets
+				market_cfg = DataImporter.market_config_raw_xlsx(path)
+			elseif "Generators" in sheets
+				agent_cfg = DataImporter.load_agent_config_xlsx(path)
+			elseif "data" in sheets
+				cfg = DataImporter.experiment_window_config_xlsx(path)
+				cfg === nothing || (experiment_cfg = cfg)
+			end
+		end
+	end
+	return (experiment_cfg, market_cfg, agent_cfg)
+end
+
+# MTUs of the clearings exported to a run's RAW/ folder. The final auction for MTU t is clearing t, so
+# these are the MTUs that have a final dispatch.
+function RawClearingMTUs(case_path)
+	mtus = Int[]
+	for f in readdir(joinpath(case_path, "RAW"))
+		m = match(r"^decisionvariables_.+_(\d+)\.xlsx$", f)
+		m === nothing || push!(mtus, parse(Int, m.captures[1]))
+	end
+	return mtus
+end
+
+# One run's analysis window: the samplePeriodExcludeSpinUp/End window from its experiment config
+# (DataImporter.sample_time_range, the same one the simulation itself uses), trimmed to the MTUs it
+# actually has a final auction for (a run stopped short by lastAuctionMTU has none past that).
+# `nothing` if the run has no experiment config copy.
+function CaseTimeRange(case_path)
+	experiment = ExperimentConfig(case_path)
+	experiment === nothing && return nothing
+	range = DataImporter.sample_time_range(last(experiment))
+	clearings = RawClearingMTUs(case_path)
+	isempty(clearings) && return range
+	return max(first(range), minimum(clearings)):min(last(range), maximum(clearings))
+end
+
+# The window an analysis of these runs should cover. An explicit `time_range` is returned unchanged.
+# Otherwise it's each run's CaseTimeRange - and when the runs' ranges differ, their intersection (with
+# a warning), since a comparison needs the same MTUs on both sides. Runs with no config copy are
+# skipped; if none has one, falls back to DEFAULT_TIME_RANGE. Pass `output_base` to record the
+# resolved range in that analysis directory's metadata.yaml.
+function ResolveTimeRange(time_range, case_paths, cases=sort(collect(keys(case_paths))); output_base=nothing)
+	resolved = time_range === nothing ? TimeRangeFromConfigs(case_paths, cases) : time_range
+	output_base === nothing || RecordTimeRange!(output_base, resolved)
+	return resolved
+end
+
+function TimeRangeFromConfigs(case_paths, cases)
+	ranges = Pair{String,UnitRange{Int}}[]
+	for case in cases
+		haskey(case_paths, case) || continue
+		range = CaseTimeRange(case_paths[case])
+		if range === nothing
+			println("warning: no experiment config found under $(case_paths[case])/Config - not used to derive the analysis time range")
+		else
+			push!(ranges, case => range)
+		end
+	end
+
+	if isempty(ranges)
+		println("warning: none of the runs has an experiment config copy - falling back to DEFAULT_TIME_RANGE $DEFAULT_TIME_RANGE")
+		return DEFAULT_TIME_RANGE
+	end
+
+	resolved = maximum(first(r) for (_, r) in ranges):minimum(last(r) for (_, r) in ranges)
+	isempty(resolved) && throw("the runs' analysis time ranges do not overlap: $(join(["$case: $r" for (case, r) in ranges], ", "))")
+	if length(unique(r for (_, r) in ranges)) > 1
+		println("warning: analysis time ranges differ between runs ($(join(["$case: $r" for (case, r) in ranges], ", "))) - using their intersection $resolved")
+	end
+	println("analysis time range: $resolved (from the runs' experiment configs)")
+	return resolved
+end
+
+# The delivery-day indices (MTU ÷ mtus_per_day, both ends inclusive) a time_range covers - what the
+# day_range-based modules (lead time, storage) filter on, so they cover the same days as everything else.
+DayRange(time_range, mtus_per_day=24) = fld(first(time_range), mtus_per_day):fld(last(time_range), mtus_per_day)
+
+# records the MTU window an analysis covered in its directory's metadata.yaml (written by NewAnalysisOutputDir)
+function RecordTimeRange!(output_base, time_range)
+	path = joinpath(output_base, "metadata.yaml")
+	isfile(path) || return
+	metadata = YAML.load_file(path)
+	metadata["time_range"] = "$(first(time_range)):$(last(time_range))"
+	YAML.write_file(path, metadata)
+end
 
 function CleanDirectory(path)
 	mkpath(path)
@@ -242,7 +380,10 @@ end
 # - there is no pre-aggregated multi-case economic_indicators.xlsx/agent_indicators.xlsx with a
 # "Market Configuration" column to filter here (that shape only exists for
 # ClearMarketComparisonForConfig runs), so each case's indicators are computed on demand instead.
-function CalculateCaseIndicators(case_paths, case; agent_map=DEFAULT_AGENT_MAP, time_range=DEFAULT_TIME_RANGE, raw_dispatch_prefix=nothing, imbalance_agents::Union{Nothing,Tuple{String,String}}=nothing)
+function CalculateCaseIndicators(case_paths, case; agent_map=DEFAULT_AGENT_MAP, time_range=nothing, raw_dispatch_prefix=nothing, imbalance_agents::Union{Nothing,Tuple{String,String}}=nothing)
+	# nothing: this case's own window from its experiment config (see ResolveTimeRange); the analysis
+	# modules always pass their already-resolved range
+	time_range = ResolveTimeRange(time_range, case_paths, [case])
 	final_dispatch_decisions = LoadCaseFile(case_paths, case, "final_dispatch_decisions.xlsx")
 	transactions = LoadCaseFile(case_paths, case, "transactions.xlsx")
 	# older exports predate GetFinalDispatchDecisions carrying FinalAuctionPrice through - backfill
@@ -254,6 +395,29 @@ function CalculateCaseIndicators(case_paths, case; agent_map=DEFAULT_AGENT_MAP, 
 		MarketDataStorage.AddFinalAuctionPriceFromRAW!(final_dispatch_decisions, prefix)
 	end
 	return MarketDataStorage.CalculateEconomicIndicators(final_dispatch_decisions, transactions, agent_map, time_range; imbalance_agents=imbalance_agents)
+end
+
+# Same as CalculateCaseIndicators but for the energy markets only (see balancing_energy_split.jl): the
+# energy-only final dispatch decisions (final_dispatch_decisions_energy.xlsx: per MTU, the last clearing that
+# traded it as an energy MTU) and the Segment == "Energy" transactions. Returns the same named tuple, so
+# callers can swap one for the other. Runs made before the balancing/energy split lack those inputs and throw.
+const SEGMENT_COLUMN = "Segment"
+const ENERGY_SEGMENT = "Energy"
+function CalculateCaseEnergyIndicators(case_paths, case; agent_map=DEFAULT_AGENT_MAP, time_range=nothing, imbalance_agents::Union{Nothing,Tuple{String,String}}=nothing)
+	time_range = ResolveTimeRange(time_range, case_paths, [case])
+	transactions = LoadCaseFile(case_paths, case, "transactions.xlsx")
+	hasproperty(transactions, SEGMENT_COLUMN) || throw("transactions of case \"$case\" have no \"$SEGMENT_COLUMN\" column - this run predates the balancing/energy split; rerun it")
+	energy_transactions = transactions[transactions[!, SEGMENT_COLUMN] .== ENERGY_SEGMENT, :]
+	isfile(joinpath(case_paths[case], "final_dispatch_decisions_energy.xlsx")) || throw("case \"$case\" has no final_dispatch_decisions_energy.xlsx - this run predates the balancing/energy split; rerun it")
+	energy_final_dispatch_decisions = LoadCaseFile(case_paths, case, "final_dispatch_decisions_energy.xlsx")
+	return MarketDataStorage.CalculateEconomicIndicators(energy_final_dispatch_decisions, energy_transactions, agent_map, time_range; imbalance_agents=imbalance_agents)
+end
+
+# Mean FinalAuctionPrice over time_range of the energy-only final dispatch decisions
+function LoadMeanEnergyFinalAuctionPrice(case_path, time_range)
+	dd = LoadFile(joinpath(case_path, "final_dispatch_decisions_energy.xlsx"))
+	dd = dd[time_range.start .<= dd.mtu .<= time_range.stop, :]
+	return round(mean(dd.FinalAuctionPrice); digits=2)
 end
 
 end;

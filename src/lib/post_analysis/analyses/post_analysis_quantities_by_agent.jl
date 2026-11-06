@@ -11,16 +11,19 @@ generator_names = ["3G_Base","4G_Shoulder","5G_Peak","6G_Wind","7G_Solar"]
 quantitySymbol = Symbol("Quantity (MWh)")
 surplusSymbol = Symbol("Surplus (€)")
 
-function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE)
+function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=nothing)
+	# nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
+	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
 
 	analysis_dir_path = "$output_base/post_analysis_quantities_by_agent"
 
-	println("starting analysis")
+	println("starting analysis: quantities by agent")
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 
 	# fresh per-case agent indicators - see PostAnalysisCommon.CalculateCaseIndicators for why this
-	# is computed on demand rather than read from a pre-aggregated agent_indicators.xlsx
-	agent_indicators_by_case = Dict(case => PostAnalysisCommon.CalculateCaseIndicators(case_paths, case; time_range=time_range).agent_indicators for case in cases)
+	# is computed on demand rather than read from a pre-aggregated agent_indicators.xlsx. Energy segment
+	# only (CalculateCaseEnergyIndicators), as are all three tables of this analysis.
+	agent_indicators_by_case = Dict(case => PostAnalysisCommon.CalculateCaseEnergyIndicators(case_paths, case; time_range=time_range).agent_indicators for case in cases)
 
 	AnalyzeQuantities(agent_indicators_by_case, cases, analysis_dir_path)
 	AnalyzeSurpluses(agent_indicators_by_case, cases, analysis_dir_path)
@@ -79,7 +82,7 @@ function AnalyzeSurpluses(agent_indicators_by_case, cases, analysis_dir_path)
 	WriteComparisonTable(df, "$analysis_dir_path/agent_surplus_details.xlsx", "$analysis_dir_path/agent_surpluses.tex")
 end
 
-# Gross Traded Volume: sum(|quantity|) across every adjustment transaction from every clearing that
+# Gross Traded Volume (Energy-segment transactions only): sum(|quantity|) across every adjustment transaction from every clearing that
 # touched a final-auction MTU, i.e. including the speculative, never-delivered tail of each clearing's
 # own look-ahead window - matches Laura's calculate_generator_revenues_full (costs.jl), the same
 # definition post_analysis_laura_kpis.jl uses. That module gets away with summing the whole
@@ -94,6 +97,8 @@ function AnalyzeGrossTradedVolume(case_paths, cases, time_range, analysis_dir_pa
 	gross_traded = Dict{String,Dict{String,Float64}}()
 	for case in cases
 		transactions = PostAnalysisCommon.LoadCaseFile(case_paths, case, "transactions.xlsx")
+		hasproperty(transactions, PostAnalysisCommon.SEGMENT_COLUMN) || throw("transactions of case \"$case\" have no \"$(PostAnalysisCommon.SEGMENT_COLUMN)\" column - this run predates the balancing/energy split; rerun it")
+		transactions = transactions[transactions[!, PostAnalysisCommon.SEGMENT_COLUMN] .== PostAnalysisCommon.ENERGY_SEGMENT, :]
 		scoped = transactions[time_range.start .<= transactions[!, mtu_symbol] .<= time_range.stop, :]
 		gross_traded[case] = Dict(agent => sum(abs.(scoped[scoped.Agent .== agent, quantity_symbol])) for agent in generator_names)
 	end

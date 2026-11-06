@@ -4,11 +4,14 @@
 # how many times a market re-clears before an MTU has its final auction, so this is written to take
 # any Dict{String,String} of case name -> run directory).
 #
-# Background: MarketDataStorage.CalculateEconomicIndicators' "Storage Revenue (€)" values storage's
-# entire net position for an MTU (StorageDischarge - StorageCharge, from whichever clearing last
-# touched it) at that MTU's single FinalAuctionPrice - a deliberate choice (see the comment above
-# storage_revenue in market_data_storage.jl) made for parity with an external validation reference,
-# not to represent what storage actually earned. Storage in a rolling design gets its position
+# Background: MarketDataStorage.CalculateEconomicIndicators' "Storage Revenue (€)" used to value
+# storage's entire net position for an MTU (StorageDischarge - StorageCharge, from whichever
+# clearing last touched it) at that MTU's single FinalAuctionPrice - a choice made for parity with
+# an external validation reference, not to represent what storage actually earned - and that is
+# the "final-price revenue" this module still computes (FinalPriceRevenue below). The reported
+# metric is now the sum of quantity * price over storage's own transactions (so for runs where
+# storage's bookkeeping is correct it equals StorageMerchandisingSurplus below, and the
+# comparison here shows how far it sits from the old definition). Storage in a rolling design gets its position
 # revised at every clearing that includes an MTU in its look-ahead window, each revision settled at
 # THAT clearing's own price via the transactions table (same treatment as generators), so the
 # final-price valuation discards that whole trading history and prices only the last net position.
@@ -81,9 +84,8 @@ function LoadCaseData(case_paths, case, time_range)
 	return (fdd, tx)
 end
 
-# MarketDataStorage.CalculateEconomicIndicators' own definition, reproduced directly against
-# final_dispatch_decisions rather than by calling it, since that function also recomputes several
-# other indicators (agent quantities, SEW, ...) this module has no use for.
+# The definition CalculateEconomicIndicators used before it moved to storage's transactions, computed
+# directly against final_dispatch_decisions.
 FinalPriceRevenue(fdd) = sum(skipmissing((fdd.StorageDischarge .- fdd.StorageCharge) .* fdd.FinalAuctionPrice))
 
 # Payments/Revenues (€) is Quantity (MWh) * Price (€/MWh) for every transaction row regardless of
@@ -169,7 +171,10 @@ function SummaryPlot(summary_df, cases, analysis_dir_path)
 	savefig(p, "$analysis_dir_path/storage_revenue_reconciliation.png")
 end
 
-function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; time_range=PostAnalysisCommon.DEFAULT_TIME_RANGE, top_n_divergent=15, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label="storage_revenue_reconciliation"))
+function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; time_range=nothing, top_n_divergent=15, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label="storage_revenue_reconciliation"))
+	println("starting analysis: storage revenue reconciliation")
+	# nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
+	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths; output_base=output_base)
 
 	analysis_dir_path = "$output_base/storage_revenue_reconciliation"
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
