@@ -239,7 +239,8 @@ end
 		for name in names(exported.economic_indicators)
 			@test exported.economic_indicators[1, name] ≈ expected.economic_indicators[1, name]
 		end
-		@test exported.agent_indicators == expected.agent_indicators
+		# isequal, not ==: a range starting at MTU 0 has no opening SOC, so the storage's SOC change is missing in both
+		@test isequal(exported.agent_indicators, expected.agent_indicators)
 
 		# and differs from the Total view: the balancing adjustment is not in it
 		total = MarketDataStorage.GetEconomicIndicatorsForRange(container, time_range)

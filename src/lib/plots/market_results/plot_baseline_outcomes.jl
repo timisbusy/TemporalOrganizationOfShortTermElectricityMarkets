@@ -6,6 +6,7 @@ using Statistics
 using DataFrames
 using XLSX
 using CSV
+using YAML
 
 using ..Helpers
 
@@ -34,6 +35,18 @@ function energy_indicators(marketresult, test_range)
     return (e.economic_indicators, e.agent_indicators, e.mtu_economic_indicators)
 end
 
+# The exported final dispatch decisions are trimmed to the analysis range, so the SOC the range opens with
+# (the end of MTU test_range.start - 1) is recorded next to them: later analyses need it for the storage's SOC
+# change (PostAnalysisCommon.LoadOpeningSOC). One value for each dispatch table: the total
+# (final_dispatch_decisions.xlsx) and the energy-only (final_dispatch_decisions_energy.xlsx).
+function write_opening_soc(path, marketresult, test_range)
+    YAML.write_file(path, Dict(
+        "timeRangeStart" => test_range.start,
+        "total" => MarketDataStorage.OpeningSOC(MarketDataStorage.GetFinalDispatchDecisions(marketresult), test_range),
+        "energy" => MarketDataStorage.OpeningSOC(MarketDataStorage.GetEnergyFinalDispatchDecisions(marketresult), test_range),
+    ))
+end
+
 function plot(marketresult, config, test_range, test_id)
     # imbalance_agents hardcoded to the Wind/Peak agent config every current experiment uses -
     # revisit if/when a config with different generator names needs this too
@@ -56,6 +69,8 @@ function plot(marketresult, config, test_range, test_id)
     XLSX.writetable("results/$(test_id)/final_dispatch_decisions_energy.xlsx", "data" => MarketDataStorage.GetEnergyFinalDispatchDecisionsForRange(marketresult, test_range), "interpretation" => Interpretations.DecisionVariablesInterpretation)
 
     XLSX.writetable("results/$(test_id)/mtu_economic_results.xlsx", "data" => mtu_economic_outcomes)
+
+    write_opening_soc("results/$(test_id)/opening_soc.yaml", marketresult, test_range)
 
     # written last: the only export that can exceed Excel's row limit (see write_transactions)
     write_transactions("results/$(test_id)/transactions", transactions; csv_above_rows=something(get(config, :transactionsCsvAboveRows, nothing), EXCEL_MAX_DATA_ROWS))
