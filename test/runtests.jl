@@ -45,3 +45,7 @@ end
 @testset "Data importer Tests" begin
 	include("data_importer_tests.jl")
 end
+
+@testset "Window length config generator Tests" begin
+	include("generate_window_length_configs_tests.jl")
+end
