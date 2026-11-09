@@ -93,8 +93,10 @@ function plotPhysicalIndicator(dds, test_range, indicator, print_cases, print_da
     # println(intervalIndicatorData)
     xPlotIndicator = test_range
     indicator_label = String(indicator) == "SOC" ? "SOC" : AgentRenaming.DisplayName(String(indicator))
+    # x ticks every 24 MTUs (24 hours at hourly MTUs), on multiples of 24 so they fall on day boundaries
+    day_ticks = (cld(first(test_range), 24) * 24):24:last(test_range)
     pIndicator = Plots.plot(xlabel="MTU", ylabel="$indicator_label (MWh)",
-                            title="$indicator_label - $(print_date)")
+                            title="$indicator_label - $(print_date)", xticks=day_ticks)
 
     for (marketConfiguration, indicatorSeries) in indicatorData
         Plots.plot!(pIndicator, xPlotIndicator, indicatorSeries, label=marketConfiguration)
