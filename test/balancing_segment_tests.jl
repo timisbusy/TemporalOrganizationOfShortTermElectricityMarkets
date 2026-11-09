@@ -560,3 +560,18 @@ end
 		end
 	end
 end
+
+if !isdefined(Main, :PostAnalysisWindowLengthBalancingEnergy)
+	include("../src/lib/post_analysis/analyses/post_analysis_window_length_balancing_energy.jl")
+end
+
+@testset "Window length balancing energy table" begin
+	W = PostAnalysisWindowLengthBalancingEnergy
+	values = Dict("36h" => 10.0, "48h" => 13.0, "72h" => 12.0)
+	table = W.BuildTable(["36h", "48h", "72h"], ["X"], W.SEGMENTS, (case, item, segment) -> segment == "Balancing" ? missing : values[case]; item_label="Item")
+	@test names(table) == ["Item", "Segment", "36h", "48h", "72h", "48h vs 36h (difference)", "72h vs 48h (difference)"]
+	@test table.Segment == ["Total", "Energy", "Balancing"]
+	@test table[1, "48h vs 36h (difference)"] == 3.0 # compared minus base, not a percentage
+	@test table[1, "72h vs 48h (difference)"] == -1.0
+	@test ismissing(table[3, "48h vs 36h (difference)"]) # undefined where a value is missing
+end
