@@ -10,7 +10,7 @@
 #
 # Quantities are adjustments to what the agent had already traded in earlier clearings, so net traded is the
 # agent's net change from balancing and gross traded how much it moved. One row per agent and metric, one
-# column per case, then % difference columns: by default "{case} vs {previous case}" for each adjacent pair
+# column per case, then MWh difference columns (compared minus base, not percentages): by default "{case} vs {previous case}" for each adjacent pair
 # (the window-length suite: 48h vs 36h, 72h vs 48h), or with compare_to_subject=true "{last case} vs {base}" for
 # every other case (the fixed vs rolling suite's convention: cases[end] is the subject, see PostAnalysisSEW). For
 # two cases the two are identical.
@@ -58,29 +58,29 @@ function BalancingTradeQuantities(transactions, time_range; agents=AGENTS)
 	return Dict(agent => TradeQuantities(Float64.(balancing[balancing.Agent .== agent, QUANTITY_COLUMN])) for agent in agents)
 end
 
-# rows: agent x metric; columns: Agent, Metric, one per case, then "{case} vs {previous case}"
+# rows: agent x metric; columns: Agent, Metric, one per case, then "{case} vs {previous case} (MWh)" (the difference)
 function BuildTable(quantities_by_case, cases; agents=AGENTS, compare_to_subject=false)
-	# (compared, base) index pairs of the % difference columns
+	# (compared, base) index pairs of the MWh difference columns
 	comparisons = compare_to_subject ? [(length(cases), i) for i in 1:length(cases)-1] : [(i, i-1) for i in 2:length(cases)]
 	pairs = Any["Agent" => String[], "Metric" => String[]]
 	append!(pairs, [case => Float64[] for case in cases])
-	append!(pairs, ["$(cases[c]) vs $(cases[b])" => String[] for (c, b) in comparisons])
+	append!(pairs, ["$(cases[c]) vs $(cases[b]) (MWh)" => Float64[] for (c, b) in comparisons])
 	df = DataFrame(pairs...)
 	for agent in agents, metric in METRICS
 		values = [quantities_by_case[case][agent][metric] for case in cases]
 		row = Any[DisplayName(agent), metric]
 		append!(row, values)
-		append!(row, [PostAnalysisCommon.PercentDiffString(values[c], values[b]) for (c, b) in comparisons])
+		append!(row, [snap(values[c] - values[b]) for (c, b) in comparisons])
 		push!(df, row)
 	end
 	return df
 end
 
-# The LaTeX table is a reduced view of the full table (which the xlsx keeps): Net traded only, labelled "Energy
+# The LaTeX table is a reduced view of the full table (which the xlsx keeps): Net traded only, labelled "Net energy
 # traded (MWh)", plus Energy increases / decreases for storage; Base, Shoulder and Solar are left out since the lock
 # keeps them from trading in the balancing segment.
 const TEX_EXCLUDED_AGENTS = ["3G_Base", "4G_Shoulder", "7G_Solar"]
-const TEX_METRIC_LABELS = Dict(NET => "Energy traded (MWh)", INCREASES => "Energy increases (MWh)", DECREASES => "Energy decreases (MWh)")
+const TEX_METRIC_LABELS = Dict(NET => "Net energy traded (MWh)", INCREASES => "Energy increases (MWh)", DECREASES => "Energy decreases (MWh)")
 const TEX_STORAGE_ONLY_METRICS = [INCREASES, DECREASES]
 
 function TexTable(df)
