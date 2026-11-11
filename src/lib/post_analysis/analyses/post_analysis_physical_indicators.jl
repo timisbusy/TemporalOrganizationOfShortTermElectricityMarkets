@@ -67,13 +67,16 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 	end
 end
 
+# the default title size overflows the plot for the longer titles (e.g. "Socioeconomic Welfare (€): Rolling Horizon - Fixed Horizon")
+const TITLE_FONT_SIZE = 9
+
 function DailyValue(mtu_economic_indicators, case, value_symbol)
 	daily = groupby(mtu_economic_indicators[case], :Day)
 	return combine(daily, value_symbol => sum => value_symbol)
 end
 
 function PlotByDay(daily_values, label, value_symbol, file_label, analysis_dir_path, cases)
-	p = Plots.plot(xlabel="Day", ylabel=label, title="$label by day")
+	p = Plots.plot(xlabel="Day", ylabel=label, title="$label by day", titlefontsize=TITLE_FONT_SIZE)
 	for case in cases
 		Plots.plot!(p, daily_values[case].Day, daily_values[case][!, value_symbol], label=case)
 	end
@@ -91,7 +94,8 @@ function PlotDiffByDay(daily_values, label, value_symbol, file_label, analysis_d
 	end
 
 	p = Plots.plot(xlabel = sorted ? "Rank" : "Day", ylabel=label,
-					title="$label: $subject - $base")
+					title="$label: $subject - $base", titlefontsize=TITLE_FONT_SIZE,
+					ylims=PostAnalysisDaily.padded_limits(vcat(0.0, diffs))) # bars start at 0, so 0 is in range; the padding keeps the extreme bars off the frame
 	Plots.plot!(p, x, diffs, label="Difference in $label", t=:bar)
 	display(p)
 	savefig(p, "$analysis_dir_path/diff_by_day_$(sorted ? "sorted_" : "")$(file_label).png")

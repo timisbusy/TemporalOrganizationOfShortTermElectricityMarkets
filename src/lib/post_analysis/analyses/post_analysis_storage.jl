@@ -7,7 +7,7 @@ include("../post_analysis_common.jl")
 # day_range: delivery-day indices (mtu ÷ 24, relative to the experiment's startDate) to include,
 # both ends inclusive - nothing (the default) covers the days of the window the runs' own configs
 # define (see PostAnalysisCommon.ResolveTimeRange/DayRange); pass e.g. 3:367 for the full-year 2025 runs
-function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), day_range=nothing)
+function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), day_range=nothing, compare_to_subject=true)
 	day_range === nothing && (day_range = PostAnalysisCommon.DayRange(PostAnalysisCommon.ResolveTimeRange(nothing, case_paths, cases; output_base=output_base)))
 
 	analysis_dir_path = "$output_base/post_analysis_storage"
@@ -42,9 +42,9 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 	# is the "subject" design (e.g. Rolling Horizon) compared against each preceding case
 	# individually, the same subject-relative convention as PostAnalysisSEW (see its own
 	# PerformAnalysis docstring) rather than all cases sharing one baseline.
-	subject = cases[end]
-	base_cases = cases[1:end-1]
-	for base in base_cases
+	# compare_to_subject=false (window-length suites): adjacent pairs instead (48h vs 36h, 72h vs 48h)
+	comparisons = compare_to_subject ? [(cases[end], base) for base in cases[1:end-1]] : [(cases[i], cases[i-1]) for i in 2:length(cases)]
+	for (subject, base) in comparisons
 		storage_analysis_df[!, Symbol("$subject vs $base Change")] = storage_analysis_df[!, Symbol(subject)] .- storage_analysis_df[!, Symbol(base)]
 		storage_analysis_df[!, Symbol("$subject vs $base % Change")] = PostAnalysisCommon.PercentDiffString.(storage_analysis_df[!, Symbol(subject)], storage_analysis_df[!, Symbol(base)])
 	end

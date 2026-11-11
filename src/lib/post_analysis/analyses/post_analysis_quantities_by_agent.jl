@@ -11,7 +11,9 @@ generator_names = ["3G_Base","4G_Shoulder","5G_Peak","6G_Wind","7G_Solar"]
 quantitySymbol = Symbol("Quantity (MWh)")
 surplusSymbol = Symbol("Surplus (€)")
 
-function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=nothing)
+# compare_to_subject=true (the fixed vs rolling suite): cases[end] is the subject, compared against every other case.
+# false (the window-length suite): each case is compared against the previous one (48h vs 36h, 72h vs 48h).
+function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=nothing, compare_to_subject=true)
 	# nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
 	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
 
@@ -25,9 +27,9 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 	# only (CalculateCaseEnergyIndicators), as are all three tables of this analysis.
 	agent_indicators_by_case = Dict(case => PostAnalysisCommon.CalculateCaseEnergyIndicators(case_paths, case; time_range=time_range).agent_indicators for case in cases)
 
-	AnalyzeQuantities(agent_indicators_by_case, cases, analysis_dir_path)
-	AnalyzeSurpluses(agent_indicators_by_case, cases, analysis_dir_path)
-	AnalyzeGrossTradedVolume(case_paths, cases, time_range, analysis_dir_path)
+	AnalyzeQuantities(agent_indicators_by_case, cases, analysis_dir_path; compare_to_subject=compare_to_subject)
+	AnalyzeSurpluses(agent_indicators_by_case, cases, analysis_dir_path; compare_to_subject=compare_to_subject)
+	AnalyzeGrossTradedVolume(case_paths, cases, time_range, analysis_dir_path; compare_to_subject=compare_to_subject)
 
 end
 
@@ -48,37 +50,38 @@ end
 # {base} % Diff" for every base case - cases[end] is the "subject" design (e.g. Rolling Horizon)
 # compared against each preceding case individually, the same subject-relative convention as
 # PostAnalysisSEW (see its own PerformAnalysis docstring) rather than all cases sharing one
-# baseline. `value_for` is (case, agent) -> Float64. Shared by
+# baseline. With compare_to_subject=false the pairs are instead adjacent cases ("{case} vs {previous case} % Diff"),
+# the window-length suite's convention. `value_for` is (case, agent) -> Float64. Shared by
 # AnalyzeQuantities/AnalyzeSurpluses/AnalyzeGrossTradedVolume below, which differ only in their
 # agent list and per-case value source.
-function BuildAgentComparisonTable(agents, cases, metric_label, value_for)
-	subject = cases[end]
-	base_cases = cases[1:end-1]
+function BuildAgentComparisonTable(agents, cases, metric_label, value_for; compare_to_subject=true)
+	# (compared, base) index pairs of the % Diff columns
+	comparisons = compare_to_subject ? [(length(cases), i) for i in 1:length(cases)-1] : [(i, i-1) for i in 2:length(cases)]
 	pairs = Any["Agent" => String[]]
 	append!(pairs, ["$case $metric_label" => Float64[] for case in cases])
-	append!(pairs, ["$subject vs $base % Diff" => String[] for base in base_cases])
+	append!(pairs, ["$(cases[c]) vs $(cases[b]) % Diff" => String[] for (c, b) in comparisons])
 	df = DataFrame(pairs...)
 
 	for agent in agents
-		values = Dict(case => value_for(case, agent) for case in cases)
+		values = [value_for(case, agent) for case in cases]
 		row = Any[AgentRenaming.DisplayName(agent)]
-		append!(row, [values[case] for case in cases])
-		append!(row, [PostAnalysisCommon.PercentDiffString(values[subject], values[base]) for base in base_cases])
+		append!(row, values)
+		append!(row, [PostAnalysisCommon.PercentDiffString(values[c], values[b]) for (c, b) in comparisons])
 		push!(df, row)
 	end
 
 	return df
 end
 
-function AnalyzeQuantities(agent_indicators_by_case, cases, analysis_dir_path)
+function AnalyzeQuantities(agent_indicators_by_case, cases, analysis_dir_path; compare_to_subject=true)
 	df = BuildAgentComparisonTable(agent_names, cases, "Quantity (MWh)",
-		(case, agent) -> ValueForAgent(agent_indicators_by_case[case], agent, quantitySymbol))
+		(case, agent) -> ValueForAgent(agent_indicators_by_case[case], agent, quantitySymbol); compare_to_subject=compare_to_subject)
 	WriteComparisonTable(df, "$analysis_dir_path/agent_quantities_details.xlsx", "$analysis_dir_path/agent_quantities.tex")
 end
 
-function AnalyzeSurpluses(agent_indicators_by_case, cases, analysis_dir_path)
+function AnalyzeSurpluses(agent_indicators_by_case, cases, analysis_dir_path; compare_to_subject=true)
 	df = BuildAgentComparisonTable(agent_names, cases, "Surplus (€)",
-		(case, agent) -> ValueForAgent(agent_indicators_by_case[case], agent, surplusSymbol))
+		(case, agent) -> ValueForAgent(agent_indicators_by_case[case], agent, surplusSymbol); compare_to_subject=compare_to_subject)
 	WriteComparisonTable(df, "$analysis_dir_path/agent_surplus_details.xlsx", "$analysis_dir_path/agent_surpluses.tex")
 end
 
@@ -90,7 +93,7 @@ end
 # already; scoped here to time_range explicitly by Market Time Unit (the final-auction MTU, not
 # Clearing MTU) so it stays consistent with every other metric in this suite regardless of whether
 # the run being analyzed has that cap.
-function AnalyzeGrossTradedVolume(case_paths, cases, time_range, analysis_dir_path)
+function AnalyzeGrossTradedVolume(case_paths, cases, time_range, analysis_dir_path; compare_to_subject=true)
 	quantity_symbol = Symbol("Quantity (MWh)")
 	mtu_symbol = Symbol("Market Time Unit")
 
@@ -104,7 +107,7 @@ function AnalyzeGrossTradedVolume(case_paths, cases, time_range, analysis_dir_pa
 	end
 
 	df = BuildAgentComparisonTable(generator_names, cases, "Gross Traded Volume (MWh)",
-		(case, agent) -> gross_traded[case][agent])
+		(case, agent) -> gross_traded[case][agent]; compare_to_subject=compare_to_subject)
 	WriteComparisonTable(df, "$analysis_dir_path/agent_gross_traded_volume_details.xlsx", "$analysis_dir_path/agent_gross_traded_volume.tex")
 end
 
