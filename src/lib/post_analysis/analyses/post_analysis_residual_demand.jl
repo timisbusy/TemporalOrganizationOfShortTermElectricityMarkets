@@ -136,10 +136,10 @@ function SeasonOf(label)
 	return ("Other", :gray)
 end
 
-function PlotCombinedHighlighted(dfs_by_label, labels, analysis_dir_path; highlight = ["Cluster1", "Cluster3"])
+function PlotCombinedHighlighted(dfs_by_label, labels, analysis_dir_path; highlight = ["Cluster1", "Cluster3", "Cluster6"])
 	hours = maximum(nrow(dfs_by_label[l]) for l in labels)
 	p = Plots.plot(xlabel = "Hour of Analysed Range", ylabel = "Residual Demand (MW)",
-		title = "Residual Demand by Cluster (Clusters $(join([replace(h, "Cluster" => "") for h in highlight], " and ")) Highlighted)",
+		title = "Residual Demand by Cluster (Clusters $(join([replace(h, "Cluster" => "") for h in highlight], ", ", " and ")) Highlighted)",
 		xticks = DayTicks(hours), legend = :outertopright, size = (1100, 550),
 		left_margin = 10Plots.mm, bottom_margin = 8Plots.mm)
 	Plots.hline!(p, [0.0]; color = :gray, linestyle = :dash, label = "")
