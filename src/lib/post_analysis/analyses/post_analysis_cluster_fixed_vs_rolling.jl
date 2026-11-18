@@ -40,11 +40,12 @@ function LatestResultsDir(experiment_name; results_dir = "results")
 end
 
 # KPI => (rolling - fixed in EUR, % change vs fixed) for one cluster, storage suffix and view
-function Differences(cluster, suffix, view; time_range = DEFAULT_TIME_RANGE, results_dir = "results")
+function Differences(cluster, suffix, view; time_range = DEFAULT_TIME_RANGE, results_dir = "results", base_design = "fixed_36", subject_design = "rolling_36")
 	range = CLUSTER_RANGES[cluster]
+	# "Fixed Horizon"/"Rolling Horizon" are just the case labels: base_design/subject_design pick the runs (e.g. rolling_36 vs rolling_72)
 	case_paths = Dict(
-		"Fixed Horizon" => LatestResultsDir("Cluster$(cluster)_fixed_36_$(range)$suffix"; results_dir = results_dir),
-		"Rolling Horizon" => LatestResultsDir("Cluster$(cluster)_rolling_36_$(range)$suffix"; results_dir = results_dir),
+		"Fixed Horizon" => LatestResultsDir("Cluster$(cluster)_$(base_design)_$(range)$suffix"; results_dir = results_dir),
+		"Rolling Horizon" => LatestResultsDir("Cluster$(cluster)_$(subject_design)_$(range)$suffix"; results_dir = results_dir),
 	)
 	indicators(case) = view == "energy" ?
 		PostAnalysisCommon.CalculateCaseEnergyIndicators(case_paths, case; time_range = time_range).economic_indicators :
@@ -59,7 +60,7 @@ function Differences(cluster, suffix, view; time_range = DEFAULT_TIME_RANGE, res
 end
 
 # clusters laid out group by group (a one-slot gap between groups); diffs_by_cluster: cluster => Differences result
-function PlotDifferences(diffs_by_cluster, storage, view, analysis_dir_path)
+function PlotDifferences(diffs_by_cluster, storage, view, analysis_dir_path; comparison = "Rolling vs Fixed 36h", file_prefix = "fixed_vs_rolling")
 	width = 0.25 # one bar per KPI, centred on the cluster's tick
 	groups = [(label, filter(c -> haskey(diffs_by_cluster, c), members)) for (label, members) in SEASON_GROUPS]
 	groups = filter(g -> !isempty(g[2]), groups)
@@ -80,8 +81,8 @@ function PlotDifferences(diffs_by_cluster, storage, view, analysis_dir_path)
 	span = maximum(all_values) - minimum(all_values) + 1
 	margin = 0.08 * span
 	ymin, ymax = min(0.0, minimum(all_values)) - margin - 0.07 * span, max(0.0, maximum(all_values)) + margin
-	p = Plots.plot(ylabel = "Rolling vs Fixed 36h (% Change)",
-		title = "Rolling vs Fixed 36h, $(titlecase(storage)) Storage ($(view == "energy" ? "Energy-Only" : "Total Delivered") KPIs)",
+	p = Plots.plot(ylabel = "$comparison (% Change)",
+		title = "$comparison, $(titlecase(storage)) Storage ($(view == "energy" ? "Energy-Only" : "Total Delivered") KPIs)",
 		xticks = (getindex.(Ref(positions), ordered), ["C$c" for c in ordered]), xlims = (0.4, slot - 0.4),
 		ylims = (ymin, ymax), legend = :outertopright, size = (1100, 550),
 		left_margin = 10Plots.mm, bottom_margin = 8Plots.mm)
@@ -93,7 +94,7 @@ function PlotDifferences(diffs_by_cluster, storage, view, analysis_dir_path)
 	for ((label, _), centre) in zip(groups, group_centres)
 		Plots.annotate!(p, centre, ymin + 0.035 * span, Plots.text(label, 11, :bold))
 	end
-	savefig(p, joinpath(analysis_dir_path, "fixed_vs_rolling_$(storage)_$(view).png"))
+	savefig(p, joinpath(analysis_dir_path, "$(file_prefix)_$(storage)_$(view).png"))
 	return p
 end
 
