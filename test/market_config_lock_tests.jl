@@ -58,3 +58,46 @@ end
 		@test_throws ErrorException DataImporter.load_market_configuration_xlsx(path, 24)
 	end
 end
+
+@testset "lockDemand in market configurations" begin
+	dir = mktempdir()
+	sequence(m) = Dict(x[:name] => x for x in m)
+
+	@testset "yaml: per market, file-level default, absent, invalid" begin
+		path = joinpath(dir, "market.yaml")
+		write(path, """
+		timePeriodsPerDay: 24
+		lockDemand: true
+		marketSequence:
+		  a: {clearingInterval: 24, optimizationWindow: 36, lookAheadDistance: 0, clockTimeBegin: 0}
+		  b: {clearingInterval: 1, optimizationWindow: 12, lookAheadDistance: 0, clockTimeBegin: 0, lockDemand: false}
+		""")
+		markets = sequence(DataImporter.load_market_configuration(path, 24))
+		@test markets["a"][:lockDemand] === true
+		@test markets["b"][:lockDemand] === false
+
+		write(path, """
+		timePeriodsPerDay: 24
+		marketSequence:
+		  a: {clearingInterval: 1, optimizationWindow: 12, lookAheadDistance: 0, clockTimeBegin: 0}
+		""")
+		@test !haskey(sequence(DataImporter.load_market_configuration(path, 24))["a"], :lockDemand)
+
+		write(path, """
+		timePeriodsPerDay: 24
+		marketSequence:
+		  a: {clearingInterval: 1, optimizationWindow: 12, lookAheadDistance: 0, clockTimeBegin: 0, lockDemand: 1}
+		""")
+		@test_throws ErrorException DataImporter.load_market_configuration(path, 24)
+	end
+
+	@testset "xlsx: Lock Demand column, blank means unstated" begin
+		path = joinpath(dir, "market.xlsx")
+		XLSX.writetable(path, ["Validation" => DataFrame("MTU Per Day" => [24]),
+			"MarketSequence" => DataFrame("Market Name" => ["a", "b"], "Clearing Interval" => [24, 1], "Optimization Window" => [36, 12],
+				"Look Ahead Distance" => [0, 0], "Clock Time Begin" => [0, 0], "Lock Demand" => [true, missing])]; overwrite=true)
+		markets = sequence(DataImporter.load_market_configuration_xlsx(path, 24))
+		@test markets["a"][:lockDemand] === true
+		@test !haskey(markets["b"], :lockDemand)
+	end
+end

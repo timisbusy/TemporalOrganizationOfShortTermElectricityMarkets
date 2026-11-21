@@ -135,6 +135,7 @@ function ClearSimple(config_file, test_id)
 			m = modelModule.build(t, marketresult, initialization, config, market)
 			optimize!(m)
 			println(termination_status(m))
+			termination_status(m) == MathOptInterface.OPTIMAL || error("INFEASIBLE_OR_NON_OPTIMAL: market $(market[:name]) at MTU $t finished with status $(termination_status(m))")
 			MarketDataStorage.AddMarketResult!(marketresult, m, t, market[:name])
 
     		XLSX.writetable("results/$(test_id)/RAW/decisionvariables_$(config[:name])_$(t).xlsx", "data" => marketresult.Results[length(marketresult.Results)].DecisionVariables, "interpretation" => Interpretations.DecisionVariablesInterpretation)

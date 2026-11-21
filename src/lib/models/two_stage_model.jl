@@ -408,9 +408,7 @@ function build_market_clearing!(m::Model, time_period::Int, marketresults, initi
             # balancing market, which only holds when that MTU is the clearing MTU itself
             time_period == start_at_period || error("the MTU lock requires the optimization window to start at the clearing MTU, but the clearing at $time_period starts its window at $start_at_period")
             locked_mtus = HelperMtuLock.LockedMTURange(locked_mtu_count, start_at_period)
-            for g in ["3G_Base", "4G_Shoulder", "7G_Solar"], t in locked_mtus
-                @constraint(m, Qg_adj[g,t] == 0)
-            end
+            HelperMtuLock.ApplyMTULock!(m, market, Qg_adj, Qd, Qd_prev, locked_mtus)
             m.ext[:locked_mtus] = locked_mtus
         end
     end

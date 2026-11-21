@@ -1,6 +1,32 @@
 module HelperMtuLock
 
-export LockedMTUCount, LockedMTURange
+using JuMP
+
+export LockedMTUCount, LockedMTURange, LockDemand, ApplyMTULock!, LOCKED_GENERATORS
+
+# Generators whose dispatch is frozen (no adjustment) in the locked MTUs.
+const LOCKED_GENERATORS = ["3G_Base", "4G_Shoulder", "7G_Solar"]
+
+# Whether a market also locks all demand segments in its locked MTUs: `lockDemand: true` in the market config
+# ("Lock Demand" in the MarketSequence sheet). Unstated means false, which leaves demand free to adjust.
+LockDemand(market) = get(market, :lockDemand, false) === true
+
+# Freezes, in the locked MTUs, the generators in LOCKED_GENERATORS at their previously dispatched quantity and, if the
+# market sets lockDemand, every demand segment at its previously dispatched quantity. Storage is not locked.
+# Demand is fixed through Qd itself rather than Qd_adj, because Qd_adj is only tied to Qd when demand_adjust is on.
+# A lock that leaves no feasible balance (e.g. a forecast error larger than the remaining flexibility) is not relaxed:
+# the solve is infeasible and the clearing fails.
+function ApplyMTULock!(m, market, Qg_adj, Qd, Qd_prev, locked_mtus)
+	for g in LOCKED_GENERATORS, t in locked_mtus
+		@constraint(m, Qg_adj[g,t] == 0)
+	end
+	if LockDemand(market)
+		for d in axes(Qd, 1), t in locked_mtus
+			@constraint(m, Qd[d,t] == Qd_prev[d,t])
+		end
+	end
+	return nothing
+end
 
 # How many MTUs at the start of a clearing's optimization window are locked (the balancing market of the clearing).
 #
