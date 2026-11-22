@@ -6,6 +6,7 @@ include("./post_analysis_common.jl")
 include("./analyses/post_analysis_lead_time.jl")
 include("./analyses/post_analysis_quantities_by_agent.jl")
 include("./analyses/post_analysis_SEW.jl")
+include("./analyses/post_analysis_sew_waterfall.jl")
 include("./analyses/post_analysis_balancing_trade_quantities.jl")
 include("./analyses/post_analysis_spillage.jl")
 include("./analyses/post_analysis_storage.jl")
@@ -14,6 +15,7 @@ include("./analyses/post_analysis_daily.jl")
 include("./analyses/post_analysis_monthly.jl")
 include("./analyses/post_analysis_physical_indicators.jl")
 include("./analyses/post_analysis_auction_snapshots.jl")
+include("./analyses/post_analysis_weighted_price.jl")
 
 # Fixed 36h/Rolling 36h high-storage counterpart of PostAnalysisCommon.DEFAULT_CASE_PATHS - same
 # no_cap_1d_spinup runs, re-run with the high-storage agent config. Lets Run's `case_paths` be
@@ -108,6 +110,7 @@ function Run(case_paths=PostAnalysisCommon.DEFAULT_CASE_PATHS; cases=PostAnalysi
 
 	PostAnalysisQuantitiesByAgent.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base, time_range=time_range)
 	PostAnalysisSEW.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base, time_range=time_range)
+	PostAnalysisSEWWaterfall.PerformAnalysis(case_paths; cases=cases, output_base=output_base, time_range=time_range) # one chart per case, no cross-case comparison
 	PostAnalysisBalancingTradeQuantities.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base, time_range=time_range, compare_to_subject=true)
 	PostAnalysisSpillage.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base, time_range=time_range, compare_to_subject=true)
 	PostAnalysisDaily.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base, time_range=time_range, highlight_days=highlight_days)
@@ -119,6 +122,7 @@ function Run(case_paths=PostAnalysisCommon.DEFAULT_CASE_PATHS; cases=PostAnalysi
 	PostAnalysisPrices.PerformAnalysis(case_paths; output_base=output_base, illustrative_day=illustrative_day)
 	PostAnalysisStorage.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base, day_range=storage_day_range)
 	PostAnalysisPhysicalIndicators.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base, time_range=time_range)
+	PostAnalysisWeightedPrice.PerformAnalysis(case_paths; cases=cases, output_base=output_base, time_range=time_range) # energy-segment volume-weighted price per MTU
 	PostAnalysisAuctionSnapshots.PerformAnalysis(case_paths; cases=cases, output_base=output_base, clearing_mtus=clearing_mtus)
 	if monthly_start_date !== nothing
 		PostAnalysisMonthly.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base, time_range=time_range, start_date=monthly_start_date)

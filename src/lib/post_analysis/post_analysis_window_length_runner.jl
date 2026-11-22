@@ -20,8 +20,10 @@ include("./analyses/post_analysis_window_length_residence_time.jl")
 include("./analyses/post_analysis_rolling_horizon_churn.jl")
 include("./analyses/post_analysis_quantities_by_agent.jl")
 include("./analyses/post_analysis_balancing_trade_quantities.jl")
+include("./analyses/post_analysis_sew_waterfall.jl")
 include("./analyses/post_analysis_spillage.jl")
 include("./analyses/post_analysis_wind_forecast_error.jl")
+include("./analyses/post_analysis_weighted_price.jl")
 
 const DEFAULT_CASE_PATHS = PostAnalysisConventionalGenerationCost.DEFAULT_CASE_PATHS
 const DEFAULT_CASES = PostAnalysisConventionalGenerationCost.DEFAULT_CASES
@@ -38,8 +40,10 @@ function Run(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, label=PostAnaly
 	PostAnalysisRollingHorizonChurn.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
 	PostAnalysisQuantitiesByAgent.PerformAnalysis(case_paths; cases=cases, output_base=output_base, compare_to_subject=false)
 	PostAnalysisBalancingTradeQuantities.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
+	PostAnalysisSEWWaterfall.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
 	PostAnalysisSpillage.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
 	PostAnalysisWindForecastError.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
+	PostAnalysisWeightedPrice.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
 
 	return output_base
 end
