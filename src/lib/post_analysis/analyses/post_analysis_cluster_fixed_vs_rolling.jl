@@ -22,7 +22,7 @@ const CLUSTER_RANGES = [
 	"20240726_20240731", "20240919_20240924", "20241104_20241109", "20250304_20250309",
 	"20250506_20250511", "20251031_20251105", "20251103_20251108", "20251106_20251111",
 ]
-const STORAGE_VARIANTS = ["regular" => "", "high" => "_high_storage"]
+const STORAGE_VARIANTS = ["small" => "", "large" => "_high_storage"] # label => suffix of the run name (the existing runs keep their _high_storage names)
 const VIEWS = ["energy", "total"]
 const KPIS = [
 	("Socioeconomic Welfare", Symbol("Socioeconomic Welfare (€)")),

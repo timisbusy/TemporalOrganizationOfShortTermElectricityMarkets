@@ -7,7 +7,7 @@
 # Positive bars mean the agent's surplus is higher under the rolling horizon. Energy segment only: balancing-segment
 # trades are not part of these surpluses.
 #
-# One difference figure per storage variant (regular, high), sharing one y range. The xlsx has, per storage variant,
+# One difference figure per storage variant (small, large), sharing one y range. The xlsx has, per storage variant,
 # the surplus of every agent under both designs and the difference, per cluster. Results are looked up as the latest
 # results/{timestamp}_Cluster<n>_{fixed_36,rolling_36}_{range}[_high_storage] directory.
 # Writes into {output_base}/cluster_agent_surplus/.

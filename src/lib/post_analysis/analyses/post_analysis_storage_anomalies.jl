@@ -1,5 +1,5 @@
 # Storage anomaly frequency/magnitude compared across all eight market designs (Fixed/Rolling
-# 36h/48h/72h, regular and high-storage agent config variants) - one row per design, counting how
+# 36h/48h/72h, small and large-storage agent config variants) - one row per design, counting how
 # many decision-variable rows in that run's own anomalies/storage_anomalies_*.xlsx table had the
 # battery simultaneously charging and discharging, plus the total MWh of that overlap.
 #
@@ -31,14 +31,14 @@ const DEFAULT_CASE_PATHS = Dict{String,String}(
 	"Rolling 36h" => "results/1789748169_rolling_36_no_cap_1d_spinup",
 	"Rolling 48h" => "results/1789748204_rolling_48_no_cap_1d_spinup",
 	"Rolling 72h" => "results/1789748246_rolling_72_no_cap_1d_spinup",
-	"Fixed 36h (High Storage)" => "results/1789748824_fixed_36_no_cap_1d_spinup_high_storage",
-	"Rolling 36h (High Storage)" => "results/1789748893_rolling_36_no_cap_1d_spinup_high_storage",
-	"Rolling 48h (High Storage)" => "results/1789748945_rolling_48_no_cap_1d_spinup_high_storage",
-	"Rolling 72h (High Storage)" => "results/1789749015_rolling_72_no_cap_1d_spinup_high_storage",
+	"Fixed 36h (Large Storage)" => "results/1789748824_fixed_36_no_cap_1d_spinup_high_storage",
+	"Rolling 36h (Large Storage)" => "results/1789748893_rolling_36_no_cap_1d_spinup_high_storage",
+	"Rolling 48h (Large Storage)" => "results/1789748945_rolling_48_no_cap_1d_spinup_high_storage",
+	"Rolling 72h (Large Storage)" => "results/1789749015_rolling_72_no_cap_1d_spinup_high_storage",
 )
 const DEFAULT_CASES = [
 	"Fixed 36h", "Rolling 36h", "Rolling 48h", "Rolling 72h",
-	"Fixed 36h (High Storage)", "Rolling 36h (High Storage)", "Rolling 48h (High Storage)", "Rolling 72h (High Storage)",
+	"Fixed 36h (Large Storage)", "Rolling 36h (Large Storage)", "Rolling 48h (Large Storage)", "Rolling 72h (Large Storage)",
 ]
 
 # kept short (not e.g. joining all eight case names) for the same Windows MAX_PATH reason as

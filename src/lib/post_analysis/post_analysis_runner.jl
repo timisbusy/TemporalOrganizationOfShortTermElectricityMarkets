@@ -20,20 +20,20 @@ include("./analyses/post_analysis_price_volume_scatter.jl")
 include("./analyses/post_analysis_energy_generation_stack.jl")
 include("./analyses/post_analysis_residual_demand_soc.jl")
 
-# Fixed 36h/Rolling 36h high-storage counterpart of PostAnalysisCommon.DEFAULT_CASE_PATHS - same
-# no_cap_1d_spinup runs, re-run with the high-storage agent config. Lets Run's `case_paths` be
-# swapped wholesale for a "high-storage" suite invocation.
-const HIGH_STORAGE_CASE_PATHS = Dict{String,String}(
+# Fixed 36h/Rolling 36h large-storage counterpart of PostAnalysisCommon.DEFAULT_CASE_PATHS - same
+# no_cap_1d_spinup runs, re-run with the large-storage agent config. Lets Run's `case_paths` be
+# swapped wholesale for a "large-storage" suite invocation.
+const LARGE_STORAGE_CASE_PATHS = Dict{String,String}(
 	"Fixed Horizon" => "results/1789748824_fixed_36_no_cap_1d_spinup_high_storage",
 	"Rolling Horizon" => "results/1789748893_rolling_36_no_cap_1d_spinup_high_storage",
 )
 
-# High-storage counterpart of THREE_WAY_CASE_PATHS below - same three no_cap_1d_spinup designs,
-# re-run with the high-storage agent config (validate_laura_agents_high_storage.yaml via
-# auction_only_no_cap_1d_spinup_high_storage.yaml, matching how HIGH_STORAGE_CASE_PATHS' own Fixed/
-# Rolling entries were produced). Use with THREE_WAY_CASES for `cases`, same as the regular-storage
+# Large-storage counterpart of THREE_WAY_CASE_PATHS below - same three no_cap_1d_spinup designs,
+# re-run with the large-storage agent config (validate_laura_agents_high_storage.yaml via
+# auction_only_no_cap_1d_spinup_high_storage.yaml, matching how LARGE_STORAGE_CASE_PATHS' own Fixed/
+# Rolling entries were produced). Use with THREE_WAY_CASES for `cases`, same as the small-storage
 # three-way run.
-const HIGH_STORAGE_THREE_WAY_CASE_PATHS = Dict{String,String}(
+const LARGE_STORAGE_THREE_WAY_CASE_PATHS = Dict{String,String}(
 	"Fixed Horizon" => "results/1789748824_fixed_36_no_cap_1d_spinup_high_storage",
 	"Rolling Horizon" => "results/1789748893_rolling_36_no_cap_1d_spinup_high_storage",
 	"Auction Only" => "results/1790787155_auction_only_no_cap_1d_spinup_high_storage",
@@ -58,7 +58,7 @@ const THREE_WAY_CASE_PATHS = Dict{String,String}(
 	"Rolling Horizon" => "results/1789748169_rolling_36_no_cap_1d_spinup",
 	"Auction Only" => "results/1790178290_auction_only_no_cap_1d_spinup",
 )
-# Excel results Run merges into ONE workbook, results/post_analysis/{timestamp}_{label}/high_level_results/high_level_results.xlsx
+# Excel results Run merges into ONE workbook, results/post_analysis/{timestamp}_{label}/high_level_results/<cluster>_<storage level>.xlsx, e.g. cluster_8_large_storage.xlsx
 # (a "metadata" tab - cluster, storage level, cases compared - then every sheet of every file below). Entries are paths
 # relative to the run's output directory => tab label (a tab is named by the label, or "label - sheet" when the file has
 # several sheets). Add the files you want collected here (or pass high_level_files to Run).
@@ -99,7 +99,7 @@ const FullYear2025Window = (
 
 # case_paths maps "Fixed Horizon"/"Rolling Horizon" to each design's own single-design run
 # directory (see PostAnalysisCommon.DEFAULT_CASE_PATHS) - defaults to the latest validated
-# fixed_36/rolling_36 pair - pass HIGH_STORAGE_CASE_PATHS (or your own) for a high-storage suite run
+# fixed_36/rolling_36 pair - pass LARGE_STORAGE_CASE_PATHS (or your own) for a large-storage suite run
 # instead. All modules write into one shared, never-overwritten results/post_analysis/{timestamp}_{label}/
 # directory for this Run call (see PostAnalysisCommon.NewAnalysisOutputDir) - label defaults to one
 # derived from case_paths itself.

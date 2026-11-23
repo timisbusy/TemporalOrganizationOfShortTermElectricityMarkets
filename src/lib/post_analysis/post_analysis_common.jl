@@ -189,11 +189,11 @@ end
 
 # --- plot mark: every saved plot says which cluster and storage level it is based on -------------------------
 #
-# PlotMark(case_paths, cases) -> "Cluster 1 | regular storage (6000 MWh / 2000 MW)", derived from the runs' own
+# PlotMark(case_paths, cases) -> "Cluster 1 | small storage (6000 MWh / 2000 MW)", derived from the runs' own
 # copied configs (Config/ folder): the cluster from the experiment name ("Cluster<N>_..."), the storage from the
 # agent config's batteryStorage capacities, and the level from the run's name ("high_storage" in its directory
-# or config names -> "high storage", otherwise "regular storage"). Cases that disagree list each distinct value
-# ("Cluster 1 | regular / high storage"); a part that can't be determined (e.g. a run from before the cluster
+# or config names -> "large storage", otherwise "small storage"). Cases that disagree list each distinct value
+# ("Cluster 1 | small / large storage"); a part that can't be determined (e.g. a run from before the cluster
 # naming) is left out.
 #
 # Every analysis module calls SetPlotMark!(case_paths, cases) first thing in PerformAnalysis and saves its figures
@@ -215,7 +215,7 @@ end
 
 function CaseStorage(case_path)
 	hints = [basename(case_path); isdir(joinpath(case_path, "Config")) ? readdir(joinpath(case_path, "Config")) : String[]]
-	level = any(h -> occursin("high_storage", h), hints) ? "high storage" : "regular storage"
+	level = any(h -> occursin("high_storage", h), hints) ? "large storage" : "small storage"
 	capacity = ""
 	try
 		agent_cfg = LoadCaseConfigsByRole(case_path)[3]
@@ -264,9 +264,10 @@ end
 #
 # The metadata tab (columns Item, Value) says what the workbook is about: the cluster, the storage level (with the
 # battery capacities) and the cases compared - read from the runs' own Config/ copies, the same way the plot mark is
-# (see CaseCluster / CaseStorage) - plus each case's run directory, the analysis window, the source files and when
-# the workbook was written. Returns the workbook's path (nothing when no source file was found).
-function MergeHighLevelResults(output_base, files; case_paths, cases, time_range=nothing, folder="high_level_results", filename="high_level_results.xlsx")
+# (see CaseCluster / CaseStorage) - plus each case's run directory, the analysis window and when the workbook was
+# written. The workbook is named after the cluster and storage level (HighLevelFileName, e.g. "cluster_8_large_storage.xlsx")
+# unless filename is given. Returns the workbook's path (nothing when no source file was found).
+function MergeHighLevelResults(output_base, files; case_paths, cases, time_range=nothing, folder="high_level_results", filename=HighLevelFileName(case_paths, cases))
 	isempty(files) && return nothing
 	entries = [f isa Pair ? (String(first(f)), String(last(f))) : (String(f), splitext(basename(String(f)))[1]) for f in files]
 
@@ -293,7 +294,7 @@ function MergeHighLevelResults(output_base, files; case_paths, cases, time_range
 	dest = "$output_base/$folder"
 	mkpath(dest)
 	path = "$dest/$filename"
-	XLSX.writetable(path, "metadata" => MergeMetadata(case_paths, cases, time_range, found), sheets...; overwrite=true)
+	XLSX.writetable(path, "metadata" => MergeMetadata(case_paths, cases, time_range), sheets...; overwrite=true)
 	return path
 end
 
@@ -311,7 +312,20 @@ function UniqueSheetName(name, used)
 	return candidate
 end
 
-function MergeMetadata(case_paths, cases, time_range, source_files)
+# "cluster_8_large_storage": the workbook's name, from the cluster and storage level of the cases (a part that cannot be
+# determined is left out; "high_level_results" when neither can; several distinct values are joined with "_and_")
+function HighLevelFileName(case_paths, cases)
+	present = [c for c in cases if haskey(case_paths, c)]
+	clusters = unique(filter(!isnothing, [CaseCluster(case_paths[c]) for c in present]))
+	levels = unique([first(split(CaseStorage(case_paths[c]), " (")) for c in present])
+	slug(x) = lowercase(replace(x, r"\s+" => "_"))
+	parts = String[]
+	isempty(clusters) || push!(parts, join(slug.(clusters), "_and_"))
+	isempty(levels) || push!(parts, join(slug.(levels), "_and_"))
+	return (isempty(parts) ? "high_level_results" : join(parts, "_")) * ".xlsx"
+end
+
+function MergeMetadata(case_paths, cases, time_range)
 	clusters = unique(filter(!isnothing, [CaseCluster(case_paths[c]) for c in cases if haskey(case_paths, c)]))
 	storages = unique([CaseStorage(case_paths[c]) for c in cases if haskey(case_paths, c)])
 	storage_levels = unique([first(split(s, " (")) for s in storages])
@@ -325,7 +339,6 @@ function MergeMetadata(case_paths, cases, time_range, source_files)
 		haskey(case_paths, c) && push!(rows, "Run: $c" => String(case_paths[c]))
 	end
 	time_range === nothing || push!(rows, "Analysis window (MTU)" => "$(first(time_range)):$(last(time_range))")
-	push!(rows, "Source files" => join(source_files, "; "))
 	push!(rows, "Written" => string(Dates.now()))
 	return DataFrame(Item=first.(rows), Value=last.(rows))
 end
@@ -354,7 +367,7 @@ const OUTPUT_SUBPATH_MARGIN = 85
 
 # Truncates `label` (at a "_" boundary where possible, for readability) if
 # "$base_dir/$timestamp_prefix$label" plus OUTPUT_SUBPATH_MARGIN would exceed WINDOWS_MAX_PATH -
-# a label built from long case_paths basenames (e.g. a "high storage" run pair) would otherwise
+# a label built from long case_paths basenames (e.g. a "large storage" run pair) would otherwise
 # only fail once some later module tries to write a file under it, deep inside XLSX.writetable with
 # an opaque "No such file or directory". The full, untruncated label is still recorded in
 # metadata.yaml for provenance.

@@ -1,7 +1,7 @@
 # Residual demand (total demand minus variable generation) over the analysed hours of each experiment cluster.
 #
 # Unlike the other post-analyses this one does not read a results directory: it only needs the experiment's input
-# data, so it takes the experiment config files (default: the regular-storage Cluster1-8 fixed_36 configs - the
+# data, so it takes the experiment config files (default: the small-storage Cluster1-8 fixed_36 configs - the
 # analysed range is the same for every design and storage variant of a cluster). For each config it resolves the
 # agent config's demand segments and variable generators, reads their profiles from the input CSVs for the
 # experiment's startDate, and keeps the analysed hours: the clearForDays horizon minus samplePeriodExcludeSpinUp

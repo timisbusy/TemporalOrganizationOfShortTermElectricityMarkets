@@ -1,8 +1,8 @@
 # Runs the same optimization-window-length comparison suite as PostAnalysisWindowLengthRunner
-# (36h/48h/72h rolling-horizon runs, keyed by window length) but against the high-storage battery
+# (36h/48h/72h rolling-horizon runs, keyed by window length) but against the large-storage battery
 # variant of those three runs (validate_laura_agents_high_storage.yaml - energyCapacity 96000 MWh/
 # powerCapacity 4000 MW vs. the regular 6000 MWh/2000 MW) instead of
-# PostAnalysisConventionalGenerationCost.DEFAULT_CASE_PATHS' regular-storage runs. Every submodule
+# PostAnalysisConventionalGenerationCost.DEFAULT_CASE_PATHS' small-storage runs. Every submodule
 # here is generic over its case_paths/cases arguments already, so this only needs its own
 # DEFAULT_CASE_PATHS - no submodule changes were needed.
 
@@ -31,7 +31,7 @@ const DEFAULT_CASE_PATHS = Dict{String,String}(
 )
 const DEFAULT_CASES = ["36h", "48h", "72h"]
 
-DefaultLabel(case_paths, cases) = "high_storage_" * PostAnalysisConventionalGenerationCost.DefaultLabel(case_paths, cases)
+DefaultLabel(case_paths, cases) = "large_storage_" * PostAnalysisConventionalGenerationCost.DefaultLabel(case_paths, cases)
 
 # time_range: MTU analysis window - nothing (the default) is the window the runs' own configs define
 # (see PostAnalysisCommon.ResolveTimeRange); pass e.g. 72:8831 to override it

@@ -45,7 +45,7 @@ using XLSX, DataFrames, Plots, Printf
 
 include("../post_analysis_common.jl")
 
-# The 10 no_cap_1d_spinup runs (5 market designs incl. Auction Only x standard/high storage) re-run after the
+# The 10 no_cap_1d_spinup runs (5 market designs incl. Auction Only x small/large storage) re-run after the
 # demand-transaction fix (see git history around "Add a reusable row-level cross-run validation
 # module" and the session that added this file) - a convenience default, not the only thing this
 # module can analyze. Pass your own case_paths for any other set of runs.
@@ -55,17 +55,17 @@ const DEFAULT_CASE_PATHS = Dict{String,String}(
 	"Rolling 48h" => "results/1789748204_rolling_48_no_cap_1d_spinup",
 	"Rolling 72h" => "results/1789748246_rolling_72_no_cap_1d_spinup",
 	"Auction Only" => "results/1790178290_auction_only_no_cap_1d_spinup",
-	"Fixed 36h (high storage)" => "results/1789748824_fixed_36_no_cap_1d_spinup_high_storage",
-	"Rolling 36h (high storage)" => "results/1789748893_rolling_36_no_cap_1d_spinup_high_storage",
-	"Rolling 48h (high storage)" => "results/1789748945_rolling_48_no_cap_1d_spinup_high_storage",
-	"Rolling 72h (high storage)" => "results/1789749015_rolling_72_no_cap_1d_spinup_high_storage",
-	"Auction Only (high storage)" => "results/1790787155_auction_only_no_cap_1d_spinup_high_storage",
+	"Fixed 36h (large storage)" => "results/1789748824_fixed_36_no_cap_1d_spinup_high_storage",
+	"Rolling 36h (large storage)" => "results/1789748893_rolling_36_no_cap_1d_spinup_high_storage",
+	"Rolling 48h (large storage)" => "results/1789748945_rolling_48_no_cap_1d_spinup_high_storage",
+	"Rolling 72h (large storage)" => "results/1789749015_rolling_72_no_cap_1d_spinup_high_storage",
+	"Auction Only (large storage)" => "results/1790787155_auction_only_no_cap_1d_spinup_high_storage",
 )
 
 # order DEFAULT_CASE_PATHS prints/plots in - Dict iteration order isn't insertion order-guaranteed
 # once cases come from a caller-supplied Dict, so any case_paths gets sorted by this preferred
 # ordering where possible, falling back to alphabetical for names it doesn't recognize.
-const DEFAULT_CASE_ORDER = ["Fixed 36h", "Rolling 36h", "Rolling 48h", "Rolling 72h", "Auction Only", "Fixed 36h (high storage)", "Rolling 36h (high storage)", "Rolling 48h (high storage)", "Rolling 72h (high storage)", "Auction Only (high storage)"]
+const DEFAULT_CASE_ORDER = ["Fixed 36h", "Rolling 36h", "Rolling 48h", "Rolling 72h", "Auction Only", "Fixed 36h (large storage)", "Rolling 36h (large storage)", "Rolling 48h (large storage)", "Rolling 72h (large storage)", "Auction Only (large storage)"]
 
 function OrderedCases(case_paths)
 	known = [c for c in DEFAULT_CASE_ORDER if haskey(case_paths, c)]
@@ -135,7 +135,7 @@ end
 # concrete "why do these differ" evidence: a big positive delta means storage earned much more from
 # its actual sequence of trades than the final settlement price alone would suggest (typical of
 # longer look-aheads, where many re-clearings smooth out into a net-favorable trading history); a
-# big negative delta (rare, but see the fixed_36 high-storage case) means the opposite - a large,
+# big negative delta (rare, but see the fixed_36 large-storage case) means the opposite - a large,
 # early, capacity-capped trade got locked in at a price the market later drifted away from before
 # that MTU had its final auction, with storage never getting the chance to trade again at the new
 # price.

@@ -6,7 +6,7 @@
 # i.e. the net of its balancing adjustments to what it had traded in earlier clearings. Technologies the lock keeps out
 # of the balancing segment (all zero in every cluster) are left out of the plot but kept in the xlsx.
 #
-# One figure per design (fixed_36, rolling_36) and storage variant (regular, high), plus one per storage variant of the
+# One figure per design (fixed_36, rolling_36) and storage variant (small, large), plus one per storage variant of the
 # difference (rolling - fixed) in net balancing quantity (balancing_traded_quantity_rolling_minus_fixed_*.png). The xlsx has,
 # per design and storage variant (and per difference), one sheet with the net, gross, increase and decrease quantities
 # of every agent and cluster.
@@ -25,7 +25,7 @@ const CLUSTER_RANGES = [
 	"20250506_20250511", "20251031_20251105", "20251103_20251108", "20251106_20251111",
 ]
 const DESIGNS = ["fixed_36" => "Fixed 36h", "rolling_36" => "Rolling 36h"]
-const STORAGE_VARIANTS = ["regular" => "", "high" => "_high_storage"]
+const STORAGE_VARIANTS = ["small" => "", "large" => "_high_storage"] # label => suffix of the run name (the existing runs keep their _high_storage names)
 const SEASON_GROUPS = ["Winter" => [3, 6, 7, 8], "Spring/Summer" => [1, 2, 4, 5]]
 const DEFAULT_TIME_RANGE = 24:167 # the 6 analysed days of the cluster experiments (1 day spin-up)
 
