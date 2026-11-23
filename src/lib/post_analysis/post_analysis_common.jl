@@ -255,36 +255,79 @@ function SaveFigure(p, path)
 	Plots.savefig(p, path)
 end
 
-# Copies the listed result files into one flat "high-level results" folder, output_base/folder. Each entry is a
-# path relative to output_base (e.g. "post_analysis_SEW/sew_details.xlsx"); the copy keeps the file name
-# ("sew_details.xlsx"), prefixed with its analysis directory ("post_analysis_SEW__sew_details.xlsx") only when
-# another entry already took that name. An entry whose file doesn't exist (analysis not run in this suite, or
-# renamed) is skipped with a warning, as is one that can't be copied. Returns the copied paths.
-function CopyHighLevelResults(output_base, files; folder="high_level_results")
-	isempty(files) && return String[]
-	dest = "$output_base/$folder"
-	mkpath(dest)
-	copied = String[]
-	for rel in files
+# Merges the listed result workbooks into ONE workbook, output_base/folder/filename, with a "metadata" tab first.
+#
+# files: entries are "path/relative/to/output_base.xlsx" => "label" (or a bare path, labelled by its file name). Every
+# sheet of every file is copied; its tab is named by the label alone when the file has one sheet, otherwise
+# "label - sheet" (Excel tabs are capped at 31 characters, so longer names are shortened and made unique).
+# A file that doesn't exist (analysis not run, or renamed) is skipped with a warning.
+#
+# The metadata tab (columns Item, Value) says what the workbook is about: the cluster, the storage level (with the
+# battery capacities) and the cases compared - read from the runs' own Config/ copies, the same way the plot mark is
+# (see CaseCluster / CaseStorage) - plus each case's run directory, the analysis window, the source files and when
+# the workbook was written. Returns the workbook's path (nothing when no source file was found).
+function MergeHighLevelResults(output_base, files; case_paths, cases, time_range=nothing, folder="high_level_results", filename="high_level_results.xlsx")
+	isempty(files) && return nothing
+	entries = [f isa Pair ? (String(first(f)), String(last(f))) : (String(f), splitext(basename(String(f)))[1]) for f in files]
+
+	sheets = Pair{String,DataFrame}[]
+	used = Set{String}(["metadata"])
+	found = String[]
+	for (rel, label) in entries
 		src = joinpath(output_base, rel)
 		if !isfile(src)
 			@warn "high-level results: $rel not found under $output_base - skipped"
 			continue
 		end
-		# the copy keeps just the file name (analysis dirs are nested under an already long output_base, and the
-		# 260-character Windows path limit has no room for the directory in the name too); only a name that is
-		# already taken by another entry gets its analysis directory prefixed
-		name = basename(rel)
-		isfile(joinpath(dest, name)) && (name = replace(rel, r"[/\\]+" => "__"))
-		target = joinpath(dest, name)
-		try
-			cp(src, target; force=true)
-			push!(copied, target)
-		catch err
-			@warn "high-level results: could not copy $rel ($err)" # the analyses themselves are already done
+		push!(found, rel)
+		XLSX.openxlsx(src) do book
+			names = XLSX.sheetnames(book)
+			for sheet in names
+				df = DataFrame(XLSX.readtable(src, sheet; infer_eltypes=true))
+				push!(sheets, UniqueSheetName(length(names) == 1 ? label : "$label - $sheet", used) => df)
+			end
 		end
 	end
-	return copied
+	isempty(found) && return nothing
+
+	dest = "$output_base/$folder"
+	mkpath(dest)
+	path = "$dest/$filename"
+	XLSX.writetable(path, "metadata" => MergeMetadata(case_paths, cases, time_range, found), sheets...; overwrite=true)
+	return path
+end
+
+# an Excel tab name: at most 31 characters, none of []:*?/\ , and not used before in this workbook
+function UniqueSheetName(name, used)
+	clean = replace(name, r"[\[\]:*?/\\]" => "-")
+	candidate = first(clean, 31)
+	n = 2
+	while candidate in used
+		suffix = " ($n)"
+		candidate = first(clean, 31 - length(suffix)) * suffix
+		n += 1
+	end
+	push!(used, candidate)
+	return candidate
+end
+
+function MergeMetadata(case_paths, cases, time_range, source_files)
+	clusters = unique(filter(!isnothing, [CaseCluster(case_paths[c]) for c in cases if haskey(case_paths, c)]))
+	storages = unique([CaseStorage(case_paths[c]) for c in cases if haskey(case_paths, c)])
+	storage_levels = unique([first(split(s, " (")) for s in storages])
+	rows = Pair{String,String}[
+		"Cluster" => isempty(clusters) ? "unknown" : join(clusters, " / "),
+		"Storage level" => join(storage_levels, " / "),
+		"Storage capacity" => join(unique([occursin("(", s) ? strip(last(split(s, " (")), ')') : "unknown" for s in storages]), " / "),
+		"Cases compared" => join(cases, " vs "),
+	]
+	for c in cases
+		haskey(case_paths, c) && push!(rows, "Run: $c" => String(case_paths[c]))
+	end
+	time_range === nothing || push!(rows, "Analysis window (MTU)" => "$(first(time_range)):$(last(time_range))")
+	push!(rows, "Source files" => join(source_files, "; "))
+	push!(rows, "Written" => string(Dates.now()))
+	return DataFrame(Item=first.(rows), Value=last.(rows))
 end
 
 # case name -> trailing directory name, own leading "{unix_timestamp}_" stripped (it's already
