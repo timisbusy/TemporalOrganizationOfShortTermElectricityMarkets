@@ -9,7 +9,7 @@ header_renaming = Dict{String,Any}(
 	),
 	"economic_indicators" => Dict{String,Any}(
 		"short_names" => ["SEW", "DemandUtility", "ProductionCosts", "ProducerSurplus", "ConsumerSurplus", "StorageRevenue", "ImbalanceEnergy"],
-		"long_names" => ["Socioeconomic Welfare (€)", "Demand Utility (€)", "Production Costs (€)", "Producer Surplus (€)", "Consumer Surplus (€)", "Storage Revenue (€)", "Imbalance Energy (MWh)"],
+		"long_names" => ["Socioeconomic Welfare (€)", "Demand Utility (€)", "Production Costs (€)", "Producer Surplus (€)", "Consumer Surplus (€)", "Storage Surplus (€)", "Imbalance Energy (MWh)"],
 	),
 	"retrading" => Dict{String,Any}(
 		"short_names" => ["Revenue", "BidPrice", "Quantity", "UtilityChange", "FuelCostChange", "SurplusChange"],

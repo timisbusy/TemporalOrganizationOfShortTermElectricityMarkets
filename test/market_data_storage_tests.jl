@@ -163,13 +163,13 @@ using .ClearMarket.LatestMarketModel
 		result = MarketDataStorage.CalculateEconomicIndicators(final_dispatch, transactions, agent_map, 0:1)
 
 		# THEN the revenue is -2*20 + 3*60 + 2*50 = 240 - not the final-price valuation 1*100 + 2*50 = 200
-		@test isapprox(result.economic_indicators[1, "Storage Revenue (€)"], 240.0)
+		@test isapprox(result.economic_indicators[1, "Storage Surplus (€)"], 240.0)
 		storage_row = result.agent_indicators[result.agent_indicators.Agent .== "Storage", :]
 		@test isapprox(storage_row[1, "Revenue (€)"], 240.0)
 		@test isapprox(storage_row[1, "Surplus (€)"], 240.0)
 		# and the per-MTU values (MTU 0: -40 + 180, MTU 1: 100) sum to the whole-range value
-		@test isapprox(result.mtu_economic_indicators[!, "Storage Revenue (€)"], [140.0, 100.0])
-		@test isapprox(sum(result.mtu_economic_indicators[!, "Storage Revenue (€)"]), result.economic_indicators[1, "Storage Revenue (€)"])
+		@test isapprox(result.mtu_economic_indicators[!, "Storage Surplus (€)"], [140.0, 100.0])
+		@test isapprox(sum(result.mtu_economic_indicators[!, "Storage Surplus (€)"]), result.economic_indicators[1, "Storage Surplus (€)"])
 		# the quantity column still reports the final dispatched discharge
 		@test isapprox(storage_row[1, "Quantity (MWh)"], 3.0)
 

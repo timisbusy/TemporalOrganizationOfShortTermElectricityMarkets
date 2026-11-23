@@ -13,7 +13,7 @@ PHYSICAL_INDICATORS = [Symbol("SOC"), Symbol("6G_Wind"), Symbol("2D_ModerateBid"
 # (column, display label, filename-safe label) for the by-day line/diff-bar charts
 INTERVAL_INDICATORS = [
 	(symbol=Symbol("Socioeconomic Welfare (€)"), label="Socioeconomic Welfare (€)", file="sew"),
-	(symbol=Symbol("Storage Revenue (€)"), label="Storage Revenue (€)", file="storage_revenue"),
+	(symbol=Symbol("Storage Surplus (€)"), label="Storage Surplus (€)", file="storage_surplus"),
 	# Imbalance Energy is omitted: on the energy segment it is always 0 (same-hour adjustments are balancing transactions)
 ]
 

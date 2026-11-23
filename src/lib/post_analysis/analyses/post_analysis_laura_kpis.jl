@@ -248,7 +248,7 @@ function PerformAnalysis()
 
 		# Storage revenue, matching Laura's calculate_storage_revenue (costs.jl): discharge_mw*price
 		# and charge_mw*price summed over EXECUTED hours only, using the price the clearing that
-		# executed each MTU actually settled at - not the "Storage Revenue (€)" figure from
+		# executed each MTU actually settled at - not the "Storage Surplus (€)" figure from
 		# CalculateEconomicIndicators above, which nets quantity*price across every adjustment transaction
 		# from every clearing that ever touched an MTU (the same executed-vs-gross distinction as
 		# generator Traded Volume). mtu1_dvs.FinalAuctionPrice (backfilled above) already carries

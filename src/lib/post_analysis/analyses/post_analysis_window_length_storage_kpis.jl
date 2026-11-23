@@ -3,7 +3,7 @@
 # a %% difference column between each pair of adjacent window lengths), but for storage-specific
 # indicators: charge/discharge energy come from the energy-only
 # final_dispatch_decisions_energy.xlsx (StorageCharge/StorageDischarge), while Net Revenue is
-# the transaction-based Storage Revenue (€) of MarketDataStorage.CalculateEconomicIndicators on the energy
+# the transaction-based Storage Surplus (€) of MarketDataStorage.CalculateEconomicIndicators on the energy
 # segment: the sum of quantity * price over storage's Energy-segment transactions, so it equals the Storage
 # Revenue row of the SEW / window-length KPI tables.
 
@@ -98,9 +98,9 @@ function CalculateStorageKPIs(case_paths, case, time_range)
 	discharge_energy = sum(dd.StorageDischarge)
 	throughput = charge_energy + discharge_energy
 
-	# transaction-based, as the Storage Revenue of the other economic-indicator tables: the sum of quantity *
+	# transaction-based, as the Storage Surplus of the other economic-indicator tables: the sum of quantity *
 	# price over storage's Energy-segment transactions (not discharge - charge priced at FinalAuctionPrice)
-	net_revenue = Float64(PostAnalysisCommon.CalculateCaseEnergyIndicators(case_paths, case; time_range=time_range).economic_indicators[1, "Storage Revenue (€)"])
+	net_revenue = Float64(PostAnalysisCommon.CalculateCaseEnergyIndicators(case_paths, case; time_range=time_range).economic_indicators[1, "Storage Surplus (€)"])
 
 	return Dict(
 		"Charge Energy (MWh)" => charge_energy,
