@@ -256,10 +256,10 @@ function SaveFigure(p, path)
 end
 
 # Copies the listed result files into one flat "high-level results" folder, output_base/folder. Each entry is a
-# path relative to output_base (e.g. "post_analysis_SEW/sew_details.xlsx"); the copy is named after its
-# analysis directory and file ("post_analysis_SEW__sew_details.xlsx") so same-named files from different
-# analyses don't collide. An entry whose file doesn't exist (analysis not run in this suite, or renamed) is
-# skipped with a warning. Returns the copied paths.
+# path relative to output_base (e.g. "post_analysis_SEW/sew_details.xlsx"); the copy keeps the file name
+# ("sew_details.xlsx"), prefixed with its analysis directory ("post_analysis_SEW__sew_details.xlsx") only when
+# another entry already took that name. An entry whose file doesn't exist (analysis not run in this suite, or
+# renamed) is skipped with a warning, as is one that can't be copied. Returns the copied paths.
 function CopyHighLevelResults(output_base, files; folder="high_level_results")
 	isempty(files) && return String[]
 	dest = "$output_base/$folder"
@@ -271,9 +271,18 @@ function CopyHighLevelResults(output_base, files; folder="high_level_results")
 			@warn "high-level results: $rel not found under $output_base - skipped"
 			continue
 		end
-		target = joinpath(dest, replace(rel, r"[/\\]+" => "__"))
-		cp(src, target; force=true)
-		push!(copied, target)
+		# the copy keeps just the file name (analysis dirs are nested under an already long output_base, and the
+		# 260-character Windows path limit has no room for the directory in the name too); only a name that is
+		# already taken by another entry gets its analysis directory prefixed
+		name = basename(rel)
+		isfile(joinpath(dest, name)) && (name = replace(rel, r"[/\\]+" => "__"))
+		target = joinpath(dest, name)
+		try
+			cp(src, target; force=true)
+			push!(copied, target)
+		catch err
+			@warn "high-level results: could not copy $rel ($err)" # the analyses themselves are already done
+		end
 	end
 	return copied
 end
