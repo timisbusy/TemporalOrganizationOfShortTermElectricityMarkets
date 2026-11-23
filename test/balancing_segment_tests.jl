@@ -462,8 +462,8 @@ end
 			q = balancing[balancing.Agent .== agent, "Quantity (MWh)"]
 			@test quantities[agent][B.NET] ≈ sum(q)
 			@test quantities[agent][B.GROSS] ≈ sum(abs, q)
-			@test quantities[agent][B.INCREASES] + quantities[agent][B.DECREASES] ≈ quantities[agent][B.NET]
-			@test quantities[agent][B.INCREASES] - quantities[agent][B.DECREASES] ≈ quantities[agent][B.GROSS]
+			@test quantities[agent][B.UP] + quantities[agent][B.DOWN] ≈ quantities[agent][B.NET] # supply agents
+			@test quantities[agent][B.UP] - quantities[agent][B.DOWN] ≈ quantities[agent][B.GROSS]
 		end
 	end
 
@@ -473,7 +473,45 @@ end
 		@test early <= all_mtus
 	end
 
-	@testset "float noise is reported as zero" begin
+	@testset "demand agents' up and down balancing are mirrored" begin
+		q = [3.0, -2.0, 5.0]
+		supply = B.TradeQuantities(q)
+		demand = B.TradeQuantities(q; demand=true)
+		@test (supply[B.UP], supply[B.DOWN]) == (8.0, -2.0)
+		@test (demand[B.UP], demand[B.DOWN]) == (2.0, -8.0) # consumption reduction is up balancing
+		@test B.IsDemandAgent("1D_HighBid") && !B.IsDemandAgent("5G_Peak") && !B.IsDemandAgent("Storage")
+	end
+
+	@testset "wind forecast change is the cause; the other adjustments and the spillage are the response" begin
+		# MTU 1: wind falls by 100 (up need). Storage +80, peak +30, wind trade -110 (= dA - 10 more spillage), demand 0.
+		# MTU 2: wind rises by 50 (down need). Storage -20, peak -10, demand consumes 15 more, wind trade 45 (5 more spillage).
+		net = Dict("Storage" => Dict(1 => 80.0, 2 => -20.0), "5G_Peak" => Dict(1 => 30.0, 2 => -10.0),
+			"1D_HighBid" => Dict(2 => 15.0), "6G_Wind" => Dict(1 => -110.0, 2 => 45.0))
+		for (t, total) in ((1, 80 + 30 - 110), (2, -20 - 10 - 15 + 45)) # the balancing transactions net to zero in each MTU
+			@test total == 0
+		end
+		out = B.WindResponseMetrics(net, Dict(1 => -100.0, 2 => 50.0))
+		@test out["Storage"][B.UP_SHARE] ≈ 80.0 && out["5G_Peak"][B.UP_SHARE] ≈ 30.0 && out[B.SPILL_AGENT][B.UP_SHARE] ≈ -10.0 && out["1D_HighBid"][B.UP_SHARE] ≈ 0.0
+		@test sum(out[a][B.UP_SHARE] for a in ["Storage", "5G_Peak", "1D_HighBid", B.SPILL_AGENT]) ≈ 100
+		@test out["Storage"][B.DOWN_SHARE] ≈ 40.0 && out["5G_Peak"][B.DOWN_SHARE] ≈ 20.0 && out["1D_HighBid"][B.DOWN_SHARE] ≈ 30.0 && out[B.SPILL_AGENT][B.DOWN_SHARE] ≈ 10.0
+		@test sum(out[a][B.DOWN_SHARE] for a in ["Storage", "5G_Peak", "1D_HighBid", B.SPILL_AGENT]) ≈ 100
+		@test !haskey(out, "6G_Wind") # wind is the cause, not a responder
+		cause = out[B.CAUSE_AGENT]
+		@test cause[B.NET] ≈ -50 && cause[B.UP] ≈ 100 && cause[B.DOWN] ≈ -50 && cause[B.GROSS] ≈ 150 && ismissing(cause[B.UP_SHARE])
+		spill = out[B.SPILL_AGENT]
+		@test spill[B.NET] ≈ -15 && spill[B.UP] ≈ 0 && spill[B.DOWN] ≈ -15 # -(10 + 5) more spillage, both down responses
+		quiet = B.WindResponseMetrics(Dict("Storage" => Dict(1 => 0.0), "6G_Wind" => Dict(1 => 0.0)), Dict(1 => 0.0))
+		@test quiet["Storage"][B.UP_SHARE] == 0.0 && quiet["Storage"][B.DOWN_SHARE] == 0.0 # no need, no shares
+	end
+
+	@testset "without a wind forecast change the share rows are missing; with it they are filled in" begin
+		@test all(ismissing, [q[m] for q in values(B.BalancingTradeQuantities(tx, 0:10)) for m in B.SHARE_METRICS])
+		with_change = B.BalancingTradeQuantities(tx, 0:10; wind_forecast_change=Dict(t => -1.0 for t in 0:10))
+		@test B.SPILL_AGENT in keys(with_change) && B.CAUSE_AGENT in keys(with_change)
+		@test ismissing(with_change["6G_Wind"][B.UP_SHARE]) # wind has no share
+	end
+
+@testset "float noise is reported as zero" begin
 		@test B.TradeQuantities([1.5, -1.5 + 1e-13])[B.NET] == 0.0
 	end
 
@@ -485,21 +523,22 @@ end
 		q = B.BalancingTradeQuantities(tx, 0:10; agents=["4G_Shoulder", "3G_Base"])
 		by_case = Dict("A" => q, "B" => q, "C" => q)
 		adjacent = B.BuildTable(by_case, ["A", "B", "C"]; agents=["4G_Shoulder", "3G_Base"])
-		@test nrow(adjacent) == 2 * length(B.METRICS)
+		@test nrow(adjacent) == 2 * length(B.TABLE_METRICS)
 		@test names(adjacent)[end-1:end] == ["B vs A (MWh)", "C vs B (MWh)"]
 		subject = B.BuildTable(by_case, ["A", "B", "C"]; agents=["4G_Shoulder", "3G_Base"], compare_to_subject=true)
 		@test names(subject)[end-1:end] == ["C vs A (MWh)", "C vs B (MWh)"]
 		scaled = Dict(agent => Dict(m => 2v for (m, v) in metrics) for (agent, metrics) in q)
 		diffs = B.BuildTable(Dict("A" => q, "B" => scaled), ["A", "B"]; agents=["4G_Shoulder", "3G_Base"])
-		@test diffs[!, "B vs A (MWh)"] == diffs.B .- diffs.A # MWh differences, not percentages
+		@test isequal(diffs[!, "B vs A (MWh)"], diffs.B .- diffs.A) # MWh differences, not percentages (missing where a share is missing)
 	end
 
-	@testset "the LaTeX table is reduced to energy traded, plus storage increases and decreases" begin
+	@testset "the LaTeX table shows net, up, down and the shares for every agent but the locked generators" begin
 		by_case = Dict("A" => B.BalancingTradeQuantities(tx, 0:10), "B" => B.BalancingTradeQuantities(tx, 0:10))
 		tex = B.TexTable(B.BuildTable(by_case, ["A", "B"]))
 		@test !any(in(["Base", "Shoulder", "Solar"]), tex.Agent)
-		@test Set(tex.Metric) == Set(["Net energy traded (MWh)", "Energy increases (MWh)", "Energy decreases (MWh)"])
-		@test Set(tex[tex.Metric .!= "Net energy traded (MWh)", :Agent]) == Set(["Storage"])
+		@test Set(tex.Metric) == Set(["Net energy traded (MWh)", "Up balancing (MWh)", "Down balancing (MWh)", "Share of up-balancing need met (%)", "Share of down-balancing need met (%)"])
+		@test all(a -> count(==(a), tex.Agent) == 5, unique(tex.Agent)) # every shown agent has all five rows
+		@test B.FormatThousands(1234567.8) == "1,234,568" && B.FormatThousands(-1349.4) == "-1,349" && B.FormatShare(12.345) == "12.3" && B.FormatShare(-0.01) == "0.0"
 		@test sort(unique(tex.Agent)) == sort(["High Bid", "Moderate Bid", "Peak", "Wind", "Storage"])
 	end
 

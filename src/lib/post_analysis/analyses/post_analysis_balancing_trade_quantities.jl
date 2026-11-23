@@ -5,11 +5,33 @@
 #
 #   Net traded (MWh)     - sum of the signed transaction quantities
 #   Gross traded (MWh)   - sum of |quantity|
-#   Increases (MWh)      - sum of the positive quantities
-#   Decreases (MWh)      - sum of the negative quantities (reported as a negative number)
+#   Up balancing (MWh)   - energy the agent added to the system: its supply increases (positive quantities of a generator
+#                          or storage discharge) or, for a demand agent, its consumption reductions
+#   Down balancing (MWh) - energy the agent took out of the system, reported as a negative number: supply decreases
+#                          (negative quantities of a generator, storage charging) or demand consumption increases
+#   Share of up / down balancing need met (%) - see "Cause and response" below
+#
+# Cause and response. The wind forecast change is taken as the cause of the balancing need and every other
+# adjustment as the response to it. In each balancing MTU t:
+#   cause     dA_t   = wind available now - wind available in the previous clearing's forecast of the same MTU
+#                      (< 0: wind fell, up balancing is needed; > 0: wind rose, down balancing is needed)
+#   response  R_i,t  = agent i's net balancing quantity in t (a demand agent's with the sign flipped: a consumption
+#                      reduction is an up response), for every agent but wind, and
+#             R_spill,t = W_t - dA_t, the wind spillage response (W_t = the wind agent's own net balancing trade;
+#                      extra spillage is a down response, so the wind trade is the cause plus its spillage response)
+# The balancing transactions net to zero in every MTU, so the responses add up to the need exactly:
+# sum_i R_i,t + R_spill,t = -dA_t. An agent's share of the up-balancing need met is its summed response over the MTUs
+# where wind fell divided by the total fall (sum of -dA_t there); the down share likewise over the MTUs where wind
+# rose. Each direction's shares sum to 100% over the responders (agents and spillage); a share is negative when the
+# responder moved against the need, and wind itself has no share. The table gets two extra rows: "Wind spillage
+# (response)" and "Wind forecast change (cause)" (net = sum of dA, up / down = the up / down need, shares blank).
+# The shares need the previous clearings' forecasts, read from each run's RAW exports; without them (dA not given)
+# the share rows are empty.
 #
 # Quantities are adjustments to what the agent had already traded in earlier clearings, so net traded is the
-# agent's net change from balancing and gross traded how much it moved. One row per agent and metric, one
+# agent's net change from balancing and gross traded how much it moved. Up and down are summed per transaction (not
+# netted per MTU); for a supply agent up + down = net, for a demand agent up + down = -net (net is its consumption
+# change). One row per agent and metric, one
 # column per case, then MWh difference columns (compared minus base, not percentages): by default "{case} vs {previous case}" for each adjacent pair
 # (the window-length suite: 48h vs 36h, 72h vs 48h), or with compare_to_subject=true "{last case} vs {base}" for
 # every other case (the fixed vs rolling suite's convention: cases[end] is the subject, see PostAnalysisSEW). For
@@ -27,79 +49,205 @@ const BALANCING_SEGMENT = "Balancing"
 
 const NET = "Net traded (MWh)"
 const GROSS = "Gross traded (MWh)"
-const INCREASES = "Increases (MWh)"
-const DECREASES = "Decreases (MWh)"
-const METRICS = [NET, GROSS, INCREASES, DECREASES]
+const UP = "Up balancing (MWh)"
+const DOWN = "Down balancing (MWh)"
+const UP_SHARE = "Share of up-balancing need met (%)"
+const DOWN_SHARE = "Share of down-balancing need met (%)"
+const METRICS = [NET, GROSS, UP, DOWN]                # per-agent volumes (the cluster comparison modules iterate these)
+const SHARE_METRICS = [UP_SHARE, DOWN_SHARE]          # shares of the wind-caused need, from WindResponseMetrics
+const TABLE_METRICS = [METRICS; SHARE_METRICS]        # rows of the table, per agent
+
+const WIND_AGENT = "6G_Wind"
+const SPILL_AGENT = "Wind spillage (response)"        # pseudo-agent rows of the table, see "Cause and response"
+const CAUSE_AGENT = "Wind forecast change (cause)"
+const SPILL_AND_CAUSE = [SPILL_AGENT, CAUSE_AGENT]
 
 const SEGMENT_COLUMN = Symbol("Segment")
 const MTU_COLUMN = Symbol("Market Time Unit")
 const QUANTITY_COLUMN = Symbol("Quantity (MWh)")
 
-DisplayName(agent) = agent == "Storage" ? "Storage" : AgentRenaming.DisplayName(agent)
+DisplayName(agent) = agent == "Storage" || agent in SPILL_AND_CAUSE ? agent : AgentRenaming.DisplayName(agent)
 
 # near-zero float noise (e.g. a generator the lock pins, summed over thousands of transactions) reported as exactly 0.0
 snap(x) = PostAnalysisCommon.MarketDataStorage.snap0(x)
 
-# metric => value for one agent's balancing quantities
-function TradeQuantities(quantities)
+# demand agents ("1D_HighBid", "2D_ModerateBid"): a positive quantity is consumption, so for them up balancing is a
+# consumption reduction and down balancing a consumption increase
+IsDemandAgent(agent) = occursin(r"^[0-9]+D_", agent)
+
+# metric => value for one agent's balancing quantities (volumes only; the shares need every agent, see below)
+function TradeQuantities(quantities; demand=false)
+	supply_up = sum(q -> max(q, 0.0), quantities; init=0.0)
+	supply_down = sum(q -> min(q, 0.0), quantities; init=0.0)
 	return Dict(
 		NET => snap(sum(quantities; init=0.0)),
 		GROSS => snap(sum(abs, quantities; init=0.0)),
-		INCREASES => snap(sum(q -> max(q, 0.0), quantities; init=0.0)),
-		DECREASES => snap(sum(q -> min(q, 0.0), quantities; init=0.0)),
+		UP => snap(demand ? -supply_down : supply_up),
+		DOWN => snap(demand ? -supply_up : supply_down),
 	)
 end
 
-# agent => metric => value, from one case's transactions restricted to time_range and the balancing segment
-function BalancingTradeQuantities(transactions, time_range; agents=AGENTS)
+# Responses and shares of the wind-caused balancing need (see "Cause and response" in the header).
+#   net_by_agent  agent => (mtu => net balancing quantity of the agent in that MTU), including the wind agent
+#   delta_a       mtu => change in the wind's available quantity (now - previous clearing's forecast)
+# Returns agent => metrics (volumes plus UP_SHARE / DOWN_SHARE) for every agent but wind, and SPILL_AGENT and CAUSE_AGENT
+# entries; the wind agent's own metrics are left to the caller (it has no share).
+function WindResponseMetrics(net_by_agent, delta_a; wind=WIND_AGENT)
+	mtus = sort(collect(keys(delta_a)))
+	net(agent, t) = get(get(net_by_agent, agent, Dict{Int,Float64}()), t, 0.0)
+	# per-MTU responses: agents (a demand agent's consumption reduction is an up response) and the wind spillage
+	responses = Dict{String,Vector{Float64}}()
+	for agent in keys(net_by_agent)
+		agent == wind && continue # the cause, not a responder
+		sign =IsDemandAgent(agent) ? -1.0 : 1.0
+		responses[agent] = [sign * net(agent, t) for t in mtus]
+	end
+	responses[SPILL_AGENT] = [net(wind, t) - delta_a[t] for t in mtus] # W_t - dA_t = -(change in spillage)
+	dA = [delta_a[t] for t in mtus]
+	up_mtus, down_mtus = dA .< 0, dA .> 0
+	need_up, need_down = sum(-dA[up_mtus]; init=0.0), sum(dA[down_mtus]; init=0.0)
+
+	out = Dict{String,Dict{String,Union{Missing,Float64}}}()
+	for (agent, r) in responses
+		m = Dict{String,Union{Missing,Float64}}(k => v for (k, v) in TradeQuantities(r))
+		m[UP_SHARE] = need_up > 0 ? snap(100 * sum(r[up_mtus]; init=0.0) / need_up) : 0.0
+		m[DOWN_SHARE] = need_down > 0 ? snap(100 * -sum(r[down_mtus]; init=0.0) / need_down) : 0.0
+		out[agent] = m
+	end
+	# the spillage row's volumes are its per-MTU responses (it has no transactions of its own)
+	out[CAUSE_AGENT] = Dict{String,Union{Missing,Float64}}(NET => snap(sum(dA; init=0.0)), GROSS => snap(sum(abs, dA; init=0.0)),
+		UP => snap(need_up), DOWN => snap(-need_down), UP_SHARE => missing, DOWN_SHARE => missing)
+	return out
+end
+
+# mtu => change in the wind's available quantity vs the previous clearing's forecast of the same MTU, for the MTUs of
+# time_range: the available quantity in the MTU's own (balancing) clearing - final_dispatch_decisions.xlsx, column
+# Q_<wind> - minus the one in the RAW export of the clearing before it. MTUs without a previous clearing export are
+# skipped (and counted in the warning).
+function WindForecastChange(case_path, time_range; wind=WIND_AGENT)
+	dispatch = PostAnalysisCommon.LoadFile(joinpath(case_path, "final_dispatch_decisions.xlsx"))
+	column = "Q_$wind"
+	prefix = PostAnalysisCommon.DiscoverRawDispatchPrefix(case_path)
+	delta = Dict{Int,Float64}()
+	skipped = 0
+	for row in eachrow(dispatch)
+		t = row.mtu
+		time_range.start <= t <= time_range.stop || continue
+		previous = "$(prefix)$(t - 1).xlsx" # the prefix already includes the RAW/ directory
+		if !isfile(previous)
+			skipped += 1
+			continue
+		end
+		raw = PostAnalysisCommon.LoadFile(previous)
+		available_before = raw[raw.mtu .== t, column]
+		isempty(available_before) && (skipped += 1; continue)
+		delta[t] = snap(Float64(row[column]) - Float64(available_before[1]))
+	end
+	isempty(delta) && throw("no previous-clearing wind forecast found for any MTU in $time_range under $case_path/RAW")
+	skipped > 0 && println("warning: $case_path: no previous-clearing wind forecast for $skipped MTU(s) in $time_range - left out of the need shares")
+	return delta
+end
+
+# agent => metric => value, from one case's transactions restricted to time_range and the balancing segment.
+# wind_forecast_change (mtu => dA, see WindForecastChange) adds the need shares and the spillage / cause rows; without
+# it the share rows are missing.
+function BalancingTradeQuantities(transactions, time_range; agents=AGENTS, wind_forecast_change=nothing)
 	hasproperty(transactions, SEGMENT_COLUMN) || throw("transactions have no \"$SEGMENT_COLUMN\" column - this run predates the balancing/energy split; rerun it")
 	in_range = time_range.start .<= transactions[!, MTU_COLUMN] .<= time_range.stop
 	balancing = transactions[in_range .& (transactions[!, SEGMENT_COLUMN] .== BALANCING_SEGMENT), :]
-	return Dict(agent => TradeQuantities(Float64.(balancing[balancing.Agent .== agent, QUANTITY_COLUMN])) for agent in agents)
+	by_agent = Dict{String,Dict{String,Union{Missing,Float64}}}()
+	for agent in agents
+		m = Dict{String,Union{Missing,Float64}}(k => v for (k, v) in TradeQuantities(Float64.(balancing[balancing.Agent .== agent, QUANTITY_COLUMN]); demand=IsDemandAgent(agent)))
+		m[UP_SHARE] = missing
+		m[DOWN_SHARE] = missing
+		by_agent[agent] = m
+	end
+	wind_forecast_change === nothing && return by_agent
+
+	net_by_agent = Dict{String,Dict{Int,Float64}}()
+	for agent in unique([agents; WIND_AGENT])
+		rows = balancing[balancing.Agent .== agent, :]
+		net_by_agent[agent] = Dict(t => sum(rows[rows[!, MTU_COLUMN] .== t, QUANTITY_COLUMN]) for t in unique(rows[!, MTU_COLUMN]))
+	end
+	for (agent, m) in WindResponseMetrics(net_by_agent, wind_forecast_change)
+		if agent in SPILL_AND_CAUSE
+			by_agent[agent] = m
+		elseif agent in agents # keeps its per-transaction volumes; only the shares come from the cause-and-response accounting
+			by_agent[agent][UP_SHARE] = m[UP_SHARE]
+			by_agent[agent][DOWN_SHARE] = m[DOWN_SHARE]
+		end
+	end
+	return by_agent
 end
 
-# rows: agent x metric; columns: Agent, Metric, one per case, then "{case} vs {previous case} (MWh)" (the difference)
+# rows: agent x metric (TABLE_METRICS; the differences of the two share rows are in percentage points); columns: Agent, Metric, one per case, then "{case} vs {previous case} (MWh)" (the difference)
 function BuildTable(quantities_by_case, cases; agents=AGENTS, compare_to_subject=false)
 	# (compared, base) index pairs of the MWh difference columns
 	comparisons = compare_to_subject ? [(length(cases), i) for i in 1:length(cases)-1] : [(i, i-1) for i in 2:length(cases)]
 	pairs = Any["Agent" => String[], "Metric" => String[]]
-	append!(pairs, [case => Float64[] for case in cases])
-	append!(pairs, ["$(cases[c]) vs $(cases[b]) (MWh)" => Float64[] for (c, b) in comparisons])
+	append!(pairs, [case => Union{Missing,Float64}[] for case in cases])
+	append!(pairs, ["$(cases[c]) vs $(cases[b]) (MWh)" => Union{Missing,Float64}[] for (c, b) in comparisons])
 	df = DataFrame(pairs...)
-	for agent in agents, metric in METRICS
+	for agent in agents, metric in TABLE_METRICS
 		values = [quantities_by_case[case][agent][metric] for case in cases]
 		row = Any[DisplayName(agent), metric]
 		append!(row, values)
-		append!(row, [snap(values[c] - values[b]) for (c, b) in comparisons])
+		append!(row, [ismissing(values[c]) || ismissing(values[b]) ? missing : snap(values[c] - values[b]) for (c, b) in comparisons])
 		push!(df, row)
 	end
 	return df
 end
 
-# The LaTeX table is a reduced view of the full table (which the xlsx keeps): Net traded only, labelled "Net energy
-# traded (MWh)", plus Energy increases / decreases for storage; Base, Shoulder and Solar are left out since the lock
-# keeps them from trading in the balancing segment.
+# The LaTeX table is a reduced view of the full table (which the xlsx keeps): for every agent the net energy traded, the
+# up and down balancing and the agent's share of each direction (the gross volume row is left out); Base, Shoulder and
+# Solar are left out since the lock keeps them from trading in the balancing segment; the wind spillage (response) and
+# wind forecast change (cause) rows are kept, with "--" where a share doesn't apply. Values are formatted here
+# (volumes as integers with thousands separators, shares and share differences with one decimal) because the shares
+# need decimals that the table-wide integer format would drop.
 const TEX_EXCLUDED_AGENTS = ["3G_Base", "4G_Shoulder", "7G_Solar"]
-const TEX_METRIC_LABELS = Dict(NET => "Net energy traded (MWh)", INCREASES => "Energy increases (MWh)", DECREASES => "Energy decreases (MWh)")
-const TEX_STORAGE_ONLY_METRICS = [INCREASES, DECREASES]
+const TEX_METRICS = [NET, UP, DOWN, UP_SHARE, DOWN_SHARE]
+const TEX_METRIC_LABELS = Dict(NET => "Net energy traded (MWh)", UP => "Up balancing (MWh)", DOWN => "Down balancing (MWh)",
+	UP_SHARE => "Share of up-balancing need met (%)", DOWN_SHARE => "Share of down-balancing need met (%)")
+
+# 1234567.8 -> "1,234,568"
+function FormatThousands(x)
+	r = round(Int, x)
+	return (r < 0 ? "-" : "") * replace(string(abs(r)), r"(?<=\d)(?=(\d{3})+$)" => ",")
+end
+FormatShare(x) = ismissing(x) ? "--" : string(round(x; digits=1) == 0 ? 0.0 : round(x; digits=1))
 
 function TexTable(df)
 	excluded = DisplayName.(TEX_EXCLUDED_AGENTS)
-	storage = DisplayName("Storage")
-	keep = [!(row.Agent in excluded) && (row.Metric == NET || (row.Agent == storage && row.Metric in TEX_STORAGE_ONLY_METRICS)) for row in eachrow(df)]
-	out = df[keep, :]
+	out = df[[!(row.Agent in excluded) && row.Metric in TEX_METRICS for row in eachrow(df)], :]
+	value_columns = names(out)[3:end]
+	for col in value_columns
+		out[!, col] = [m in SHARE_METRICS ? FormatShare(v) : (ismissing(v) ? "--" : FormatThousands(v)) for (m, v) in zip(out.Metric, out[!, col])]
+	end
 	out[!, :Metric] = [TEX_METRIC_LABELS[m] for m in out.Metric]
 	return out
 end
 
 function InterpretationTable()
 	return DataFrame(
-		Metric=METRICS,
+		Metric=TABLE_METRICS,
 		Interpretation=[
-			"Sum of the signed Segment == Balancing transaction quantities of the agent: its net change from balancing.",
+			"Sum of the signed Segment == Balancing transaction quantities of the agent: its net change from balancing (a demand agent's is its consumption change).",
 			"Sum of the absolute quantities: how much the agent moved in the balancing segment.",
-			"Sum of the positive quantities.",
-			"Sum of the negative quantities (a negative number).",
+			"Energy the agent added to the system: supply increases (generator positive quantities, storage discharge) or demand consumption reductions.",
+			"Energy the agent took out of the system, a negative number: supply decreases (generator negative quantities, storage charging) or demand consumption increases.",
+			"The agent's response summed over the MTUs where wind fell, as % of the total fall in the wind's available quantity there (the up-balancing need). The responders - every agent but wind, plus the wind spillage - sum to 100; negative = the agent moved against the need. Wind has no share. Empty when the previous clearings' forecasts are not available. Difference columns are in percentage points.",
+			"The agent's response (sign flipped, so a down response is positive) summed over the MTUs where wind rose, as % of the total rise (the down-balancing need). Same convention. Difference columns are in percentage points.",
+		],
+	)
+end
+
+# Interpretation of the two pseudo-agent rows (see "Cause and response" in the header)
+function CauseAndResponseNotes()
+	return DataFrame(
+		Row=SPILL_AND_CAUSE,
+		Interpretation=[
+			"Per balancing MTU, the wind agent's own balancing trade minus the change in its available quantity, i.e. minus the change in spillage (extra spillage is a down response). Volumes are summed over the MTUs; shares as for every responder.",
+			"The change in the wind's available quantity vs the previous clearing's forecast of the same MTU. Net = sum of the changes (negative: less wind than planned), up = total fall (the up-balancing need), down = total rise as a negative number (the down-balancing need), gross = sum of the absolute changes. No shares.",
 		],
 	)
 end
@@ -113,11 +261,25 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 	analysis_dir_path = "$output_base/balancing_trade_quantities"
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 
-	quantities_by_case = Dict(case => BalancingTradeQuantities(PostAnalysisCommon.LoadCaseFile(case_paths, case, "transactions.xlsx"), time_range) for case in cases)
-	df = BuildTable(quantities_by_case, cases; compare_to_subject=compare_to_subject)
+	# the wind forecast change (the cause) from each run's previous-clearing forecasts; a run without the RAW exports
+	# gets empty share rows instead of failing
+	wind_change = Dict{String,Union{Nothing,Dict{Int,Float64}}}()
+	for case in cases
+		wind_change[case] = try
+			WindForecastChange(case_paths[case], time_range)
+		catch err
+			println("warning: $case: wind forecast change unavailable ($err) - the need-share rows stay empty")
+			nothing
+		end
+	end
+	quantities_by_case = Dict(case => BalancingTradeQuantities(PostAnalysisCommon.LoadCaseFile(case_paths, case, "transactions.xlsx"), time_range; wind_forecast_change=wind_change[case]) for case in cases)
+	have_cause = all(c -> wind_change[c] !== nothing, cases)
+	df = BuildTable(quantities_by_case, cases; agents=have_cause ? [AGENTS; SPILL_AND_CAUSE] : AGENTS, compare_to_subject=compare_to_subject)
 	println(df)
 
-	XLSX.writetable("$analysis_dir_path/balancing_trade_quantities.xlsx", "data" => df, "interpretation" => InterpretationTable(); overwrite=true)
+	sheets = Pair{String,DataFrame}["data" => df, "interpretation" => InterpretationTable()]
+	have_cause && push!(sheets, "cause and response" => CauseAndResponseNotes())
+	XLSX.writetable("$analysis_dir_path/balancing_trade_quantities.xlsx", sheets...; overwrite=true)
 	write("$analysis_dir_path/balancing_trade_quantities.tex",
 		latexify(PostAnalysisCommon.EscapeForLatex(TexTable(df)); env=:table, booktabs=true, snakecase=true, latex=false, fmt="%'\''d\n"))
 	return df
