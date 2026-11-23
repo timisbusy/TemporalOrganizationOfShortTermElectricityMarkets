@@ -55,7 +55,18 @@ const THREE_WAY_CASE_PATHS = Dict{String,String}(
 	"Rolling Horizon" => "results/1789748169_rolling_36_no_cap_1d_spinup",
 	"Auction Only" => "results/1790178290_auction_only_no_cap_1d_spinup",
 )
-const THREE_WAY_CASES = ["Fixed Horizon", "Rolling Horizon", "Auction Only"]
+# Excel results Run copies into results/post_analysis/{timestamp}_{label}/high_level_results/ - paths relative
+# to the run's output directory. Add the files you want collected here (or pass high_level_files to Run).
+const HIGH_LEVEL_EXCEL_FILES = [
+	"post_analysis_SEW/sew_details.xlsx",
+	"balancing_trade_quantities/balancing_trade_quantities.xlsx",          # imbalance (balancing-segment) metrics
+	"post_analysis_storage/storage_details.xlsx",                          # storage metrics
+	"post_analysis_quantities_by_agent/agent_quantities_details.xlsx",     # by-agent tables (3)
+	"post_analysis_quantities_by_agent/agent_surplus_details.xlsx",
+	"post_analysis_quantities_by_agent/agent_gross_traded_volume_details.xlsx",
+]
+
+const THREE_WAY_CASES =["Fixed Horizon", "Rolling Horizon", "Auction Only"]
 
 # Moves "Rolling Horizon" to the end of `cases` regardless of where Run's own `cases` list puts it
 # (e.g. THREE_WAY_CASES has it in the middle), so it lands there as the "subject" for every module
@@ -98,9 +109,13 @@ const FullYear2025Window = (
 #   clearing_mtus - clearings PostAnalysisAuctionSnapshots plots
 #   monthly_start_date - the experiment's startDate; when given, also runs PostAnalysisMonthly
 #     (month-by-month roll-up) - left as nothing for the 31-day runs, which span a single month
+#   high_level_files - result files (paths relative to the run's output directory, e.g.
+#     "post_analysis_SEW/sew_details.xlsx") copied into output_base/high_level_results/ once all analyses
+#     have run; defaults to HIGH_LEVEL_EXCEL_FILES, pass [] to skip
 function Run(case_paths=PostAnalysisCommon.DEFAULT_CASE_PATHS; cases=PostAnalysisCommon.CASES, label=PostAnalysisCommon.DefaultAnalysisLabel(case_paths, cases),
 	time_range=nothing, day_range=nothing, storage_day_range=nothing, highlight_days=[("May 4", 3), ("May 5", 4)],
-	illustrative_day=nothing, clearing_mtus=PostAnalysisAuctionSnapshots.DEFAULT_CLEARING_MTUS, monthly_start_date=nothing)
+	illustrative_day=nothing, clearing_mtus=PostAnalysisAuctionSnapshots.DEFAULT_CLEARING_MTUS, monthly_start_date=nothing,
+	high_level_files=HIGH_LEVEL_EXCEL_FILES)
 	output_base = PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=label)
 	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
 	day_range = day_range === nothing ? PostAnalysisCommon.DayRange(time_range) : day_range
@@ -127,6 +142,8 @@ function Run(case_paths=PostAnalysisCommon.DEFAULT_CASE_PATHS; cases=PostAnalysi
 	if monthly_start_date !== nothing
 		PostAnalysisMonthly.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base, time_range=time_range, start_date=monthly_start_date)
 	end
+
+	PostAnalysisCommon.CopyHighLevelResults(output_base, high_level_files)
 
 	return output_base
 end

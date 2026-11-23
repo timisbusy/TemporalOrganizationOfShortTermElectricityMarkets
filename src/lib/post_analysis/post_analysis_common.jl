@@ -186,6 +186,29 @@ function CleanDirectory(path)
 	mkpath(path)
 end
 
+# Copies the listed result files into one flat "high-level results" folder, output_base/folder. Each entry is a
+# path relative to output_base (e.g. "post_analysis_SEW/sew_details.xlsx"); the copy is named after its
+# analysis directory and file ("post_analysis_SEW__sew_details.xlsx") so same-named files from different
+# analyses don't collide. An entry whose file doesn't exist (analysis not run in this suite, or renamed) is
+# skipped with a warning. Returns the copied paths.
+function CopyHighLevelResults(output_base, files; folder="high_level_results")
+	isempty(files) && return String[]
+	dest = "$output_base/$folder"
+	mkpath(dest)
+	copied = String[]
+	for rel in files
+		src = joinpath(output_base, rel)
+		if !isfile(src)
+			@warn "high-level results: $rel not found under $output_base - skipped"
+			continue
+		end
+		target = joinpath(dest, replace(rel, r"[/\\]+" => "__"))
+		cp(src, target; force=true)
+		push!(copied, target)
+	end
+	return copied
+end
+
 # case name -> trailing directory name, own leading "{unix_timestamp}_" stripped (it's already
 # redundant with NewAnalysisOutputDir's own timestamp prefix, and every extra character here
 # tightens the margin against Windows' 260-char MAX_PATH once a deeply-nested output file name is
