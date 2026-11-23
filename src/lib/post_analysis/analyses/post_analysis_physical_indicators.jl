@@ -27,6 +27,7 @@ INTERVAL_INDICATORS = [
 # previous hardcoded "Rolling Horizon" - "Fixed Horizon" behavior), only the file names gained a
 # suffix they didn't need before.
 function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=nothing, imbalance_agents=PostAnalysisCommon.DEFAULT_IMBALANCE_AGENTS)
+	PostAnalysisCommon.SetPlotMark!(case_paths, cases)
 	println("starting analysis: physical indicators")
 	# nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
 	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
@@ -81,7 +82,7 @@ function PlotByDay(daily_values, label, value_symbol, file_label, analysis_dir_p
 		Plots.plot!(p, daily_values[case].Day, daily_values[case][!, value_symbol], label=case)
 	end
 	display(p)
-	savefig(p, "$analysis_dir_path/by_day_$(file_label).png")
+	PostAnalysisCommon.SaveFigure(p, "$analysis_dir_path/by_day_$(file_label).png")
 end
 
 function PlotDiffByDay(daily_values, label, value_symbol, file_label, analysis_dir_path, subject, base; sorted=false)
@@ -98,7 +99,7 @@ function PlotDiffByDay(daily_values, label, value_symbol, file_label, analysis_d
 					ylims=PostAnalysisDaily.padded_limits(vcat(0.0, diffs))) # bars start at 0, so 0 is in range; the padding keeps the extreme bars off the frame
 	Plots.plot!(p, x, diffs, label="Difference in $label", t=:bar)
 	display(p)
-	savefig(p, "$analysis_dir_path/diff_by_day_$(sorted ? "sorted_" : "")$(file_label).png")
+	PostAnalysisCommon.SaveFigure(p, "$analysis_dir_path/diff_by_day_$(sorted ? "sorted_" : "")$(file_label).png")
 end
 
 end;

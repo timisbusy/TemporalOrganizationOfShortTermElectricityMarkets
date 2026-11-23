@@ -35,6 +35,7 @@ const TEXT_PRIMARY = "#0b0b0b"
 const TEXT_MUTED = "#898781"
 
 function PerformAnalysis(case_paths=PostAnalysisCommon.DEFAULT_CASE_PATHS; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=PostAnalysisCommon.DefaultAnalysisLabel(case_paths, cases)), time_range=nothing, segment::Symbol=:energy)
+	PostAnalysisCommon.SetPlotMark!(case_paths, cases)
 	segment in (:all, :energy, :balancing) || throw("segment must be :all, :energy or :balancing, got :$segment")
 	length(cases) <= length(LINE_COLORS) || throw("at most $(length(LINE_COLORS)) cases can be drawn, got $(length(cases))")
 	println("starting analysis: volume-weighted price ($segment)")
@@ -92,7 +93,7 @@ function PlotWeightedPrice(prices, cases, time_range, analysis_dir_path, segment
 		Plots.plot!(p, df.mtu, [ismissing(x) ? NaN : x for x in df.price], label=case, color=LINE_COLORS[i], linewidth=2)
 	end
 	display(p)
-	savefig(p, "$analysis_dir_path/weighted_price.png")
+	PostAnalysisCommon.SaveFigure(p, "$analysis_dir_path/weighted_price.png")
 end
 
 function WritePriceTable(prices, cases, time_range, analysis_dir_path)

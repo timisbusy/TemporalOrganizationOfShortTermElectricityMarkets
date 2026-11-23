@@ -17,6 +17,7 @@ include("./analyses/post_analysis_physical_indicators.jl")
 include("./analyses/post_analysis_auction_snapshots.jl")
 include("./analyses/post_analysis_weighted_price.jl")
 include("./analyses/post_analysis_energy_generation_stack.jl")
+include("./analyses/post_analysis_residual_demand_soc.jl")
 
 # Fixed 36h/Rolling 36h high-storage counterpart of PostAnalysisCommon.DEFAULT_CASE_PATHS - same
 # no_cap_1d_spinup runs, re-run with the high-storage agent config. Lets Run's `case_paths` be
@@ -140,6 +141,7 @@ function Run(case_paths=PostAnalysisCommon.DEFAULT_CASE_PATHS; cases=PostAnalysi
 	PostAnalysisPhysicalIndicators.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base, time_range=time_range)
 	PostAnalysisWeightedPrice.PerformAnalysis(case_paths; cases=cases, output_base=output_base, time_range=time_range) # energy-segment volume-weighted price per MTU
 	PostAnalysisEnergyGenerationStack.PerformAnalysis(case_paths; cases=cases, output_base=output_base) 
+	PostAnalysisResidualDemandSOC.PerformAnalysis(case_paths; cases=cases, output_base=output_base, time_range=time_range) 
 	PostAnalysisAuctionSnapshots.PerformAnalysis(case_paths; cases=cases, output_base=output_base, clearing_mtus=clearing_mtus)
 	if monthly_start_date !== nothing
 		PostAnalysisMonthly.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base, time_range=time_range, start_date=monthly_start_date)

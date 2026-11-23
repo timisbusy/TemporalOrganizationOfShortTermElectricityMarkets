@@ -32,6 +32,7 @@ CaseShortname(case) = get(case_shortname, case, PostAnalysisCommon.CaseSlug(case
 # Left as nothing, day 28 is used when every case's RAW export actually reaches that far,
 # otherwise falling back to 26 (which fits the capped pair too); pass an explicit day to override.
 function PerformAnalysis(case_paths, raw_dispatch_prefix=nothing; cases=PostAnalysisCommon.CASES, illustrative_day=nothing, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths))
+	PostAnalysisCommon.SetPlotMark!(case_paths, cases)
 	println("starting analysis: prices")
     raw_dispatch_prefix = raw_dispatch_prefix === nothing ? PostAnalysisCommon.DiscoverRawDispatchPrefixes(case_paths) : raw_dispatch_prefix
 
@@ -114,7 +115,7 @@ function plotPrices(dvs, case, interval, highlight_interval, analysis_dir_path)
     xlims!(pPrices, interval.start - 0.5, interval.stop + 5 + 0.5)
 
     display(pPrices)
-    savefig(pPrices, "$analysis_dir_path/prices_$(CaseShortname(case))_day$(highlight_interval.start ÷ 24).png")
+    PostAnalysisCommon.SaveFigure(pPrices, "$analysis_dir_path/prices_$(CaseShortname(case))_day$(highlight_interval.start ÷ 24).png")
 
 end
 
@@ -141,7 +142,7 @@ function plotTrades(dvs, case, interval, highlight_interval, agent, analysis_dir
         Plots.plot!(pTrades, adj_quantity_df.mtu, adj_quantity_df[!, adj_col], label="MTU $mtu")
     end
     display(pTrades)
-    savefig(pTrades, "$analysis_dir_path/trades_$(CaseShortname(case))_$(agent).png")
+    PostAnalysisCommon.SaveFigure(pTrades, "$analysis_dir_path/trades_$(CaseShortname(case))_$(agent).png")
 
     y_tick_labels = vcat(["p_prev"], selected_auctions)
     p_gen = plot(
@@ -202,7 +203,7 @@ function plotTrades(dvs, case, interval, highlight_interval, agent, analysis_dir
         xlims!(p_gen, interval.start - 0.5, interval.stop + 5 + 0.5)
 
         display(p_gen)
-        savefig(p_gen, "$analysis_dir_path/trade_blocks_$(CaseShortname(case))_$(agent).png")
+        PostAnalysisCommon.SaveFigure(p_gen, "$analysis_dir_path/trade_blocks_$(CaseShortname(case))_$(agent).png")
 
 
 end

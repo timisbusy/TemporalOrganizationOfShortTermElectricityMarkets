@@ -31,6 +31,7 @@ const TEXT_MUTED = "#898781"
 AgentNumber(name) = parse(Int, match(r"^[0-9]+", name).match)
 
 function PerformAnalysis(case_paths=PostAnalysisCommon.DEFAULT_CASE_PATHS; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=PostAnalysisCommon.DefaultAnalysisLabel(case_paths, cases)), time_range=nothing)
+	PostAnalysisCommon.SetPlotMark!(case_paths, cases)
 	println("starting analysis: energy-segment generation stack")
 	analysis_dir_path = "$output_base/generation_stack_energy"
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
@@ -77,7 +78,7 @@ function PlotStack(dispatch, case, path)
 	end
 	Plots.plot!(p, mtus, demand_line, label="Demand + charging", color=TEXT_PRIMARY, linewidth=2, linestyle=:dash)
 	display(p)
-	savefig(p, path)
+	PostAnalysisCommon.SaveFigure(p, path)
 end
 
 end;

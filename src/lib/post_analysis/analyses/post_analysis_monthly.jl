@@ -71,6 +71,7 @@ end
 # case_paths/cases/output_base as in the other post-analysis modules - cases[end] is the "subject"
 # design (e.g. Rolling Horizon) compared against each preceding case, matching PostAnalysisSEW/Daily.
 function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=nothing, start_date=Date(2024, 12, 29), mtus_per_day=24)
+	PostAnalysisCommon.SetPlotMark!(case_paths, cases)
 	println("starting analysis: monthly")
 	# nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
 	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
@@ -122,7 +123,7 @@ function PlotMonthlyDifference(cmp, subject, base, analysis_dir_path)
 		title="Monthly SEW difference: $subject - $base", xrotation=45, bottom_margin=8Plots.mm, left_margin=8Plots.mm)
 	hline!(p, [0.0]; color=:grey, linestyle=:dash, label=false)
 	display(p)
-	savefig(p, "$analysis_dir_path/monthly_sew_diff_$(PostAnalysisCommon.CaseSlug(base)).png")
+	PostAnalysisCommon.SaveFigure(p, "$analysis_dir_path/monthly_sew_diff_$(PostAnalysisCommon.CaseSlug(base)).png")
 end
 
 function PlotMonthlyPrices(monthly_by_case, cases, analysis_dir_path)
@@ -132,7 +133,7 @@ function PlotMonthlyPrices(monthly_by_case, cases, analysis_dir_path)
 		plot!(p, df.Month, df[!, Symbol("Mean Final Price (€/MWh)")]; label=case, marker=:circle)
 	end
 	display(p)
-	savefig(p, "$analysis_dir_path/monthly_mean_price.png")
+	PostAnalysisCommon.SaveFigure(p, "$analysis_dir_path/monthly_mean_price.png")
 end
 
 function PlotMonthlyStorage(monthly_by_case, cases, analysis_dir_path)
@@ -142,7 +143,7 @@ function PlotMonthlyStorage(monthly_by_case, cases, analysis_dir_path)
 		plot!(p, df.Month, df[!, Symbol("Storage Throughput (MWh)")]; label=case, marker=:circle)
 	end
 	display(p)
-	savefig(p, "$analysis_dir_path/monthly_storage_throughput.png")
+	PostAnalysisCommon.SaveFigure(p, "$analysis_dir_path/monthly_storage_throughput.png")
 end
 
 end;

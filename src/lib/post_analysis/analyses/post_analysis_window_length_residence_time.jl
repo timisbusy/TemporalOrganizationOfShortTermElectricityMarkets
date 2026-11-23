@@ -180,6 +180,7 @@ function WeightedQuantile(values::AbstractVector{<:Real}, weights::AbstractVecto
 end
 
 function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=PostAnalysisConventionalGenerationCost.DefaultLabel(case_paths, cases)), time_range=nothing)
+	PostAnalysisCommon.SetPlotMark!(case_paths, cases)
 	println("starting analysis: window length residence time")
 	# nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
 	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
@@ -281,7 +282,7 @@ function PlotResidenceTimeCDF(residence_by_case, weights_by_case, cases, analysi
 	end
 
 	display(p)
-	savefig(p, "$analysis_dir_path/residence_time_cdf.png")
+	PostAnalysisCommon.SaveFigure(p, "$analysis_dir_path/residence_time_cdf.png")
 end
 
 # Mirrors Laura's plot_group_histograms: one subplot per case, stacked vertically, 3h-wide bins
@@ -327,7 +328,7 @@ function PlotResidenceTimeHistograms(residence_by_case, weights_by_case, cases, 
 	combined = Plots.plot(subplots..., layout=(length(subplots), 1), size=(1000, 235 * length(subplots)),
 						left_margin=6Plots.mm, right_margin=4Plots.mm, top_margin=2Plots.mm, bottom_margin=4Plots.mm)
 	display(combined)
-	savefig(combined, "$analysis_dir_path/residence_time_histogram.png")
+	PostAnalysisCommon.SaveFigure(combined, "$analysis_dir_path/residence_time_histogram.png")
 end
 
 end;

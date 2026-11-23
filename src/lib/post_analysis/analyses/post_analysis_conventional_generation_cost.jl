@@ -42,6 +42,7 @@ const DEFAULT_CASES = ["36h", "48h", "72h"]
 DefaultLabel(case_paths, cases) = join([c for c in cases if haskey(case_paths, c)], "_vs_")
 
 function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=DefaultLabel(case_paths, cases)), time_range=nothing)
+	PostAnalysisCommon.SetPlotMark!(case_paths, cases)
 	println("starting analysis: conventional generation cost")
 	# nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
 	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
@@ -90,7 +91,7 @@ function PlotHourlyCost(hourly_avg_cost, cases, analysis_dir_path)
 		Plots.plot!(p, 0:23, hourly_avg_cost[case], label=case, marker=:circle, markersize=3, linewidth=2)
 	end
 	display(p)
-	savefig(p, "$analysis_dir_path/hourly_cost.png")
+	PostAnalysisCommon.SaveFigure(p, "$analysis_dir_path/hourly_cost.png")
 end
 
 function WriteHourlyCostTable(hourly_avg_cost, cases, analysis_dir_path)

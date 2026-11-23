@@ -9,6 +9,7 @@
 module PostAnalysisCommon
 
 using XLSX, DataFrames, YAML, Dates, Printf, Statistics, CSV
+import Plots
 
 include("../helpers.jl")
 using .Helpers.HelperModelResults
@@ -184,6 +185,74 @@ end
 
 function CleanDirectory(path)
 	mkpath(path)
+end
+
+# --- plot mark: every saved plot says which cluster and storage level it is based on -------------------------
+#
+# PlotMark(case_paths, cases) -> "Cluster 1 | regular storage (6000 MWh / 2000 MW)", derived from the runs' own
+# copied configs (Config/ folder): the cluster from the experiment name ("Cluster<N>_..."), the storage from the
+# agent config's batteryStorage capacities, and the level from the run's name ("high_storage" in its directory
+# or config names -> "high storage", otherwise "regular storage"). Cases that disagree list each distinct value
+# ("Cluster 1 | regular / high storage"); a part that can't be determined (e.g. a run from before the cluster
+# naming) is left out.
+#
+# Every analysis module calls SetPlotMark!(case_paths, cases) first thing in PerformAnalysis and saves its figures
+# with SaveFigure(p, path) instead of savefig, which stamps the mark as a small plot_title over the figure. The
+# mark lives in this module's own PLOT_MARK, so each analysis module (each includes its own copy of this file)
+# sets and uses its own.
+const PLOT_MARK = Ref("")
+
+function CaseCluster(case_path)
+	experiment = ExperimentConfig(case_path)
+	names = String[basename(case_path)]
+	experiment === nothing || pushfirst!(names, string(get(last(experiment), "name", "")))
+	for name in names
+		m = match(r"Cluster[_ ]?(\d+)"i, name)
+		m === nothing || return "Cluster $(m.captures[1])"
+	end
+	return nothing
+end
+
+function CaseStorage(case_path)
+	hints = [basename(case_path); isdir(joinpath(case_path, "Config")) ? readdir(joinpath(case_path, "Config")) : String[]]
+	level = any(h -> occursin("high_storage", h), hints) ? "high storage" : "regular storage"
+	capacity = ""
+	try
+		agent_cfg = LoadCaseConfigsByRole(case_path)[3]
+		battery = agent_cfg === nothing ? nothing : get(agent_cfg, "batteryStorage", nothing)
+		if battery !== nothing
+			capacity = " ($(round(Int, battery["energyCapacity"])) MWh / $(round(Int, battery["powerCapacity"])) MW)"
+		end
+	catch
+	end
+	return level * capacity
+end
+
+function PlotMark(case_paths, cases=sort(collect(keys(case_paths))))
+	clusters = unique(filter(!isnothing, [CaseCluster(case_paths[c]) for c in cases if haskey(case_paths, c)]))
+	storages = unique([CaseStorage(case_paths[c]) for c in cases if haskey(case_paths, c)])
+	parts = String[]
+	isempty(clusters) || push!(parts, join(clusters, " / "))
+	isempty(storages) || push!(parts, join(storages, " / "))
+	return join(parts, " | ")
+end
+
+function SetPlotMark!(case_paths, cases=sort(collect(keys(case_paths))))
+	PLOT_MARK[] = try
+		PlotMark(case_paths, cases)
+	catch err
+		println("warning: could not derive the plot mark ($err)")
+		""
+	end
+	return PLOT_MARK[]
+end
+
+# savefig plus the plot mark (nothing is stamped when no mark was set or it is empty)
+function SaveFigure(p, path)
+	if !isempty(PLOT_MARK[])
+		Plots.plot!(p; plot_title=PLOT_MARK[], plot_titlefontsize=9, plot_titlefontcolor="#52514e")
+	end
+	Plots.savefig(p, path)
 end
 
 # Copies the listed result files into one flat "high-level results" folder, output_base/folder. Each entry is a

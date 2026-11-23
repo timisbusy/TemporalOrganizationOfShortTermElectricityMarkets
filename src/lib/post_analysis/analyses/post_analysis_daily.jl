@@ -19,6 +19,7 @@ quantitySymbol = Symbol("Quantity (MWh)")
 # and maps to calendar date startDate + d days - with startDate: 2025-05-01 (day 0 = May 1), May 4
 # is day index 3 and May 5 is day index 4 (the default). Highlighted days that do not lie wholly inside time_range are skipped with a warning.
 function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=nothing, highlight_days=[("May 4", 3), ("May 5", 4)])
+	PostAnalysisCommon.SetPlotMark!(case_paths, cases)
 	println("starting analysis: daily")
     # nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
     time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
@@ -102,7 +103,7 @@ function plotPhysicalIndicator(dds, test_range, indicator, print_cases, print_da
         Plots.plot!(pIndicator, xPlotIndicator, indicatorSeries, label=marketConfiguration)
     end
     display(pIndicator)
-    savefig(pIndicator, "$analysis_dir_path/dispatch_compare_$(print_date)_$(indicator).png")
+    PostAnalysisCommon.SaveFigure(pIndicator, "$analysis_dir_path/dispatch_compare_$(print_date)_$(indicator).png")
 end
 
 
@@ -330,7 +331,7 @@ function PlotDriver(spec, x, y)
     annotate!(p, x_text, y_text, text("r = $(round(corr_xy; digits = 3))", 10, :black, :left))
     pFig = plot(p)
     display(pFig)
-    savefig(pFig, spec.filepath)
+    PostAnalysisCommon.SaveFigure(pFig, spec.filepath)
 end
 
 function AddDayAndHour!(df, mtu_symbol)
@@ -365,7 +366,7 @@ function plotSEWDifference(mtu_economic_indicators, interval, print_cases, print
                                 title="$subject - $base SEW on $print_date")
 
         display(pSEWDiff)
-        savefig(pSEWDiff, "$analysis_dir_path/SEW_$(suffix)_diff_$(print_date).png")
+        PostAnalysisCommon.SaveFigure(pSEWDiff, "$analysis_dir_path/SEW_$(suffix)_diff_$(print_date).png")
     end
 end
 

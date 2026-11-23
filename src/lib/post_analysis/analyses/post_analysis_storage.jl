@@ -8,6 +8,7 @@ include("../post_analysis_common.jl")
 # both ends inclusive - nothing (the default) covers the days of the window the runs' own configs
 # define (see PostAnalysisCommon.ResolveTimeRange/DayRange); pass e.g. 3:367 for the full-year 2025 runs
 function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), day_range=nothing, compare_to_subject=true)
+	PostAnalysisCommon.SetPlotMark!(case_paths, cases)
 	day_range === nothing && (day_range = PostAnalysisCommon.DayRange(PostAnalysisCommon.ResolveTimeRange(nothing, case_paths, cases; output_base=output_base)))
 
 	analysis_dir_path = "$output_base/post_analysis_storage"
@@ -103,8 +104,8 @@ function NetDischargePerHour(dds, cases, analysis_dir_path)
     display(pNetDischarge)
     display(pNetDischargeStdDev)
 
-	savefig(pNetDischarge, "$analysis_dir_path/net_discharge.png")
-	savefig(pNetDischargeStdDev, "$analysis_dir_path/net_discharge_st_dev.png")
+	PostAnalysisCommon.SaveFigure(pNetDischarge, "$analysis_dir_path/net_discharge.png")
+	PostAnalysisCommon.SaveFigure(pNetDischargeStdDev, "$analysis_dir_path/net_discharge_st_dev.png")
 end
 
 function LoadFile(filepath)

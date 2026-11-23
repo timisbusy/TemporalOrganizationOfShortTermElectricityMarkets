@@ -25,6 +25,7 @@ include("./analyses/post_analysis_spillage.jl")
 include("./analyses/post_analysis_wind_forecast_error.jl")
 include("./analyses/post_analysis_weighted_price.jl")
 include("./analyses/post_analysis_energy_generation_stack.jl")
+include("./analyses/post_analysis_residual_demand_soc.jl")
 
 const DEFAULT_CASE_PATHS = PostAnalysisConventionalGenerationCost.DEFAULT_CASE_PATHS
 const DEFAULT_CASES = PostAnalysisConventionalGenerationCost.DEFAULT_CASES
@@ -46,6 +47,7 @@ function Run(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, label=PostAnaly
 	PostAnalysisWindForecastError.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
 	PostAnalysisWeightedPrice.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
 	PostAnalysisEnergyGenerationStack.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
+	PostAnalysisResidualDemandSOC.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
 
 	return output_base
 end

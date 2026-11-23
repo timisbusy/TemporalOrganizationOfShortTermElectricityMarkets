@@ -168,10 +168,11 @@ function SummaryPlot(summary_df, cases, analysis_dir_path)
 	Plots.bar!(p, x .- 0.15, summary_df.FinalPriceRevenue, bar_width=0.3, label="Final-price revenue")
 	Plots.bar!(p, x .+ 0.15, summary_df.StorageMerchandisingSurplus, bar_width=0.3, label="Storage merchandising surplus (demand payments - generator revenue)")
 	display(p)
-	savefig(p, "$analysis_dir_path/storage_revenue_reconciliation.png")
+	PostAnalysisCommon.SaveFigure(p, "$analysis_dir_path/storage_revenue_reconciliation.png")
 end
 
 function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; time_range=nothing, top_n_divergent=15, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label="storage_revenue_reconciliation"))
+	PostAnalysisCommon.SetPlotMark!(case_paths, [k for k in keys(case_paths)])
 	println("starting analysis: storage revenue reconciliation")
 	# nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
 	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths; output_base=output_base)

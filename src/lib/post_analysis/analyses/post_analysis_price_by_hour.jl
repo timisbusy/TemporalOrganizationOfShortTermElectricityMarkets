@@ -27,6 +27,7 @@ const DEFAULT_CASE_PATHS = PostAnalysisConventionalGenerationCost.DEFAULT_CASE_P
 const DEFAULT_CASES = PostAnalysisConventionalGenerationCost.DEFAULT_CASES
 
 function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=PostAnalysisConventionalGenerationCost.DefaultLabel(case_paths, cases)), time_range=nothing, segment::Symbol=:energy)
+	PostAnalysisCommon.SetPlotMark!(case_paths, cases)
 	segment in (:energy, :balancing) || throw("segment must be :energy or :balancing, got :$segment")
 	println("starting analysis: price by hour ($segment)")
 	# nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
@@ -70,7 +71,7 @@ function PlotHourlyPrice(hourly_avg_price, cases, analysis_dir_path, segment)
 		Plots.plot!(p, 0:23, hourly_avg_price[case], label=case, marker=:circle, markersize=3, linewidth=2)
 	end
 	display(p)
-	savefig(p, "$analysis_dir_path/hourly_price.png")
+	PostAnalysisCommon.SaveFigure(p, "$analysis_dir_path/hourly_price.png")
 end
 
 function WriteHourlyPriceTable(hourly_avg_price, cases, analysis_dir_path)

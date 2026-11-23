@@ -32,6 +32,7 @@ GEN_COLORS = [:steelblue, :lightgreen, :red, :lightyellow, :gold, :purple]
 DEFAULT_CLEARING_MTUS = [84, 85, 86, 660, 661, 662]
 
 function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), clearing_mtus=DEFAULT_CLEARING_MTUS)
+	PostAnalysisCommon.SetPlotMark!(case_paths, cases)
 	println("starting analysis: auction snapshots")
 
 	analysis_dir_path = "$output_base/auction_snapshots"
@@ -101,7 +102,7 @@ function PlotAuctionStack(dvs, case, clearing_mtu, analysis_dir_path)
 		label="Demand + Charging", color=:black, lw=3, ls=:dash)
 
 	display(p)
-	savefig(p, "$analysis_dir_path/auction_stack_$(PostAnalysisCommon.CaseSlug(case))_mtu$(clearing_mtu).png")
+	PostAnalysisCommon.SaveFigure(p, "$analysis_dir_path/auction_stack_$(PostAnalysisCommon.CaseSlug(case))_mtu$(clearing_mtu).png")
 end
 
 end;

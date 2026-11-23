@@ -25,6 +25,7 @@ end
 # both ends inclusive - nothing (the default) covers the days of the window the runs' own configs
 # define (see PostAnalysisCommon.ResolveTimeRange/DayRange); pass e.g. 3:367 for the full-year 2025 runs
 function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), day_range=nothing)
+	PostAnalysisCommon.SetPlotMark!(case_paths, cases)
 	day_range === nothing && (day_range = PostAnalysisCommon.DayRange(PostAnalysisCommon.ResolveTimeRange(nothing, case_paths, cases; output_base=output_base)))
 
 	analysis_dir_path = "$output_base/lead_time_analysis"
@@ -168,8 +169,8 @@ function AgentSellPriceByLeadTime(transactions_by_case,agent, analysis_dir_path,
 
     display(agentSalesLeadTime)
     display(agentSellPrice)
-	savefig(agentSalesLeadTime, "$analysis_dir_path/$(agent)_sales_lead_time.png")
-	savefig(agentSellPrice, "$analysis_dir_path/$(agent)_sell_price.png")
+	PostAnalysisCommon.SaveFigure(agentSalesLeadTime, "$analysis_dir_path/$(agent)_sales_lead_time.png")
+	PostAnalysisCommon.SaveFigure(agentSellPrice, "$analysis_dir_path/$(agent)_sell_price.png")
 
 end
 
@@ -225,7 +226,7 @@ function SellAndBuybackPrices(transactions_by_case, analysis_dir_path, cases)
         end
     end
     display(p)
-	savefig(p, "$analysis_dir_path/sell_and_buyback_prices.png")
+	PostAnalysisCommon.SaveFigure(p, "$analysis_dir_path/sell_and_buyback_prices.png")
 
 end
 

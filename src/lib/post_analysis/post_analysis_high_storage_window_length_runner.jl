@@ -21,6 +21,7 @@ include("./analyses/post_analysis_sew_waterfall.jl")
 include("./analyses/post_analysis_wind_forecast_error.jl")
 include("./analyses/post_analysis_weighted_price.jl")
 include("./analyses/post_analysis_energy_generation_stack.jl")
+include("./analyses/post_analysis_residual_demand_soc.jl")
 
 const DEFAULT_CASE_PATHS = Dict{String,String}(
 	"36h" => "results/1789748893_rolling_36_no_cap_1d_spinup_high_storage",
@@ -51,6 +52,7 @@ function Run(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, label=DefaultLa
 	PostAnalysisWindForecastError.PerformAnalysis(case_paths; cases=cases, output_base=output_base, time_range=time_range)
 	PostAnalysisWeightedPrice.PerformAnalysis(case_paths; cases=cases, output_base=output_base, time_range=time_range)
 	PostAnalysisEnergyGenerationStack.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
+	PostAnalysisResidualDemandSOC.PerformAnalysis(case_paths; cases=cases, output_base=output_base, time_range=time_range)
 
 	return output_base
 end

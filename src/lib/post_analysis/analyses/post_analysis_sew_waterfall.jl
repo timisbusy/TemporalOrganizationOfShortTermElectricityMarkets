@@ -89,12 +89,13 @@ function PlotWaterfall(case, energy_sew, total_sew, steps, analysis_dir_path, (y
 	Plots.plot!(p, [n - 0.65, n - 0.35 + 0.0], [levels[end], levels[end]]; color = :gray, linestyle = :dot, label = "")
 	rectangle(n, ymin, total_sew; color = :slategray)
 	Plots.annotate!(p, n, total_sew + 0.04 * (ymax - ymin), Plots.text(Compact(total_sew), 9, :black))
-	savefig(p, joinpath(analysis_dir_path, "sew_waterfall_$(replace(case, " " => "_")).png"))
+	PostAnalysisCommon.SaveFigure(p, joinpath(analysis_dir_path, "sew_waterfall_$(replace(case, " " => "_")).png"))
 	return p
 end
 
 # case_paths/cases: any N cases; one waterfall per case. time_range nothing = the window the runs' own configs define.
 function PerformAnalysis(case_paths; cases = PostAnalysisCommon.CASES, output_base = PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range = nothing)
+	PostAnalysisCommon.SetPlotMark!(case_paths, cases)
 	println("starting analysis: SEW waterfall")
 	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base = output_base)
 	analysis_dir_path = "$output_base/sew_waterfall"
