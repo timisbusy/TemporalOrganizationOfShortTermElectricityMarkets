@@ -20,6 +20,7 @@ include("./analyses/post_analysis_balancing_trade_quantities.jl")
 include("./analyses/post_analysis_sew_waterfall.jl")
 include("./analyses/post_analysis_wind_forecast_error.jl")
 include("./analyses/post_analysis_weighted_price.jl")
+include("./analyses/post_analysis_price_volume_scatter.jl")
 include("./analyses/post_analysis_energy_generation_stack.jl")
 include("./analyses/post_analysis_residual_demand_soc.jl")
 
@@ -51,6 +52,7 @@ function Run(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, label=DefaultLa
 	PostAnalysisSEWWaterfall.PerformAnalysis(case_paths; cases=cases, output_base=output_base, time_range=time_range)
 	PostAnalysisWindForecastError.PerformAnalysis(case_paths; cases=cases, output_base=output_base, time_range=time_range)
 	PostAnalysisWeightedPrice.PerformAnalysis(case_paths; cases=cases, output_base=output_base, time_range=time_range)
+	PostAnalysisPriceVolumeScatter.PerformAnalysis(case_paths; cases=cases, output_base=output_base, time_range=time_range)
 	PostAnalysisEnergyGenerationStack.PerformAnalysis(case_paths; cases=cases, output_base=output_base)
 	PostAnalysisResidualDemandSOC.PerformAnalysis(case_paths; cases=cases, output_base=output_base, time_range=time_range)
 

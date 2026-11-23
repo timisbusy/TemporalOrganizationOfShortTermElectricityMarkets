@@ -9,6 +9,10 @@
 # clearing buying back an earlier sale, is negative) but any of them is traded volume. An MTU with no traded volume
 # has no price and is left as a gap in the line.
 #
+# The traded volume reported next to the price (table, and the x axis of the price/volume scatter) counts one side
+# of each trade: every trade appears twice in the transactions (seller and buyer), so it is sum(|Quantity|) / 2.
+# That halving does not change the price - both sides of a trade share its price.
+#
 # segment selects which transactions are averaged:
 #   :energy    (default) - Segment == "Energy" only
 #   :all       - the energy and the balancing transactions together
@@ -73,6 +77,7 @@ function WeightedPriceByMTU(transactions, time_range, segment)
 	out = leftjoin(DataFrame(mtu=collect(time_range)), by_mtu; on=:mtu)
 	out.volume = coalesce.(out.volume, 0.0)
 	out.price = [v > 0 ? value / v : missing for (value, v) in zip(out.value, out.volume)]
+	out.volume = out.volume ./ 2 # one side of each trade (see the header); the price above already used the full weights
 	return sort(select(out, :mtu, :price, :volume), :mtu)
 end
 
@@ -100,7 +105,7 @@ function WritePriceTable(prices, cases, time_range, analysis_dir_path)
 	df = DataFrame(mtu=collect(time_range))
 	for case in cases
 		df[!, Symbol("$(case) price (€/MWh)")] = prices[case].price
-		df[!, Symbol("$(case) volume (MWh)")] = prices[case].volume
+		df[!, Symbol("$(case) traded volume, one side (MWh)")] = prices[case].volume
 	end
 	XLSX.writetable("$analysis_dir_path/weighted_price.xlsx", "data" => df; overwrite=true)
 end

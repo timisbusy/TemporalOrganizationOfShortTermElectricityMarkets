@@ -16,6 +16,7 @@ include("./analyses/post_analysis_monthly.jl")
 include("./analyses/post_analysis_physical_indicators.jl")
 include("./analyses/post_analysis_auction_snapshots.jl")
 include("./analyses/post_analysis_weighted_price.jl")
+include("./analyses/post_analysis_price_volume_scatter.jl")
 include("./analyses/post_analysis_energy_generation_stack.jl")
 include("./analyses/post_analysis_residual_demand_soc.jl")
 
@@ -140,6 +141,7 @@ function Run(case_paths=PostAnalysisCommon.DEFAULT_CASE_PATHS; cases=PostAnalysi
 	PostAnalysisStorage.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base, day_range=storage_day_range)
 	PostAnalysisPhysicalIndicators.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base, time_range=time_range)
 	PostAnalysisWeightedPrice.PerformAnalysis(case_paths; cases=cases, output_base=output_base, time_range=time_range) # energy-segment volume-weighted price per MTU
+	PostAnalysisPriceVolumeScatter.PerformAnalysis(case_paths; cases=cases, output_base=output_base, time_range=time_range) # energy-segment volume-weighted price per MTU
 	PostAnalysisEnergyGenerationStack.PerformAnalysis(case_paths; cases=cases, output_base=output_base) 
 	PostAnalysisResidualDemandSOC.PerformAnalysis(case_paths; cases=cases, output_base=output_base, time_range=time_range) 
 	PostAnalysisAuctionSnapshots.PerformAnalysis(case_paths; cases=cases, output_base=output_base, clearing_mtus=clearing_mtus)
