@@ -496,6 +496,15 @@ end
 		@test out["Storage"][B.DOWN_SHARE] ≈ 40.0 && out["5G_Peak"][B.DOWN_SHARE] ≈ 20.0 && out["1D_HighBid"][B.DOWN_SHARE] ≈ 30.0 && out[B.SPILL_AGENT][B.DOWN_SHARE] ≈ 10.0
 		@test sum(out[a][B.DOWN_SHARE] for a in ["Storage", "5G_Peak", "1D_HighBid", B.SPILL_AGENT]) ≈ 100
 		@test !haskey(out, "6G_Wind") # wind is the cause, not a responder
+		# the MWh responses behind the shares: responders add up to the needs shown on the cause row
+		@test out["Storage"][B.RESPONSE_TO_FALL] ≈ 80 && out["5G_Peak"][B.RESPONSE_TO_FALL] ≈ 30 && out["1D_HighBid"][B.RESPONSE_TO_FALL] ≈ 0 && out[B.SPILL_AGENT][B.RESPONSE_TO_FALL] ≈ -10
+		@test out["Storage"][B.RESPONSE_TO_RISE] ≈ 20 && out["5G_Peak"][B.RESPONSE_TO_RISE] ≈ 10 && out["1D_HighBid"][B.RESPONSE_TO_RISE] ≈ 15 && out[B.SPILL_AGENT][B.RESPONSE_TO_RISE] ≈ 5
+		@test sum(out[a][B.RESPONSE_TO_FALL] for a in ["Storage", "5G_Peak", "1D_HighBid", B.SPILL_AGENT]) ≈ out[B.CAUSE_AGENT][B.RESPONSE_TO_FALL] ≈ 100
+		@test sum(out[a][B.RESPONSE_TO_RISE] for a in ["Storage", "5G_Peak", "1D_HighBid", B.SPILL_AGENT]) ≈ out[B.CAUSE_AGENT][B.RESPONSE_TO_RISE] ≈ 50
+		# a demand agent that only consumed MORE in a wind-fall MTU: nothing it did is an up transaction, but it moved against the need
+		against = B.WindResponseMetrics(Dict("1D_HighBid" => Dict(1 => 40.0), "Storage" => Dict(1 => 140.0), "6G_Wind" => Dict(1 => -100.0)), Dict(1 => -100.0))
+		@test against["1D_HighBid"][B.RESPONSE_TO_FALL] ≈ -40 && against["1D_HighBid"][B.UP_SHARE] ≈ -40
+		@test B.TradeQuantities([40.0]; demand=true)[B.UP] == 0.0 # the per-transaction up balancing row stays 0
 		cause = out[B.CAUSE_AGENT]
 		@test cause[B.NET] ≈ -50 && cause[B.UP] ≈ 100 && cause[B.DOWN] ≈ -50 && cause[B.GROSS] ≈ 150 && ismissing(cause[B.UP_SHARE])
 		spill = out[B.SPILL_AGENT]
@@ -509,6 +518,7 @@ end
 		with_change = B.BalancingTradeQuantities(tx, 0:10; wind_forecast_change=Dict(t => -1.0 for t in 0:10))
 		@test B.SPILL_AGENT in keys(with_change) && B.CAUSE_AGENT in keys(with_change)
 		@test ismissing(with_change["6G_Wind"][B.UP_SHARE]) # wind has no share
+		@test all(ismissing, [with_change["6G_Wind"][m] for m in B.NEED_METRICS]) && !ismissing(with_change["Storage"][B.RESPONSE_TO_FALL])
 	end
 
 @testset "float noise is reported as zero" begin

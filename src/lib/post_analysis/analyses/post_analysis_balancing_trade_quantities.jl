@@ -54,8 +54,11 @@ const DOWN = "Down balancing (MWh)"
 const UP_SHARE = "Share of up-balancing need met (%)"
 const DOWN_SHARE = "Share of down-balancing need met (%)"
 const METRICS = [NET, GROSS, UP, DOWN]                # per-agent volumes (the cluster comparison modules iterate these)
+const RESPONSE_TO_FALL = "Net response in wind-fall MTUs (MWh)"
+const RESPONSE_TO_RISE = "Net response in wind-rise MTUs (MWh)"
 const SHARE_METRICS = [UP_SHARE, DOWN_SHARE]          # shares of the wind-caused need, from WindResponseMetrics
-const TABLE_METRICS = [METRICS; SHARE_METRICS]        # rows of the table, per agent
+const NEED_METRICS = [RESPONSE_TO_FALL, UP_SHARE, RESPONSE_TO_RISE, DOWN_SHARE] # each response row is followed by its share
+const TABLE_METRICS = [METRICS; NEED_METRICS]         # rows of the table, per agent
 
 const WIND_AGENT = "6G_Wind"
 const SPILL_AGENT = "Wind spillage (response)"        # pseudo-agent rows of the table, see "Cause and response"
@@ -110,13 +113,19 @@ function WindResponseMetrics(net_by_agent, delta_a; wind=WIND_AGENT)
 	out = Dict{String,Dict{String,Union{Missing,Float64}}}()
 	for (agent, r) in responses
 		m = Dict{String,Union{Missing,Float64}}(k => v for (k, v) in TradeQuantities(r))
-		m[UP_SHARE] = need_up > 0 ? snap(100 * sum(r[up_mtus]; init=0.0) / need_up) : 0.0
-		m[DOWN_SHARE] = need_down > 0 ? snap(100 * -sum(r[down_mtus]; init=0.0) / need_down) : 0.0
+		# the response that counts toward the need: in wind-fall MTUs the up response, in wind-rise MTUs the down response
+		# (the response with its sign flipped, so a move that helps is positive and one against the need is negative)
+		m[RESPONSE_TO_FALL] = snap(sum(r[up_mtus]; init=0.0))
+		m[RESPONSE_TO_RISE] = snap(-sum(r[down_mtus]; init=0.0))
+		m[UP_SHARE] = need_up > 0 ? snap(100 * m[RESPONSE_TO_FALL] / need_up) : 0.0
+		m[DOWN_SHARE] = need_down > 0 ? snap(100 * m[RESPONSE_TO_RISE] / need_down) : 0.0
 		out[agent] = m
 	end
-	# the spillage row's volumes are its per-MTU responses (it has no transactions of its own)
+	# the spillage row's volumes are its per-MTU responses (it has no transactions of its own). The cause row holds the
+	# needs, so in each response row the responders add up to the cause's value.
 	out[CAUSE_AGENT] = Dict{String,Union{Missing,Float64}}(NET => snap(sum(dA; init=0.0)), GROSS => snap(sum(abs, dA; init=0.0)),
-		UP => snap(need_up), DOWN => snap(-need_down), UP_SHARE => missing, DOWN_SHARE => missing)
+		UP => snap(need_up), DOWN => snap(-need_down), RESPONSE_TO_FALL => snap(need_up), RESPONSE_TO_RISE => snap(need_down),
+		UP_SHARE => missing, DOWN_SHARE => missing)
 	return out
 end
 
@@ -158,8 +167,9 @@ function BalancingTradeQuantities(transactions, time_range; agents=AGENTS, wind_
 	by_agent = Dict{String,Dict{String,Union{Missing,Float64}}}()
 	for agent in agents
 		m = Dict{String,Union{Missing,Float64}}(k => v for (k, v) in TradeQuantities(Float64.(balancing[balancing.Agent .== agent, QUANTITY_COLUMN]); demand=IsDemandAgent(agent)))
-		m[UP_SHARE] = missing
-		m[DOWN_SHARE] = missing
+		for metric in NEED_METRICS
+			m[metric] = missing
+		end
 		by_agent[agent] = m
 	end
 	wind_forecast_change === nothing && return by_agent
@@ -173,8 +183,9 @@ function BalancingTradeQuantities(transactions, time_range; agents=AGENTS, wind_
 		if agent in SPILL_AND_CAUSE
 			by_agent[agent] = m
 		elseif agent in agents # keeps its per-transaction volumes; only the shares come from the cause-and-response accounting
-			by_agent[agent][UP_SHARE] = m[UP_SHARE]
-			by_agent[agent][DOWN_SHARE] = m[DOWN_SHARE]
+			for metric in NEED_METRICS
+				by_agent[agent][metric] = m[metric]
+			end
 		end
 	end
 	return by_agent
@@ -228,17 +239,26 @@ function TexTable(df)
 end
 
 function InterpretationTable()
-	return DataFrame(
-		Metric=TABLE_METRICS,
-		Interpretation=[
-			"Sum of the signed Segment == Balancing transaction quantities of the agent: its net change from balancing (a demand agent's is its consumption change).",
-			"Sum of the absolute quantities: how much the agent moved in the balancing segment.",
-			"Energy the agent added to the system: supply increases (generator positive quantities, storage discharge) or demand consumption reductions.",
-			"Energy the agent took out of the system, a negative number: supply decreases (generator negative quantities, storage charging) or demand consumption increases.",
-			"The agent's response summed over the MTUs where wind fell, as % of the total fall in the wind's available quantity there (the up-balancing need). The responders - every agent but wind, plus the wind spillage - sum to 100; negative = the agent moved against the need. Wind has no share. Empty when the previous clearings' forecasts are not available. Difference columns are in percentage points.",
-			"The agent's response (sign flipped, so a down response is positive) summed over the MTUs where wind rose, as % of the total rise (the down-balancing need). Same convention. Difference columns are in percentage points.",
-		],
-	)
+	general = [
+		"READ FIRST - two views" => "The table describes the balancing segment (the first, locked MTU of each clearing) in two different ways that answer different questions. VIEW 1 (rows Net traded, Gross traded, Up balancing, Down balancing) looks at each agent's transactions on their own. VIEW 2 (rows Net response in wind-fall MTUs, Net response in wind-rise MTUs and the two Share rows) asks who responded to the wind forecast change, taking that change as the CAUSE of the balancing need and every other adjustment as the response. The two views can disagree for the same agent; that is expected (see the example below).",
+		"READ FIRST - sign convention" => "Up = adds energy to the system, Down = takes energy out. For generators and storage a positive transaction quantity is an increase in supply (storage: discharging) and a negative one a decrease (storage: charging). Demand quantities are consumption, so a demand agent's consumption REDUCTION counts as up and a consumption INCREASE as down in every row except Net traded, which keeps the transaction sign (positive = consumed more).",
+		"READ FIRST - wind-fall and wind-rise MTUs" => "A wind-fall MTU is a balancing MTU where the wind agent's available quantity is lower than in the previous clearing's forecast of the same MTU, so up-balancing is needed. A wind-rise MTU is one where it is higher, so down-balancing is needed. The up (down) need is the total size of these changes: the sum of the absolute changes over the wind-fall (wind-rise) MTUs. MTUs without a previous-clearing forecast are left out. Responders = every agent except wind, plus the row Wind spillage (response).",
+		"READ FIRST - why the views disagree" => "An agent can show 0 in Up balancing and a negative Net response in wind-fall MTUs. Up balancing (view 1) counts only the transactions that add energy, each by its own sign, whatever the wind did in that MTU. Net response in wind-fall MTUs (view 2) adds up EVERYTHING the agent did in the MTUs where wind fell. A demand agent that consumed 100 MWh more in a wind-fall MTU therefore shows 0 up balancing but -100 there: none of its transactions was an up transaction, and it moved against the need. A negative response or share always means the agent moved against the need.",
+		"READ FIRST - difference columns" => "The columns named 'X vs Y' are X minus Y: in MWh for the volume and response rows, in percentage points for the two Share rows.",
+		"READ FIRST - empty cells ('--')" => "Not applicable: the wind agent has no response or share (it is the cause), and the cause row has no shares. If the previous clearings' forecasts were not available for a run, the response and share rows are empty for every agent.",
+	]
+	metrics = [
+		NET => "VIEW 1. Sum of the signed quantities of the agent's Segment == Balancing transactions in the analysis window: its net change from balancing. For a demand agent it is its consumption change (positive = consumed more).",
+		GROSS => "VIEW 1. Sum of the absolute quantities: how much the agent moved in the balancing segment, in either direction.",
+		UP => "VIEW 1. Sum over the agent's balancing transactions that add energy to the system: supply increases (generator positive quantities, storage discharging) or, for a demand agent, consumption reductions. Each transaction is classified by its own sign, regardless of what the wind did in that MTU. Zero or positive.",
+		DOWN => "VIEW 1. Sum over the agent's balancing transactions that take energy out of the system: supply decreases (generator negative quantities, storage charging) or, for a demand agent, consumption increases. Reported as a negative number (zero or negative). For generators and storage Up + Down = Net; for a demand agent Up + Down = -Net.",
+		RESPONSE_TO_FALL => "VIEW 2. In the wind-fall MTUs (up-balancing needed): the agent's net response, summed over those MTUs. Per MTU it is the net of all the agent's balancing transactions in that MTU, positive when the agent added energy (supply up / consumption down) and negative when it moved against the need. The responders' values add up exactly to the up-balancing need shown on the row 'Wind forecast change (cause)'. MWh. Wind has none.",
+		UP_SHARE => "VIEW 2. = Net response in wind-fall MTUs / up-balancing need x 100: the agent's part of the up-balancing need. Adds up to 100 over the responders. Negative = the agent moved against the need; above 100 = the agent did more than the whole need while others moved against it. Percentage points in the difference columns. Wind has none.",
+		RESPONSE_TO_RISE => "VIEW 2. In the wind-rise MTUs (down-balancing needed): the agent's net response, summed over those MTUs, with the sign chosen so that a move that helps is positive: positive when the agent took energy out (supply down / consumption up), negative when it moved against the need (supply up / consumption down). The responders' values add up exactly to the down-balancing need on the row 'Wind forecast change (cause)'. MWh. Wind has none.",
+		DOWN_SHARE => "VIEW 2. = Net response in wind-rise MTUs / down-balancing need x 100: the agent's part of the down-balancing need. Same conventions as the up share. Wind has none.",
+	]
+	rows = [general; metrics]
+	return DataFrame(Metric=first.(rows), Interpretation=last.(rows))
 end
 
 # Interpretation of the two pseudo-agent rows (see "Cause and response" in the header)
@@ -246,8 +266,8 @@ function CauseAndResponseNotes()
 	return DataFrame(
 		Row=SPILL_AND_CAUSE,
 		Interpretation=[
-			"Per balancing MTU, the wind agent's own balancing trade minus the change in its available quantity, i.e. minus the change in spillage (extra spillage is a down response). Volumes are summed over the MTUs; shares as for every responder.",
-			"The change in the wind's available quantity vs the previous clearing's forecast of the same MTU. Net = sum of the changes (negative: less wind than planned), up = total fall (the up-balancing need), down = total rise as a negative number (the down-balancing need), gross = sum of the absolute changes. No shares.",
+			"A responder, not a trader. Per balancing MTU: the wind agent's own net balancing trade minus the change in its available quantity, i.e. minus the change in its spillage (extra spillage is a down response, less spillage an up response). Its Net traded / Gross / Up / Down rows are computed from these per-MTU responses (view 1 style, but per MTU rather than per transaction); its response and share rows work as for every responder (view 2).",
+			"The cause, not a responder. The change in the wind's available quantity vs the previous clearing's forecast of the same MTU. Net traded = sum of the changes (negative: less wind than planned); Gross = sum of the absolute changes; Up balancing = total fall (the up-balancing need); Down balancing = total rise as a negative number (the down-balancing need); Net response in wind-fall MTUs = the up-balancing need and Net response in wind-rise MTUs = the down-balancing need, the totals each column of responders adds up to. No shares.",
 		],
 	)
 end
