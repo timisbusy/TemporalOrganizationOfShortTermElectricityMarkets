@@ -336,7 +336,7 @@ function PlotResponseBars(quantities_by_case, cases, mtu_counts, path)
 	length(cases) <= length(BAR_COLORS) || (println("warning: more than $(length(BAR_COLORS)) cases - response bar chart skipped"); return)
 	candidates = [filter(a -> a != WIND_AGENT, AGENTS); SPILL_AGENT]
 	# (table row, title, MTU count field, sign): the wind-rise rows are flipped to the "positive = energy injected" convention
-	panels = [(RESPONSE_TO_FALL, "Wind-fall MTUs: up-balancing needed", :fall, 1.0), (RESPONSE_TO_RISE, "Wind-rise MTUs: down-balancing needed", :rise, -1.0)]
+	panels = [(RESPONSE_TO_FALL, "Up-balancing needed", :fall, 1.0), (RESPONSE_TO_RISE, "Down-balancing needed", :rise, -1.0)]
 	value(case, a, metric, sign) = sign * Float64(quantities_by_case[case][a][metric])
 	shown = filter(a -> any(case -> any(((metric, _, _, _),) -> !ismissing(get(quantities_by_case[case][a], metric, missing)) && abs(quantities_by_case[case][a][metric]) > 1e-6, panels), cases), candidates)
 	label(a) = a == CAUSE_AGENT ? "Need\n(wind change)" : a == SPILL_AGENT ? "Wind\nspillage" : replace(DisplayName(a), " " => "\n")
