@@ -39,7 +39,7 @@
 
 module PostAnalysisBalancingTradeQuantities
 
-using XLSX, DataFrames, Latexify
+using XLSX, DataFrames, Latexify, Plots
 
 include("../post_analysis_common.jl")
 include("../agent_renaming.jl")
@@ -275,6 +275,7 @@ end
 # cases is any N case_paths keys; time_range nothing is the window the runs' own configs define
 # (see PostAnalysisCommon.ResolveTimeRange)
 function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths), time_range=nothing, compare_to_subject=false)
+	PostAnalysisCommon.SetPlotMark!(case_paths, cases)
 	println("starting analysis: balancing trade quantities")
 	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
 
@@ -297,12 +298,79 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 	df = BuildTable(quantities_by_case, cases; agents=have_cause ? [AGENTS; SPILL_AND_CAUSE] : AGENTS, compare_to_subject=compare_to_subject)
 	println(df)
 
-	sheets = Pair{String,DataFrame}["data" => df, "interpretation" => InterpretationTable()]
-	have_cause && push!(sheets, "cause and response" => CauseAndResponseNotes())
+	# trades per agent (net, gross, up, down) on "trades"; the cause and response values and shares on "up-down segments"
+	trades_df = df[df.Metric .∈ Ref(METRICS), :]
+	response_df = df[df.Metric .∈ Ref(NEED_METRICS), :]
+	sheets = Pair{String,DataFrame}["trades" => trades_df]
+	have_cause && push!(sheets, "up-down segments" => response_df)
+	push!(sheets, "interpretation" => InterpretationTable())
+	have_cause && push!(sheets, "response notes" => CauseAndResponseNotes())
 	XLSX.writetable("$analysis_dir_path/balancing_trade_quantities.xlsx", sheets...; overwrite=true)
 	write("$analysis_dir_path/balancing_trade_quantities.tex",
 		latexify(PostAnalysisCommon.EscapeForLatex(TexTable(df)); env=:table, booktabs=true, snakecase=true, latex=false, fmt="%'\''d\n"))
+	if have_cause
+		mtu_counts = Dict(case => (fall=count(<(0), values(wind_change[case])), rise=count(>(0), values(wind_change[case]))) for case in cases)
+		PlotResponseBars(quantities_by_case, cases, mtu_counts, "$analysis_dir_path/response_by_wind_segment.png")
+	end
 	return df
+end
+
+# categorical slots 1-3 of the dataviz reference palette (blue, orange, aqua), light surface
+const BAR_COLORS = ["#2a78d6", "#eb6834", "#1baf7a"]
+const SURFACE = "#fcfcfb"
+const AXIS_COLOR = "#c3c2b7"
+const GRID_COLOR = "#e1e0d9"
+const TEXT_PRIMARY = "#0b0b0b"
+const TEXT_MUTED = "#898781"
+
+# Grouped bars of the net response (view 2 of the table) by responder, one bar per case, with the need as a dashed line, in two panels that share one
+# convention and one y axis (zero lines up): positive = energy INJECTED into the system (supply up, storage discharging,
+# demand consuming less), negative = energy TAKEN OUT (supply down, storage charging, demand consuming more). So a bar
+# means the same on both sides. Left: the wind-fall MTUs, where up-balancing is needed, so the need and the responders
+# that help are positive (the table's wind-fall rows as they are); right: the wind-rise MTUs, where down-balancing is
+# needed, so the need and the helping responders are negative (the table's wind-rise rows, flipped). The need is the
+# response the system has to deliver to offset the wind forecast change summed over those MTUs (so it has the opposite sign
+# to the wind's own change); the responders' bars add up to it, and a bar on the other side of zero than the need is a move
+# against it. Responders with no response in any case are left out.
+function PlotResponseBars(quantities_by_case, cases, mtu_counts, path)
+	length(cases) <= length(BAR_COLORS) || (println("warning: more than $(length(BAR_COLORS)) cases - response bar chart skipped"); return)
+	candidates = [filter(a -> a != WIND_AGENT, AGENTS); SPILL_AGENT]
+	# (table row, title, MTU count field, sign): the wind-rise rows are flipped to the "positive = energy injected" convention
+	panels = [(RESPONSE_TO_FALL, "Wind-fall MTUs: up-balancing needed", :fall, 1.0), (RESPONSE_TO_RISE, "Wind-rise MTUs: down-balancing needed", :rise, -1.0)]
+	value(case, a, metric, sign) = sign * Float64(quantities_by_case[case][a][metric])
+	shown = filter(a -> any(case -> any(((metric, _, _, _),) -> !ismissing(get(quantities_by_case[case][a], metric, missing)) && abs(quantities_by_case[case][a][metric]) > 1e-6, panels), cases), candidates)
+	label(a) = a == CAUSE_AGENT ? "Need\n(wind change)" : a == SPILL_AGENT ? "Wind\nspillage" : replace(DisplayName(a), " " => "\n")
+
+	# one y range for both panels, over every bar, with headroom for the legend (autoscaling would clip later bars)
+	all_values = [value(case, a, metric, sign) for (metric, _, _, sign) in panels for case in cases for a in shown]
+	append!(all_values, [sign * quantities_by_case[cases[1]][CAUSE_AGENT][metric] for (metric, _, _, sign) in panels])
+	low, high = min(0.0, minimum(all_values)), max(0.0, maximum(all_values))
+	span = max(high - low, 1.0)
+	ylims = (low < 0 ? low - 0.06 * span : 0.0, high + 0.2 * span)
+
+	chrome = (background_color=SURFACE, foreground_color_axis=AXIS_COLOR, foreground_color_border=AXIS_COLOR,
+		foreground_color_text=TEXT_PRIMARY, foreground_color_guide=TEXT_PRIMARY, foreground_color_legend=SURFACE,
+		gridcolor=GRID_COLOR, gridalpha=1.0, gridlinewidth=0.5, tickfontcolor=TEXT_MUTED, tickfontsize=10, guidefontsize=11)
+	width = 0.8 / length(cases)
+	plots = []
+	for (k, (metric, title, segment, sign)) in enumerate(panels)
+		need = sign * quantities_by_case[cases[1]][CAUSE_AGENT][metric]
+		n = getfield(mtu_counts[cases[1]], segment)
+		p = Plots.plot(; title="$title\nneed $(FormatThousands(need)) MWh over $n MTUs", titlefontsize=11,
+			ylabel=k == 1 ? "Net response (MWh)\npositive = energy injected into the system, negative = taken out" : "",
+			xticks=(1:length(shown), label.(shown)), yformatter=y -> FormatThousands(y), ylims=ylims, legend=k == 1 ? :topright : false,
+			left_margin=k == 1 ? 16Plots.mm : 4Plots.mm, bottom_margin=8Plots.mm, top_margin=4Plots.mm, chrome...)
+		Plots.hline!(p, [0.0]; label=false, color=AXIS_COLOR, linewidth=1)
+		Plots.hline!(p, [need]; label=k == 1 ? "Required response (offsets the wind change)" : false, color=TEXT_PRIMARY, linewidth=2, linestyle=:dash)
+		for (i, case) in enumerate(cases)
+			offset = (i - (length(cases) + 1) / 2) * width
+			Plots.bar!(p, (1:length(shown)) .+ offset, [value(case, a, metric, sign) for a in shown]; bar_width=width * 0.92, label=k == 1 ? case : "", color=BAR_COLORS[i], linewidth=0)
+		end
+		push!(plots, p)
+	end
+	fig = Plots.plot(plots...; layout=(1, 2), size=(1280, 560), background_color=SURFACE)
+	display(fig)
+	PostAnalysisCommon.SaveFigure(fig, path)
 end
 
 end;
