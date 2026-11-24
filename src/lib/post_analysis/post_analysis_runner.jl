@@ -70,6 +70,16 @@ const HIGH_LEVEL_EXCEL_FILES = [
 	"post_analysis_quantities_by_agent/agent_surplus_details.xlsx" => "Agent surplus",
 	"post_analysis_quantities_by_agent/agent_gross_traded_volume_details.xlsx" => "Agent gross volume",
 ]
+# Plots Run embeds in the same workbook, on a "Plots" tab (a caption above each picture). Entries are PNG paths relative to
+# the run's output directory => caption; one "*" in the file name matches any text and every match gets its own picture,
+# captioned "caption (matched text)". Add the plots you want collected here (or pass high_level_plots to Run).
+const HIGH_LEVEL_PLOTS = [
+	"physical_indicators/diff_by_day_sew_*.png" => "SEW difference by day",                      # the unsorted version; base case in brackets
+	"weighted_price_energy/weighted_price.png" => "Volume-weighted price per MTU (energy)",
+	"price_volume_scatter_energy/price_volume_scatter.png" => "Price vs traded volume, one point per MTU (energy)",
+	"residual_demand_soc/residual_demand_soc.png" => "Residual demand and storage state of charge",
+	"generation_stack_energy/generation_stack_energy_*.png" => "Generation and demand stack (energy)",  # one per case
+]
 
 const THREE_WAY_CASES = ["Fixed Horizon", "Rolling Horizon", "Auction Only"]
 
@@ -117,10 +127,11 @@ const FullYear2025Window = (
 #   high_level_files - result files (path => tab label pairs, paths relative to the run's output directory, e.g.
 #     "post_analysis_SEW/sew_details.xlsx") copied into output_base/high_level_results/ once all analyses
 #     have run; defaults to HIGH_LEVEL_EXCEL_FILES, pass [] to skip
+#   high_level_plots - PNGs (path => caption) embedded on the workbook's "Plots" tab; defaults to HIGH_LEVEL_PLOTS
 function Run(case_paths=PostAnalysisCommon.DEFAULT_CASE_PATHS; cases=PostAnalysisCommon.CASES, label=PostAnalysisCommon.DefaultAnalysisLabel(case_paths, cases),
 	time_range=nothing, day_range=nothing, storage_day_range=nothing, highlight_days=[("May 4", 3), ("May 5", 4)],
 	illustrative_day=nothing, clearing_mtus=PostAnalysisAuctionSnapshots.DEFAULT_CLEARING_MTUS, monthly_start_date=nothing,
-	high_level_files=HIGH_LEVEL_EXCEL_FILES)
+	high_level_files=HIGH_LEVEL_EXCEL_FILES, high_level_plots=HIGH_LEVEL_PLOTS)
 	output_base = PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=label)
 	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
 	day_range = day_range === nothing ? PostAnalysisCommon.DayRange(time_range) : day_range
@@ -151,7 +162,7 @@ function Run(case_paths=PostAnalysisCommon.DEFAULT_CASE_PATHS; cases=PostAnalysi
 		PostAnalysisMonthly.PerformAnalysis(case_paths; cases=RollingSubjectCases(cases), output_base=output_base, time_range=time_range, start_date=monthly_start_date)
 	end
 
-	PostAnalysisCommon.MergeHighLevelResults(output_base, high_level_files; case_paths=case_paths, cases=cases, time_range=time_range)
+	PostAnalysisCommon.MergeHighLevelResults(output_base, high_level_files; case_paths=case_paths, cases=cases, time_range=time_range, plots=high_level_plots)
 
 	return output_base
 end

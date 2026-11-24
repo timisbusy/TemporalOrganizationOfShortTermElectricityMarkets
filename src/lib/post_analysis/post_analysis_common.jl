@@ -9,6 +9,7 @@
 module PostAnalysisCommon
 
 using XLSX, DataFrames, YAML, Dates, Printf, Statistics, CSV
+using ZipArchives: ZipReader, ZipWriter, zip_names, zip_readentry, zip_newfile
 import Plots
 
 include("../helpers.jl")
@@ -255,24 +256,29 @@ function SaveFigure(p, path)
 	Plots.savefig(p, path)
 end
 
-# Merges the listed result workbooks into ONE workbook, output_base/folder/filename, with a "metadata" tab first.
+# Merges the listed result workbooks into ONE workbook, output_base/folder/filename, with a "metadata" tab first and,
+# when plots are given, a "Plots" tab with the listed PNGs embedded under captions.
 #
 # files: entries are "path/relative/to/output_base.xlsx" => "label" (or a bare path, labelled by its file name). Every
 # sheet of every file is copied; its tab is named by the label alone when the file has one sheet, otherwise
 # "label - sheet" (Excel tabs are capped at 31 characters, so longer names are shortened and made unique).
 # A file that doesn't exist (analysis not run, or renamed) is skipped with a warning.
 #
+# plots: entries are "path/relative/to/output_base.png" => "caption". The file name may contain one "*" that matches
+# any text (e.g. "generation_stack_energy/generation_stack_energy_*.png"): every match gets its own picture, captioned
+# "caption (matched text)" with underscores shown as spaces. A pattern with no match is skipped with a warning.
+#
 # The metadata tab (columns Item, Value) says what the workbook is about: the cluster, the storage level (with the
 # battery capacities) and the cases compared - read from the runs' own Config/ copies, the same way the plot mark is
 # (see CaseCluster / CaseStorage) - plus each case's run directory, the analysis window and when the workbook was
 # written. The workbook is named after the cluster and storage level (HighLevelFileName, e.g. "cluster_8_large_storage.xlsx")
 # unless filename is given. Returns the workbook's path (nothing when no source file was found).
-function MergeHighLevelResults(output_base, files; case_paths, cases, time_range=nothing, folder="high_level_results", filename=HighLevelFileName(case_paths, cases))
+function MergeHighLevelResults(output_base, files; case_paths, cases, time_range=nothing, plots=[], folder="high_level_results", filename=HighLevelFileName(case_paths, cases))
 	isempty(files) && return nothing
 	entries = [f isa Pair ? (String(first(f)), String(last(f))) : (String(f), splitext(basename(String(f)))[1]) for f in files]
 
 	sheets = Pair{String,DataFrame}[]
-	used = Set{String}(["metadata"])
+	used = Set{String}(["metadata", "Plots"])
 	found = String[]
 	for (rel, label) in entries
 		src = joinpath(output_base, rel)
@@ -291,11 +297,144 @@ function MergeHighLevelResults(output_base, files; case_paths, cases, time_range
 	end
 	isempty(found) && return nothing
 
+	pictures = ResolvePlots(output_base, plots)
+	plot_sheet, placements = isempty(pictures) ? (nothing, []) : PlotsSheet(pictures)
+
 	dest = "$output_base/$folder"
 	mkpath(dest)
 	path = "$dest/$filename"
-	XLSX.writetable(path, "metadata" => MergeMetadata(case_paths, cases, time_range), sheets...; overwrite=true)
+	ordered = Pair{String,DataFrame}["metadata" => MergeMetadata(case_paths, cases, time_range)]
+	plot_sheet === nothing || push!(ordered, "Plots" => plot_sheet)
+	XLSX.writetable(path, ordered..., sheets...; overwrite=true)
+	isempty(placements) || EmbedPictures(path, "Plots", placements)
 	return path
+end
+
+# [(png path, caption)] for the plot entries: "*" patterns expanded, missing files warned about
+function ResolvePlots(output_base, plots)
+	pictures = Tuple{String,String}[]
+	for entry in plots
+		rel, caption = entry isa Pair ? (String(first(entry)), String(last(entry))) : (String(entry), splitext(basename(String(entry)))[1])
+		dir, pattern = dirname(rel), basename(rel)
+		folder = joinpath(output_base, dir)
+		if occursin('*', pattern)
+			prefix, suffix = split(pattern, '*'; limit=2)
+			matches = isdir(folder) ? sort(filter(f -> startswith(f, prefix) && endswith(f, suffix) && length(f) > length(prefix) + length(suffix) - 1, readdir(folder))) : String[]
+			isempty(matches) && @warn "high-level results: no plot matches $rel under $output_base - skipped"
+			for f in matches
+				middle = replace(f[length(prefix)+1:end-length(suffix)], "_" => " ")
+				push!(pictures, (joinpath(folder, f), isempty(middle) ? caption : "$caption ($middle)"))
+			end
+		elseif isfile(joinpath(folder, pattern))
+			push!(pictures, (joinpath(folder, pattern), caption))
+		else
+			@warn "high-level results: plot $rel not found under $output_base - skipped"
+		end
+	end
+	return pictures
+end
+
+const PICTURE_WIDTH_PX = 900     # pictures are scaled to this width in the Plots tab
+const ROW_HEIGHT_PX = 20         # Excel's default row height
+const MIN_COLUMN_A_CHARS = 60
+
+# pixel size of a PNG, read from its IHDR chunk
+function PngSize(path)
+	bytes = read(path, 24)
+	(length(bytes) == 24 && bytes[1:8] == UInt8[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]) || throw("$path is not a PNG file")
+	be32(i) = Int(bytes[i]) << 24 | Int(bytes[i+1]) << 16 | Int(bytes[i+2]) << 8 | Int(bytes[i+3])
+	return be32(17), be32(21)
+end
+
+# The "Plots" sheet: one caption row per picture followed by enough empty rows to hold it. Returns the sheet and, per
+# picture, (png path, caption, 0-based anchor row, width px, height px) for EmbedPictures.
+function PlotsSheet(pictures)
+	rows = Union{Missing,String}[]
+	placements = Tuple{String,String,Int,Int,Int}[]
+	for (png, caption) in pictures
+		w, h = PngSize(png)
+		scale = PICTURE_WIDTH_PX / w
+		width, height = PICTURE_WIDTH_PX, round(Int, h * scale)
+		push!(rows, caption)                        # sheet row length(rows) + 1 (row 1 is the header)
+		anchor = length(rows) + 1                    # 0-based index of the row right after the caption
+		push!(placements, (png, caption, anchor, width, height))
+		append!(rows, fill(missing, cld(height, ROW_HEIGHT_PX) + 1))
+	end
+	return DataFrame(Plots=rows), placements
+end
+
+# Adds the pictures to the sheet `sheet_name` of an existing .xlsx by writing the drawing parts into the zip archive:
+# xl/media/imageN.png, xl/drawings/drawing1.xml (+ its rels), a <drawing> element and rels entry for the sheet, and the
+# content types. XLSX.jl cannot embed images itself.
+function EmbedPictures(xlsx_path, sheet_name, placements)
+	reader = ZipReader(read(xlsx_path))
+	names = zip_names(reader)
+	entries = Pair{String,Vector{UInt8}}[name => zip_readentry(reader, name) for name in names]
+	get_text(name) = String(copy(last(entries[findfirst(e -> first(e) == name, entries)])))
+	set_entry!(name, data) = (i = findfirst(e -> first(e) == name, entries); i === nothing ? push!(entries, name => Vector{UInt8}(data)) : (entries[i] = name => Vector{UInt8}(data)))
+
+	# sheet part of `sheet_name`: workbook.xml names the sheet and its relationship id, workbook.xml.rels maps that id to the part
+	workbook = get_text("xl/workbook.xml")
+	m = match(Regex("<sheet [^>]*name=\"$(sheet_name)\"[^>]*>"), workbook)
+	m === nothing && throw("sheet $sheet_name not found in $xlsx_path")
+	rid = match(r"r:id=\"([^\"]+)\"", m.match).captures[1]
+	rels = get_text("xl/_rels/workbook.xml.rels")
+	relm = match(Regex("<Relationship [^>]*Id=\"$(rid)\"[^>]*>"), rels)
+	target = match(r"Target=\"([^\"]+)\"", relm.match).captures[1]
+	sheet_part = startswith(target, "/") ? target[2:end] : "xl/" * target
+	sheet_rels_part = dirname(sheet_part) * "/_rels/" * basename(sheet_part) * ".rels"
+
+	# the pictures and the drawing that places them
+	drawing_xml = IOBuffer()
+	drawing_rels = IOBuffer()
+	write(drawing_xml, "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<xdr:wsDr xmlns:xdr=\"http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">")
+	write(drawing_rels, "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">")
+	for (i, (png, caption, anchor, width, height)) in enumerate(placements)
+		set_entry!("xl/media/image$i.png", read(png))
+		cx, cy = width * 9525, height * 9525
+		alt = replace(caption, "&" => "&amp;", "<" => "&lt;", ">" => "&gt;", "\"" => "&quot;")
+		write(drawing_xml, "<xdr:oneCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>$anchor</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:ext cx=\"$cx\" cy=\"$cy\"/>" *
+			"<xdr:pic><xdr:nvPicPr><xdr:cNvPr id=\"$(i + 1)\" name=\"Picture $i\" descr=\"$alt\"/><xdr:cNvPicPr><a:picLocks noChangeAspect=\"1\"/></xdr:cNvPicPr></xdr:nvPicPr>" *
+			"<xdr:blipFill><a:blip r:embed=\"rId$i\"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>" *
+			"<xdr:spPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"$cx\" cy=\"$cy\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:oneCellAnchor>")
+		write(drawing_rels, "<Relationship Id=\"rId$i\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"../media/image$i.png\"/>")
+	end
+	write(drawing_xml, "</xdr:wsDr>")
+	write(drawing_rels, "</Relationships>")
+	set_entry!("xl/drawings/drawing1.xml", take!(drawing_xml))
+	set_entry!("xl/drawings/_rels/drawing1.xml.rels", take!(drawing_rels))
+
+	# the sheet points at the drawing
+	drawing_rid = "rIdPlots1"
+	sheet = get_text(sheet_part)
+	occursin("xmlns:r=", sheet) || (sheet = replace(sheet, r"<worksheet\b" => "<worksheet xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\""; count=1))
+	element = "<drawing r:id=\"$drawing_rid\"/>"
+	insert_before = something(findfirst(r"<tableParts|<extLst|</worksheet>", sheet), nothing)
+	insert_before === nothing && throw("unexpected sheet xml in $xlsx_path")
+	sheet = sheet[1:first(insert_before)-1] * element * sheet[first(insert_before):end]
+	set_entry!(sheet_part, sheet)
+	rel = "<Relationship Id=\"$drawing_rid\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing\" Target=\"../drawings/drawing1.xml\"/>"
+	if any(e -> first(e) == sheet_rels_part, entries)
+		set_entry!(sheet_rels_part, replace(get_text(sheet_rels_part), "</Relationships>" => rel * "</Relationships>"; count=1))
+	else
+		set_entry!(sheet_rels_part, "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">$rel</Relationships>")
+	end
+
+	# content types: png files and the drawing part
+	types = get_text("[Content_Types].xml")
+	occursin("Extension=\"png\"", types) || (types = replace(types, r"(<Types\b[^>]*>)" => s"\1<Default Extension=\"png\" ContentType=\"image/png\"/>"; count=1))
+	types = replace(types, "</Types>" => "<Override PartName=\"/xl/drawings/drawing1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.drawing+xml\"/></Types>"; count=1)
+	set_entry!("[Content_Types].xml", types)
+
+	buffer = IOBuffer()
+	writer = ZipWriter(buffer)
+	for (name, data) in entries
+		zip_newfile(writer, name; compress=true)
+		write(writer, data)
+	end
+	close(writer)
+	write(xlsx_path, take!(buffer))
+	return xlsx_path
 end
 
 # an Excel tab name: at most 31 characters, none of []:*?/\ , and not used before in this workbook
