@@ -229,6 +229,18 @@ function CaseStorage(case_path)
 	return level * capacity
 end
 
+# true when the run locked the demand in the balancing segment: "lock_demand" in its directory name, or lockDemand set in
+# its copied experiment config
+function CaseDemandLocked(case_path)
+	occursin("lock_demand", basename(case_path)) && return true
+	try
+		experiment = ExperimentConfig(case_path)
+		return experiment !== nothing && get(last(experiment), "lockDemand", false) == true
+	catch
+		return false
+	end
+end
+
 function PlotMark(case_paths, cases=sort(collect(keys(case_paths))))
 	clusters = unique(filter(!isnothing, [CaseCluster(case_paths[c]) for c in cases if haskey(case_paths, c)]))
 	storages = unique([CaseStorage(case_paths[c]) for c in cases if haskey(case_paths, c)])
@@ -461,6 +473,7 @@ function HighLevelFileName(case_paths, cases)
 	parts = String[]
 	isempty(clusters) || push!(parts, join(slug.(clusters), "_and_"))
 	isempty(levels) || push!(parts, join(slug.(levels), "_and_"))
+	any(c -> CaseDemandLocked(case_paths[c]), present) && push!(parts, "demand_locked")
 	return (isempty(parts) ? "high_level_results" : join(parts, "_")) * ".xlsx"
 end
 
@@ -472,6 +485,7 @@ function MergeMetadata(case_paths, cases, time_range)
 		"Cluster" => isempty(clusters) ? "unknown" : join(clusters, " / "),
 		"Storage level" => join(storage_levels, " / "),
 		"Storage capacity" => join(unique([occursin("(", s) ? strip(last(split(s, " (")), ')') : "unknown" for s in storages]), " / "),
+		"Demand lock" => join(unique([CaseDemandLocked(case_paths[c]) ? "locked in the balancing segment" : "not locked" for c in cases if haskey(case_paths, c)]), " / "),
 		"Cases compared" => join(cases, " vs "),
 	]
 	for c in cases
