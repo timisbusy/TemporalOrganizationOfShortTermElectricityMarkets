@@ -2,7 +2,7 @@
 
 julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "cc3f90499459cf80661818b917347de8b71ac7ef"
+project_hash = "dab654ab2a2478c42e8997a6ac678a8310835eb7"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -1427,7 +1427,7 @@ uuid = "a4e569a6-e804-4fa4-b0f3-eef7a1d5b13e"
 version = "1.10.0"
 
 [[deps.TemporalOrganizationOfShortTermElectricityMarkets]]
-deps = ["DataFrames", "Distributions", "Gurobi", "HiGHS", "IJulia", "JuMP", "Latexify", "MathOptInterface", "Plots", "Random", "StatsPlots", "Test", "XLSX", "YAML"]
+deps = ["CSV", "DataFrames", "Distributions", "Gurobi", "HiGHS", "IJulia", "JuMP", "Latexify", "MathOptInterface", "Plots", "Random", "StatsPlots", "Test", "XLSX", "YAML"]
 path = "."
 uuid = "0d2fd640-1b4c-444d-93d9-af1895a7fe29"
 version = "0.1.0"
@@ -1699,9 +1699,9 @@ version = "4.3.6+0"
 
 [[deps.ZipArchives]]
 deps = ["ArgCheck", "CodecInflate64", "CodecZlib", "InputBuffers", "PrecompileTools", "TranscodingStreams", "Zlib_jll"]
-git-tree-sha1 = "83f728ecb873c58b794964f8b4bed811814d4b0d"
+git-tree-sha1 = "3e6acd912522133953125645b263934ae2ac745e"
 uuid = "49080126-0e18-4c2a-b176-c102e4b3760c"
-version = "2.6.0"
+version = "2.6.1"
 
 [[deps.Zlib_jll]]
 deps = ["Libdl"]

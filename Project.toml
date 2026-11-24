@@ -19,6 +19,7 @@ StatsPlots = "f3b207a7-027a-5e70-b257-86293d7955fd"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 XLSX = "fdbf4ff8-1666-58a4-91e7-1b58723a45e0"
 YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
+ZipArchives = "49080126-0e18-4c2a-b176-c102e4b3760c"
 
 [compat]
 CSV = "0.10.17"
@@ -36,3 +37,4 @@ StatsPlots = "0.15.8"
 Test = "1.11.0"
 XLSX = "0.11.11"
 YAML = "0.4.16"
+ZipArchives = "2.6.1"
