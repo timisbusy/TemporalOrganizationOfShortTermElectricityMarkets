@@ -79,6 +79,7 @@ const HIGH_LEVEL_PLOTS = [
 	"price_volume_scatter_energy/price_volume_scatter.png" => "Price vs traded volume, one point per MTU (energy)",
 	"residual_demand_soc/residual_demand_soc.png" => "Residual demand and storage state of charge",
 	"generation_stack_energy/generation_stack_energy_*.png" => "Generation and demand stack (energy)",  # one per case
+	"balancing_trade_quantities/response_by_wind_segment.png" => "Net energy traded in balancing MTUs by wind segment",
 ]
 
 const THREE_WAY_CASES = ["Fixed Horizon", "Rolling Horizon", "Auction Only"]

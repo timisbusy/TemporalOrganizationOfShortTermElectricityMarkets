@@ -1,38 +1,33 @@
 # Trade quantities by agent in the balancing segment only: what each agent traded in the locked (balancing)
 # MTUs of the clearings, read from the Segment == Balancing transactions (see
-# balancing_energy/balancing_energy_split.jl for how the two segments are defined). Per agent, over the analysis
-# time_range (transactions bucketed by delivery MTU, like every other metric in this suite):
+# balancing_energy/balancing_energy_split.jl for how the two segments are defined), over the analysis time_range
+# (transactions bucketed by delivery MTU, like every other metric in this suite).
 #
-#   Net traded (MWh)     - sum of the signed transaction quantities
-#   Gross traded (MWh)   - sum of |quantity|
-#   Up balancing (MWh)   - energy the agent added to the system: its supply increases (positive quantities of a generator
-#                          or storage discharge) or, for a demand agent, its consumption reductions
-#   Down balancing (MWh) - energy the agent took out of the system, reported as a negative number: supply decreases
-#                          (negative quantities of a generator, storage charging) or demand consumption increases
-#   Share of up / down balancing need met (%) - see "Cause and response" below
+# Sign convention: positive = energy injected into the system (a generator's supply increase, storage discharging, or a
+# demand agent's consumption reduction), negative = energy withdrawn (supply decrease, storage charging, consumption
+# increase). A demand agent's transaction quantities are consumption, so their sign is flipped.
 #
-# Cause and response. The wind forecast change is taken as the cause of the balancing need and every other
-# adjustment as the response to it. In each balancing MTU t:
-#   cause     dA_t   = wind available now - wind available in the previous clearing's forecast of the same MTU
-#                      (< 0: wind fell, up balancing is needed; > 0: wind rose, down balancing is needed)
-#   response  R_i,t  = agent i's net balancing quantity in t (a demand agent's with the sign flipped: a consumption
-#                      reduction is an up response), for every agent but wind, and
-#             R_spill,t = W_t - dA_t, the wind spillage response (W_t = the wind agent's own net balancing trade;
-#                      extra spillage is a down response, so the wind trade is the cause plus its spillage response)
-# The balancing transactions net to zero in every MTU, so the responses add up to the need exactly:
-# sum_i R_i,t + R_spill,t = -dA_t. An agent's share of the up-balancing need met is its summed response over the MTUs
-# where wind fell divided by the total fall (sum of -dA_t there); the down share likewise over the MTUs where wind
-# rose. Each direction's shares sum to 100% over the responders (agents and spillage); a share is negative when the
-# responder moved against the need, and wind itself has no share. The table gets two extra rows: "Wind spillage
-# (response)" and "Wind forecast change (cause)" (net = sum of dA, up / down = the up / down need, shares blank).
-# The shares need the previous clearings' forecasts, read from each run's RAW exports; without them (dA not given)
-# the share rows are empty.
+# The workbook table has, per agent, four rows:
+#   Net traded in wind-decrease MTUs (MWh)       - the agent's net trades summed over the balancing MTUs where the wind's
+#                                                  available quantity is lower than the previous clearing's forecast of the
+#                                                  same MTU (dA_t < 0)
+#   Share of trades in wind-decrease MTUs (%)    - that net over the sum of the same net over all trading agents
+#   Net traded in wind-increase MTUs (MWh)       - likewise over the MTUs where the wind is higher (dA_t > 0)
+#   Share of trades in wind-increase MTUs (%)
+# Per MTU an agent's net trade is the sum of its balancing transactions, demand sign-flipped. The share denominator is
+# the total of all the trading agents' net trades in those MTUs (the rows below excluded), so each agent's shares add up
+# to 100% over the agents; a share is negative when the agent's net had the opposite sign from that total. Two rows
+# that are not agents are added: "Wind spillage" (per MTU, the wind agent's own net balancing trade minus dA_t, i.e. the
+# negative of the change in its spillage; no share) and "Wind forecast change" (the sum of dA_t over the wind-decrease /
+# wind-increase MTUs, no share). The balancing transactions net to zero in every MTU, so in each segment the agents plus
+# Wind spillage add up to minus the Wind forecast change. The shares need the previous clearings' forecasts, read from
+# each run's RAW exports; without them (dA not given) the share rows and the Wind rows are empty.
 #
-# Quantities are adjustments to what the agent had already traded in earlier clearings, so net traded is the
-# agent's net change from balancing and gross traded how much it moved. Up and down are summed per transaction (not
-# netted per MTU); for a supply agent up + down = net, for a demand agent up + down = -net (net is its consumption
-# change). One row per agent and metric, one
-# column per case, then MWh difference columns (compared minus base, not percentages): by default "{case} vs {previous case}" for each adjacent pair
+# The per-agent volumes used by the cluster comparison modules (METRICS: net, gross, up and down balancing, summed per
+# transaction) are still computed but no longer written to the workbook.
+#
+# One row per agent and metric, one column per case, then MWh difference columns (compared minus base, not
+# percentages; percentage points for the share rows): by default "{case} vs {previous case}" for each adjacent pair
 # (the window-length suite: 48h vs 36h, 72h vs 48h), or with compare_to_subject=true "{last case} vs {base}" for
 # every other case (the fixed vs rolling suite's convention: cases[end] is the subject, see PostAnalysisSEW). For
 # two cases the two are identical.
@@ -51,18 +46,18 @@ const NET = "Net traded (MWh)"
 const GROSS = "Gross traded (MWh)"
 const UP = "Up balancing (MWh)"
 const DOWN = "Down balancing (MWh)"
-const UP_SHARE = "Share of up-balancing need met (%)"
-const DOWN_SHARE = "Share of down-balancing need met (%)"
+const UP_SHARE = "Share of trades in wind-decrease MTUs (%)"
+const DOWN_SHARE = "Share of trades in wind-increase MTUs (%)"
 const METRICS = [NET, GROSS, UP, DOWN]                # per-agent volumes (the cluster comparison modules iterate these)
-const RESPONSE_TO_FALL = "Net response in wind-fall MTUs (MWh)"
-const RESPONSE_TO_RISE = "Net response in wind-rise MTUs (MWh)"
-const SHARE_METRICS = [UP_SHARE, DOWN_SHARE]          # shares of the wind-caused need, from WindResponseMetrics
+const RESPONSE_TO_FALL = "Net traded in wind-decrease MTUs (MWh)"
+const RESPONSE_TO_RISE = "Net traded in wind-increase MTUs (MWh)"
+const SHARE_METRICS = [UP_SHARE, DOWN_SHARE]          # shares of the total net trades per wind segment, from WindResponseMetrics
 const NEED_METRICS = [RESPONSE_TO_FALL, UP_SHARE, RESPONSE_TO_RISE, DOWN_SHARE] # each response row is followed by its share
 const TABLE_METRICS = [METRICS; NEED_METRICS]         # rows of the table, per agent
 
 const WIND_AGENT = "6G_Wind"
-const SPILL_AGENT = "Wind spillage (response)"        # pseudo-agent rows of the table, see "Cause and response"
-const CAUSE_AGENT = "Wind forecast change (cause)"
+const SPILL_AGENT = "Wind spillage"                   # pseudo-agent rows of the table, see the header
+const CAUSE_AGENT = "Wind forecast change"
 const SPILL_AND_CAUSE = [SPILL_AGENT, CAUSE_AGENT]
 
 const SEGMENT_COLUMN = Symbol("Segment")
@@ -90,41 +85,50 @@ function TradeQuantities(quantities; demand=false)
 	)
 end
 
-# Responses and shares of the wind-caused balancing need (see "Cause and response" in the header).
+# Net trades per wind segment and their shares (see the header).
 #   net_by_agent  agent => (mtu => net balancing quantity of the agent in that MTU), including the wind agent
 #   delta_a       mtu => change in the wind's available quantity (now - previous clearing's forecast)
-# Returns agent => metrics (volumes plus UP_SHARE / DOWN_SHARE) for every agent but wind, and SPILL_AGENT and CAUSE_AGENT
-# entries; the wind agent's own metrics are left to the caller (it has no share).
+# Returns agent => metrics (volumes plus the net-traded and share rows) for every agent but wind, and SPILL_AGENT and
+# CAUSE_AGENT entries; the wind agent's own metrics are left to the caller (it has no share).
 function WindResponseMetrics(net_by_agent, delta_a; wind=WIND_AGENT)
 	mtus = sort(collect(keys(delta_a)))
 	net(agent, t) = get(get(net_by_agent, agent, Dict{Int,Float64}()), t, 0.0)
-	# per-MTU responses: agents (a demand agent's consumption reduction is an up response) and the wind spillage
-	responses = Dict{String,Vector{Float64}}()
+	# per-MTU net trades in the injection-positive convention: agents (a demand agent's consumption reduction is an
+	# injection) and the wind spillage (extra spillage is a withdrawal)
+	trades = Dict{String,Vector{Float64}}()
 	for agent in keys(net_by_agent)
-		agent == wind && continue # the cause, not a responder
-		sign =IsDemandAgent(agent) ? -1.0 : 1.0
-		responses[agent] = [sign * net(agent, t) for t in mtus]
+		agent == wind && continue # the wind agent's change in availability is the reference, not the trade of an agent
+		sign = IsDemandAgent(agent) ? -1.0 : 1.0
+		trades[agent] = [sign * net(agent, t) for t in mtus]
 	end
-	responses[SPILL_AGENT] = [net(wind, t) - delta_a[t] for t in mtus] # W_t - dA_t = -(change in spillage)
+	trades[SPILL_AGENT] = [net(wind, t) - delta_a[t] for t in mtus] # W_t - dA_t = -(change in spillage)
 	dA = [delta_a[t] for t in mtus]
-	up_mtus, down_mtus = dA .< 0, dA .> 0
-	need_up, need_down = sum(-dA[up_mtus]; init=0.0), sum(dA[down_mtus]; init=0.0)
+	decrease_mtus, increase_mtus = dA .< 0, dA .> 0
+	need_up, need_down = sum(-dA[decrease_mtus]; init=0.0), sum(dA[increase_mtus]; init=0.0)
 
 	out = Dict{String,Dict{String,Union{Missing,Float64}}}()
-	for (agent, r) in responses
+	for (agent, r) in trades
 		m = Dict{String,Union{Missing,Float64}}(k => v for (k, v) in TradeQuantities(r))
-		# the response that counts toward the need: in wind-fall MTUs the up response, in wind-rise MTUs the down response
-		# (the response with its sign flipped, so a move that helps is positive and one against the need is negative)
-		m[RESPONSE_TO_FALL] = snap(sum(r[up_mtus]; init=0.0))
-		m[RESPONSE_TO_RISE] = snap(-sum(r[down_mtus]; init=0.0))
-		m[UP_SHARE] = need_up > 0 ? snap(100 * m[RESPONSE_TO_FALL] / need_up) : 0.0
-		m[DOWN_SHARE] = need_down > 0 ? snap(100 * m[RESPONSE_TO_RISE] / need_down) : 0.0
+		m[RESPONSE_TO_FALL] = snap(sum(r[decrease_mtus]; init=0.0))
+		m[RESPONSE_TO_RISE] = snap(sum(r[increase_mtus]; init=0.0))
+		m[UP_SHARE] = missing
+		m[DOWN_SHARE] = missing
 		out[agent] = m
 	end
-	# the spillage row's volumes are its per-MTU responses (it has no transactions of its own). The cause row holds the
-	# needs, so in each response row the responders add up to the cause's value.
+	# the shares: each trading agent's net over the total of all trading agents' nets in that segment (the spillage row is
+	# not a trade, so it is neither in the total nor given a share)
+	agents = [a for a in keys(out) if a != SPILL_AGENT]
+	for (metric, share) in ((RESPONSE_TO_FALL, UP_SHARE), (RESPONSE_TO_RISE, DOWN_SHARE))
+		total = sum((out[a][metric] for a in agents); init=0.0)
+		abs(total) > 1e-9 || continue # nothing traded in this segment: no shares
+		for a in agents
+			out[a][share] = snap(100 * out[a][metric] / total)
+		end
+	end
+	# the spillage row's volumes are its per-MTU trades (it has no transactions of its own). The wind forecast change row
+	# holds the wind change per segment, so in each net-traded row the agents plus Wind spillage add up to minus its value.
 	out[CAUSE_AGENT] = Dict{String,Union{Missing,Float64}}(NET => snap(sum(dA; init=0.0)), GROSS => snap(sum(abs, dA; init=0.0)),
-		UP => snap(need_up), DOWN => snap(-need_down), RESPONSE_TO_FALL => snap(need_up), RESPONSE_TO_RISE => snap(need_down),
+		UP => snap(need_up), DOWN => snap(-need_down), RESPONSE_TO_FALL => snap(-need_up), RESPONSE_TO_RISE => snap(need_down),
 		UP_SHARE => missing, DOWN_SHARE => missing)
 	return out
 end
@@ -211,14 +215,14 @@ end
 
 # The LaTeX table is a reduced view of the full table (which the xlsx keeps): for every agent the net energy traded, the
 # up and down balancing and the agent's share of each direction (the gross volume row is left out); Base, Shoulder and
-# Solar are left out since the lock keeps them from trading in the balancing segment; the wind spillage (response) and
-# wind forecast change (cause) rows are kept, with "--" where a share doesn't apply. Values are formatted here
+# Solar are left out since the lock keeps them from trading in the balancing segment; the wind spillage and
+# wind forecast change rows are kept, with "--" where a share doesn't apply. Values are formatted here
 # (volumes as integers with thousands separators, shares and share differences with one decimal) because the shares
 # need decimals that the table-wide integer format would drop.
 const TEX_EXCLUDED_AGENTS = ["3G_Base", "4G_Shoulder", "7G_Solar"]
 const TEX_METRICS = [NET, UP, DOWN, UP_SHARE, DOWN_SHARE]
 const TEX_METRIC_LABELS = Dict(NET => "Net energy traded (MWh)", UP => "Up balancing (MWh)", DOWN => "Down balancing (MWh)",
-	UP_SHARE => "Share of up-balancing need met (%)", DOWN_SHARE => "Share of down-balancing need met (%)")
+	UP_SHARE => UP_SHARE, DOWN_SHARE => DOWN_SHARE)
 
 # 1234567.8 -> "1,234,568"
 function FormatThousands(x)
@@ -240,36 +244,22 @@ end
 
 function InterpretationTable()
 	general = [
-		"READ FIRST - two views" => "The table describes the balancing segment (the first, locked MTU of each clearing) in two different ways that answer different questions. VIEW 1 (rows Net traded, Gross traded, Up balancing, Down balancing) looks at each agent's transactions on their own. VIEW 2 (rows Net response in wind-fall MTUs, Net response in wind-rise MTUs and the two Share rows) asks who responded to the wind forecast change, taking that change as the CAUSE of the balancing need and every other adjustment as the response. The two views can disagree for the same agent; that is expected (see the example below).",
-		"READ FIRST - sign convention" => "Up = adds energy to the system, Down = takes energy out. For generators and storage a positive transaction quantity is an increase in supply (storage: discharging) and a negative one a decrease (storage: charging). Demand quantities are consumption, so a demand agent's consumption REDUCTION counts as up and a consumption INCREASE as down in every row except Net traded, which keeps the transaction sign (positive = consumed more).",
-		"READ FIRST - wind-fall and wind-rise MTUs" => "A wind-fall MTU is a balancing MTU where the wind agent's available quantity is lower than in the previous clearing's forecast of the same MTU, so up-balancing is needed. A wind-rise MTU is one where it is higher, so down-balancing is needed. The up (down) need is the total size of these changes: the sum of the absolute changes over the wind-fall (wind-rise) MTUs. MTUs without a previous-clearing forecast are left out. Responders = every agent except wind, plus the row Wind spillage (response).",
-		"READ FIRST - why the views disagree" => "An agent can show 0 in Up balancing and a negative Net response in wind-fall MTUs. Up balancing (view 1) counts only the transactions that add energy, each by its own sign, whatever the wind did in that MTU. Net response in wind-fall MTUs (view 2) adds up EVERYTHING the agent did in the MTUs where wind fell. A demand agent that consumed 100 MWh more in a wind-fall MTU therefore shows 0 up balancing but -100 there: none of its transactions was an up transaction, and it moved against the need. A negative response or share always means the agent moved against the need.",
-		"READ FIRST - difference columns" => "The columns named 'X vs Y' are X minus Y: in MWh for the volume and response rows, in percentage points for the two Share rows.",
-		"READ FIRST - empty cells ('--')" => "Not applicable: the wind agent has no response or share (it is the cause), and the cause row has no shares. If the previous clearings' forecasts were not available for a run, the response and share rows are empty for every agent.",
+		"READ FIRST - what the table shows" => "The balancing segment is the first, locked MTU of each clearing. For every agent the table gives the net energy it traded in that segment, separately for the MTUs where the wind's available quantity fell and for those where it rose, and the agent's share of the total traded by all agents in those MTUs.",
+		"READ FIRST - sign convention" => "Positive = energy injected into the system, negative = energy withdrawn. For generators and storage a positive transaction quantity is an increase in supply (storage: discharging) and a negative one a decrease (storage: charging). Demand quantities are consumption, so for a demand agent the sign is flipped: a consumption reduction is an injection (positive) and a consumption increase a withdrawal (negative).",
+		"READ FIRST - wind-decrease and wind-increase MTUs" => "A wind-decrease MTU is a balancing MTU where the wind agent's available quantity is lower than in the previous clearing's forecast of the same MTU, so the other agents together have to inject energy. A wind-increase MTU is one where it is higher, so they have to withdraw energy. MTUs without a previous-clearing forecast are left out. In every net-traded row the agents' values plus the row Wind spillage add up to minus the row Wind forecast change.",
+		"READ FIRST - difference columns" => "The columns named 'X vs Y' are X minus Y: in MWh for the net-traded rows, in percentage points for the share rows.",
+		"READ FIRST - empty cells ('--')" => "Not applicable: the wind agent and the two Wind rows have no share, and if the previous clearings' forecasts were not available for a run the rows are empty for every agent. A share is also empty when the agents traded nothing in that segment.",
 	]
 	metrics = [
-		NET => "VIEW 1. Sum of the signed quantities of the agent's Segment == Balancing transactions in the analysis window: its net change from balancing. For a demand agent it is its consumption change (positive = consumed more).",
-		GROSS => "VIEW 1. Sum of the absolute quantities: how much the agent moved in the balancing segment, in either direction.",
-		UP => "VIEW 1. Sum over the agent's balancing transactions that add energy to the system: supply increases (generator positive quantities, storage discharging) or, for a demand agent, consumption reductions. Each transaction is classified by its own sign, regardless of what the wind did in that MTU. Zero or positive.",
-		DOWN => "VIEW 1. Sum over the agent's balancing transactions that take energy out of the system: supply decreases (generator negative quantities, storage charging) or, for a demand agent, consumption increases. Reported as a negative number (zero or negative). For generators and storage Up + Down = Net; for a demand agent Up + Down = -Net.",
-		RESPONSE_TO_FALL => "VIEW 2. In the wind-fall MTUs (up-balancing needed): the agent's net response, summed over those MTUs. Per MTU it is the net of all the agent's balancing transactions in that MTU, positive when the agent added energy (supply up / consumption down) and negative when it moved against the need. The responders' values add up exactly to the up-balancing need shown on the row 'Wind forecast change (cause)'. MWh. Wind has none.",
-		UP_SHARE => "VIEW 2. = Net response in wind-fall MTUs / up-balancing need x 100: the agent's part of the up-balancing need. Adds up to 100 over the responders. Negative = the agent moved against the need; above 100 = the agent did more than the whole need while others moved against it. Percentage points in the difference columns. Wind has none.",
-		RESPONSE_TO_RISE => "VIEW 2. In the wind-rise MTUs (down-balancing needed): the agent's net response, summed over those MTUs, with the sign chosen so that a move that helps is positive: positive when the agent took energy out (supply down / consumption up), negative when it moved against the need (supply up / consumption down). The responders' values add up exactly to the down-balancing need on the row 'Wind forecast change (cause)'. MWh. Wind has none.",
-		DOWN_SHARE => "VIEW 2. = Net response in wind-rise MTUs / down-balancing need x 100: the agent's part of the down-balancing need. Same conventions as the up share. Wind has none.",
+		RESPONSE_TO_FALL => "Per balancing MTU where the wind's available quantity fell: the agent's net balancing trade in that MTU (all its balancing transactions added up, demand sign-flipped), summed over those MTUs, in MWh. Positive = it injected energy, negative = it withdrew energy.",
+		UP_SHARE => "= Net traded in wind-decrease MTUs / the sum of that row over all agents (the rows Wind spillage and Wind forecast change are not in the sum) x 100. Adds up to 100 over the agents. Negative = the agent's net trade had the opposite sign from the total (for example it withdrew energy while the agents together injected); above 100 = the agent traded more than the total since others traded the opposite way. Percentage points in the difference columns. Wind has none.",
+		RESPONSE_TO_RISE => "Per balancing MTU where the wind's available quantity rose: the agent's net balancing trade in that MTU, summed over those MTUs, in MWh. Same sign convention (positive = injected, negative = withdrew), so in these MTUs the agents that help are negative.",
+		DOWN_SHARE => "= Net traded in wind-increase MTUs / the sum of that row over all agents (the rows Wind spillage and Wind forecast change are not in the sum) x 100. Same conventions as the share in wind-decrease MTUs. Wind has none.",
+		SPILL_AGENT => "Not a trade. Per balancing MTU: the wind agent's own net balancing trade minus the change in its available quantity, i.e. minus the change in its spillage (extra spillage is a withdrawal, less spillage an injection), summed over the wind-decrease MTUs and over the wind-increase MTUs, in MWh. It is left out of the share totals and has no share.",
+		CAUSE_AGENT => "Not a trade. The change in the wind agent's available quantity versus the previous clearing's forecast of the same MTU, summed over the wind-decrease MTUs (negative: less wind than planned) and over the wind-increase MTUs (positive), in MWh. In each of the two rows the agents plus Wind spillage add up to minus this value. No shares.",
 	]
 	rows = [general; metrics]
 	return DataFrame(Metric=first.(rows), Interpretation=last.(rows))
-end
-
-# Interpretation of the two pseudo-agent rows (see "Cause and response" in the header)
-function CauseAndResponseNotes()
-	return DataFrame(
-		Row=SPILL_AND_CAUSE,
-		Interpretation=[
-			"A responder, not a trader. Per balancing MTU: the wind agent's own net balancing trade minus the change in its available quantity, i.e. minus the change in its spillage (extra spillage is a down response, less spillage an up response). Its Net traded / Gross / Up / Down rows are computed from these per-MTU responses (view 1 style, but per MTU rather than per transaction); its response and share rows work as for every responder (view 2).",
-			"The cause, not a responder. The change in the wind's available quantity vs the previous clearing's forecast of the same MTU. Net traded = sum of the changes (negative: less wind than planned); Gross = sum of the absolute changes; Up balancing = total fall (the up-balancing need); Down balancing = total rise as a negative number (the down-balancing need); Net response in wind-fall MTUs = the up-balancing need and Net response in wind-rise MTUs = the down-balancing need, the totals each column of responders adds up to. No shares.",
-		],
-	)
 end
 
 # cases is any N case_paths keys; time_range nothing is the window the runs' own configs define
@@ -282,7 +272,7 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 	analysis_dir_path = "$output_base/balancing_trade_quantities"
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 
-	# the wind forecast change (the cause) from each run's previous-clearing forecasts; a run without the RAW exports
+	# the wind forecast change from each run's previous-clearing forecasts; a run without the RAW exports
 	# gets empty share rows instead of failing
 	wind_change = Dict{String,Union{Nothing,Dict{Int,Float64}}}()
 	for case in cases
@@ -298,13 +288,9 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 	df = BuildTable(quantities_by_case, cases; agents=have_cause ? [AGENTS; SPILL_AND_CAUSE] : AGENTS, compare_to_subject=compare_to_subject)
 	println(df)
 
-	# trades per agent (net, gross, up, down) on "trades"; the cause and response values and shares on "up-down segments"
-	trades_df = df[df.Metric .∈ Ref(METRICS), :]
-	response_df = df[df.Metric .∈ Ref(NEED_METRICS), :]
-	sheets = Pair{String,DataFrame}["trades" => trades_df]
-	have_cause && push!(sheets, "up-down segments" => response_df)
-	push!(sheets, "interpretation" => InterpretationTable())
-	have_cause && push!(sheets, "response notes" => CauseAndResponseNotes())
+	# the workbook has the net traded and its share per wind segment (the per-transaction volumes stay out of it)
+	segments_df = df[df.Metric .∈ Ref(NEED_METRICS), :]
+	sheets = Pair{String,DataFrame}["up-down segments" => segments_df, "interpretation" => InterpretationTable()]
 	XLSX.writetable("$analysis_dir_path/balancing_trade_quantities.xlsx", sheets...; overwrite=true)
 	write("$analysis_dir_path/balancing_trade_quantities.tex",
 		latexify(PostAnalysisCommon.EscapeForLatex(TexTable(df)); env=:table, booktabs=true, snakecase=true, latex=false, fmt="%'\''d\n"))
@@ -323,7 +309,7 @@ const GRID_COLOR = "#e1e0d9"
 const TEXT_PRIMARY = "#0b0b0b"
 const TEXT_MUTED = "#898781"
 
-# Grouped bars of the net response (view 2 of the table) by responder, one bar per case, with the need as a dashed line, in two panels that share one
+# Grouped bars of the net response (view 2 of the table) by responder, one bar per case in two panels that share one
 # convention and one y axis (zero lines up): positive = energy INJECTED into the system (supply up, storage discharging,
 # demand consuming less), negative = energy TAKEN OUT (supply down, storage charging, demand consuming more). So a bar
 # means the same on both sides. Left: the wind-fall MTUs, where up-balancing is needed, so the need and the responders
@@ -332,14 +318,16 @@ const TEXT_MUTED = "#898781"
 # response the system has to deliver to offset the wind forecast change summed over those MTUs (so it has the opposite sign
 # to the wind's own change); the responders' bars add up to it, and a bar on the other side of zero than the need is a move
 # against it. Responders with no response in any case are left out.
+# The first bar of each panel (grey, one for both cases) is the wind availability change itself with its true sign
+# (negative when the wind falls: less energy injected); the responders' bars add up to its mirror image.
 function PlotResponseBars(quantities_by_case, cases, mtu_counts, path)
 	length(cases) <= length(BAR_COLORS) || (println("warning: more than $(length(BAR_COLORS)) cases - response bar chart skipped"); return)
 	candidates = [filter(a -> a != WIND_AGENT, AGENTS); SPILL_AGENT]
-	# (table row, title, MTU count field, sign): the wind-rise rows are flipped to the "positive = energy injected" convention
-	panels = [(RESPONSE_TO_FALL, "Up-balancing needed", :fall, 1.0), (RESPONSE_TO_RISE, "Down-balancing needed", :rise, -1.0)]
+	# (table row, title, MTU count field, sign): both table rows already use the "positive = energy injected" convention
+	panels = [(RESPONSE_TO_FALL, "Sum of Trades when Wind Availability Decreases", :fall, 1.0), (RESPONSE_TO_RISE, "Sum of Trades when Wind Availability Increases", :rise, 1.0)]
 	value(case, a, metric, sign) = sign * Float64(quantities_by_case[case][a][metric])
 	shown = filter(a -> any(case -> any(((metric, _, _, _),) -> !ismissing(get(quantities_by_case[case][a], metric, missing)) && abs(quantities_by_case[case][a][metric]) > 1e-6, panels), cases), candidates)
-	label(a) = a == CAUSE_AGENT ? "Need\n(wind change)" : a == SPILL_AGENT ? "Wind\nspillage" : replace(DisplayName(a), " " => "\n")
+	label(a) = a == SPILL_AGENT ? "Wind\nspillage" : replace(DisplayName(a), " " => "\n")
 
 	# one y range for both panels, over every bar, with headroom for the legend (autoscaling would clip later bars)
 	all_values = [value(case, a, metric, sign) for (metric, _, _, sign) in panels for case in cases for a in shown]
@@ -356,15 +344,17 @@ function PlotResponseBars(quantities_by_case, cases, mtu_counts, path)
 	for (k, (metric, title, segment, sign)) in enumerate(panels)
 		need = sign * quantities_by_case[cases[1]][CAUSE_AGENT][metric]
 		n = getfield(mtu_counts[cases[1]], segment)
-		p = Plots.plot(; title="$title\nneed $(FormatThousands(need)) MWh over $n MTUs", titlefontsize=11,
-			ylabel=k == 1 ? "Net response (MWh)\npositive = energy injected into the system, negative = taken out" : "",
-			xticks=(1:length(shown), label.(shown)), yformatter=y -> FormatThousands(y), ylims=ylims, legend=k == 1 ? :topright : false,
+		p = Plots.plot(; title="$title\n$(segment == :fall ? "Decreased" : "Increased") $(FormatThousands(abs(need))) MWh over $n MTUs", titlefontsize=11,
+			ylabel=k == 1 ? "Net Energy Traded in Balancing MTUs\npositive = injections, negative = withdrawals" : "",
+			xticks=(1:length(shown)+1, ["Wind
+availability
+change"; label.(shown)]), yformatter=y -> FormatThousands(y), ylims=ylims, legend=k == 1 ? :topright : false,
 			left_margin=k == 1 ? 16Plots.mm : 4Plots.mm, bottom_margin=8Plots.mm, top_margin=4Plots.mm, chrome...)
 		Plots.hline!(p, [0.0]; label=false, color=AXIS_COLOR, linewidth=1)
-		Plots.hline!(p, [need]; label=k == 1 ? "Required response (offsets the wind change)" : false, color=TEXT_PRIMARY, linewidth=2, linestyle=:dash)
+		Plots.bar!(p, [1.0], [need]; bar_width=0.7, label=false, color=TEXT_MUTED, linewidth=0)
 		for (i, case) in enumerate(cases)
 			offset = (i - (length(cases) + 1) / 2) * width
-			Plots.bar!(p, (1:length(shown)) .+ offset, [value(case, a, metric, sign) for a in shown]; bar_width=width * 0.92, label=k == 1 ? case : "", color=BAR_COLORS[i], linewidth=0)
+			Plots.bar!(p, (1:length(shown)) .+ 1 .+ offset, [value(case, a, metric, sign) for a in shown]; bar_width=width * 0.92, label=k == 1 ? case : "", color=BAR_COLORS[i], linewidth=0)
 		end
 		push!(plots, p)
 	end

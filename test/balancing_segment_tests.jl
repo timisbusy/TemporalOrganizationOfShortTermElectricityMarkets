@@ -482,35 +482,40 @@ end
 		@test B.IsDemandAgent("1D_HighBid") && !B.IsDemandAgent("5G_Peak") && !B.IsDemandAgent("Storage")
 	end
 
-	@testset "wind forecast change is the cause; the other adjustments and the spillage are the response" begin
-		# MTU 1: wind falls by 100 (up need). Storage +80, peak +30, wind trade -110 (= dA - 10 more spillage), demand 0.
-		# MTU 2: wind rises by 50 (down need). Storage -20, peak -10, demand consumes 15 more, wind trade 45 (5 more spillage).
+	@testset "net trades per wind segment: shares of the total of the trading agents; wind change and spillage rows" begin
+		# MTU 1: wind falls by 100. Storage +80, peak +30, wind trade -110 (= dA - 10 more spillage), demand 0.
+		# MTU 2: wind rises by 50. Storage -20, peak -10, demand consumes 15 more, wind trade 45 (5 more spillage).
 		net = Dict("Storage" => Dict(1 => 80.0, 2 => -20.0), "5G_Peak" => Dict(1 => 30.0, 2 => -10.0),
 			"1D_HighBid" => Dict(2 => 15.0), "6G_Wind" => Dict(1 => -110.0, 2 => 45.0))
 		for (t, total) in ((1, 80 + 30 - 110), (2, -20 - 10 - 15 + 45)) # the balancing transactions net to zero in each MTU
 			@test total == 0
 		end
 		out = B.WindResponseMetrics(net, Dict(1 => -100.0, 2 => 50.0))
-		@test out["Storage"][B.UP_SHARE] ≈ 80.0 && out["5G_Peak"][B.UP_SHARE] ≈ 30.0 && out[B.SPILL_AGENT][B.UP_SHARE] ≈ -10.0 && out["1D_HighBid"][B.UP_SHARE] ≈ 0.0
-		@test sum(out[a][B.UP_SHARE] for a in ["Storage", "5G_Peak", "1D_HighBid", B.SPILL_AGENT]) ≈ 100
-		@test out["Storage"][B.DOWN_SHARE] ≈ 40.0 && out["5G_Peak"][B.DOWN_SHARE] ≈ 20.0 && out["1D_HighBid"][B.DOWN_SHARE] ≈ 30.0 && out[B.SPILL_AGENT][B.DOWN_SHARE] ≈ 10.0
-		@test sum(out[a][B.DOWN_SHARE] for a in ["Storage", "5G_Peak", "1D_HighBid", B.SPILL_AGENT]) ≈ 100
-		@test !haskey(out, "6G_Wind") # wind is the cause, not a responder
-		# the MWh responses behind the shares: responders add up to the needs shown on the cause row
+		trading = ["Storage", "5G_Peak", "1D_HighBid"]
+		# wind-decrease MTUs: agents' nets 80, 30, 0 (total 110); wind-increase MTUs: -20, -10, -15 (total -45)
+		@test out["Storage"][B.UP_SHARE] ≈ 100 * 80 / 110 && out["5G_Peak"][B.UP_SHARE] ≈ 100 * 30 / 110 && out["1D_HighBid"][B.UP_SHARE] ≈ 0.0
+		@test sum(out[a][B.UP_SHARE] for a in trading) ≈ 100
+		@test out["Storage"][B.DOWN_SHARE] ≈ 100 * 20 / 45 && out["5G_Peak"][B.DOWN_SHARE] ≈ 100 * 10 / 45 && out["1D_HighBid"][B.DOWN_SHARE] ≈ 100 * 15 / 45
+		@test sum(out[a][B.DOWN_SHARE] for a in trading) ≈ 100
+		@test ismissing(out[B.SPILL_AGENT][B.UP_SHARE]) && ismissing(out[B.SPILL_AGENT][B.DOWN_SHARE]) # spillage is not a trade
+		@test !haskey(out, "6G_Wind") # wind is the reference, not a trading agent
+		# the MWh nets behind the shares (injection-positive in both segments)
 		@test out["Storage"][B.RESPONSE_TO_FALL] ≈ 80 && out["5G_Peak"][B.RESPONSE_TO_FALL] ≈ 30 && out["1D_HighBid"][B.RESPONSE_TO_FALL] ≈ 0 && out[B.SPILL_AGENT][B.RESPONSE_TO_FALL] ≈ -10
-		@test out["Storage"][B.RESPONSE_TO_RISE] ≈ 20 && out["5G_Peak"][B.RESPONSE_TO_RISE] ≈ 10 && out["1D_HighBid"][B.RESPONSE_TO_RISE] ≈ 15 && out[B.SPILL_AGENT][B.RESPONSE_TO_RISE] ≈ 5
-		@test sum(out[a][B.RESPONSE_TO_FALL] for a in ["Storage", "5G_Peak", "1D_HighBid", B.SPILL_AGENT]) ≈ out[B.CAUSE_AGENT][B.RESPONSE_TO_FALL] ≈ 100
-		@test sum(out[a][B.RESPONSE_TO_RISE] for a in ["Storage", "5G_Peak", "1D_HighBid", B.SPILL_AGENT]) ≈ out[B.CAUSE_AGENT][B.RESPONSE_TO_RISE] ≈ 50
-		# a demand agent that only consumed MORE in a wind-fall MTU: nothing it did is an up transaction, but it moved against the need
+		@test out["Storage"][B.RESPONSE_TO_RISE] ≈ -20 && out["5G_Peak"][B.RESPONSE_TO_RISE] ≈ -10 && out["1D_HighBid"][B.RESPONSE_TO_RISE] ≈ -15 && out[B.SPILL_AGENT][B.RESPONSE_TO_RISE] ≈ -5
+		# in each segment the agents plus the spillage add up to minus the wind forecast change
+		@test sum(out[a][B.RESPONSE_TO_FALL] for a in [trading; B.SPILL_AGENT]) ≈ -out[B.CAUSE_AGENT][B.RESPONSE_TO_FALL] ≈ 100
+		@test sum(out[a][B.RESPONSE_TO_RISE] for a in [trading; B.SPILL_AGENT]) ≈ -out[B.CAUSE_AGENT][B.RESPONSE_TO_RISE] ≈ -50
+		# a demand agent that only consumed MORE in a wind-decrease MTU: nothing it did is an up transaction, but its net there is negative
 		against = B.WindResponseMetrics(Dict("1D_HighBid" => Dict(1 => 40.0), "Storage" => Dict(1 => 140.0), "6G_Wind" => Dict(1 => -100.0)), Dict(1 => -100.0))
 		@test against["1D_HighBid"][B.RESPONSE_TO_FALL] ≈ -40 && against["1D_HighBid"][B.UP_SHARE] ≈ -40
 		@test B.TradeQuantities([40.0]; demand=true)[B.UP] == 0.0 # the per-transaction up balancing row stays 0
 		cause = out[B.CAUSE_AGENT]
 		@test cause[B.NET] ≈ -50 && cause[B.UP] ≈ 100 && cause[B.DOWN] ≈ -50 && cause[B.GROSS] ≈ 150 && ismissing(cause[B.UP_SHARE])
+		@test cause[B.RESPONSE_TO_FALL] ≈ -100 && cause[B.RESPONSE_TO_RISE] ≈ 50 # the wind change itself, with its own sign
 		spill = out[B.SPILL_AGENT]
-		@test spill[B.NET] ≈ -15 && spill[B.UP] ≈ 0 && spill[B.DOWN] ≈ -15 # -(10 + 5) more spillage, both down responses
+		@test spill[B.NET] ≈ -15 && spill[B.UP] ≈ 0 && spill[B.DOWN] ≈ -15 # -(10 + 5) more spillage, both withdrawals
 		quiet = B.WindResponseMetrics(Dict("Storage" => Dict(1 => 0.0), "6G_Wind" => Dict(1 => 0.0)), Dict(1 => 0.0))
-		@test quiet["Storage"][B.UP_SHARE] == 0.0 && quiet["Storage"][B.DOWN_SHARE] == 0.0 # no need, no shares
+		@test ismissing(quiet["Storage"][B.UP_SHARE]) && ismissing(quiet["Storage"][B.DOWN_SHARE]) # nothing traded, no shares
 	end
 
 	@testset "without a wind forecast change the share rows are missing; with it they are filled in" begin
@@ -546,7 +551,7 @@ end
 		by_case = Dict("A" => B.BalancingTradeQuantities(tx, 0:10), "B" => B.BalancingTradeQuantities(tx, 0:10))
 		tex = B.TexTable(B.BuildTable(by_case, ["A", "B"]))
 		@test !any(in(["Base", "Shoulder", "Solar"]), tex.Agent)
-		@test Set(tex.Metric) == Set(["Net energy traded (MWh)", "Up balancing (MWh)", "Down balancing (MWh)", "Share of up-balancing need met (%)", "Share of down-balancing need met (%)"])
+		@test Set(tex.Metric) == Set(["Net energy traded (MWh)", "Up balancing (MWh)", "Down balancing (MWh)", B.UP_SHARE, B.DOWN_SHARE])
 		@test all(a -> count(==(a), tex.Agent) == 5, unique(tex.Agent)) # every shown agent has all five rows
 		@test B.FormatThousands(1234567.8) == "1,234,568" && B.FormatThousands(-1349.4) == "-1,349" && B.FormatShare(12.345) == "12.3" && B.FormatShare(-0.01) == "0.0"
 		@test sort(unique(tex.Agent)) == sort(["High Bid", "Moderate Bid", "Peak", "Wind", "Storage"])
@@ -560,6 +565,12 @@ end
 			df = B.PerformAnalysis(Dict("Case A" => case_path, "Case B" => case_path); cases=["Case A", "Case B"], output_base=joinpath(dir, "out"), time_range=0:10)
 			@test isfile(joinpath(dir, "out", "balancing_trade_quantities", "balancing_trade_quantities.xlsx"))
 			@test "Case B vs Case A (MWh)" in names(df)
+			# the workbook has the segment table and the interpretation only (no per-transaction trades sheet)
+			sheets = XLSX.sheetnames(XLSX.readxlsx(joinpath(dir, "out", "balancing_trade_quantities", "balancing_trade_quantities.xlsx")))
+			@test sheets == ["up-down segments", "interpretation"]
+			interpretation = XLSX.readtable(joinpath(dir, "out", "balancing_trade_quantities", "balancing_trade_quantities.xlsx"), "interpretation")
+			text = lowercase(join(vcat(string.(interpretation.data[1]), string.(interpretation.data[2])), " "))
+			@test !occursin("response", text) && !occursin("cause", text)
 		end
 	end
 end
@@ -604,7 +615,7 @@ end
 			@test "B vs A" in names(totals)
 			@test totals[totals.Indicator .== "Solar Spillage (MWh)", "A"] == [4.0]
 			file = joinpath(dir, "out", "spillage", "spillage.xlsx")
-			@test XLSX.sheetnames(XLSX.readxlsx(file)) == ["totals", "daily_average", "interpretation"]
+			@test XLSX.sheetnames(XLSX.readxlsx(file)) == ["totals", "interpretation"]
 			@test isfile(joinpath(dir, "out", "spillage", "spillage.tex"))
 		end
 	end

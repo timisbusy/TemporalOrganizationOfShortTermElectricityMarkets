@@ -8,7 +8,7 @@
 # longer carry it.
 #
 # Reported per case, for wind and for solar: available, spilled and the spilled share of the available (totals over
-# time_range, plus a daily average sheet), with % difference columns - by default "{case} vs {previous case}"
+# the whole time_range, no per-day sheet), with % difference columns - by default "{case} vs {previous case}"
 # for each adjacent pair (the window-length suite), or with compare_to_subject=true "{last case} vs {base}" for
 # every other case (the fixed vs rolling suite's convention, see PostAnalysisSEW). For two cases the two are the
 # same.
@@ -26,7 +26,6 @@ available_label(label) = "$label Available (MWh)"
 spillage_label(label) = "$label Spillage (MWh)"
 share_label(label) = "$label Spillage (% of available)"
 const METRICS = vcat([[available_label(l), spillage_label(l), share_label(l)] for (l, _) in SOURCES]...)
-const EXTENSIVE_METRICS = filter(m -> !occursin("%", m), METRICS) # totals over time_range, scaled per day in the daily sheet
 
 const BALANCING_SEGMENT = "Balancing"
 
@@ -54,27 +53,22 @@ function Spillage(final_dispatch_decisions, time_range)
 	return result
 end
 
-# rows: metric; columns: Indicator, one per case, then the % difference columns. scale multiplies the extensive
-# metrics (24 / MTU count for the daily average); the share is a ratio and stays unscaled.
-function BuildTable(results_by_case, cases; compare_to_subject=false, scale=1.0)
+# rows: metric; columns: Indicator, one per case, then the % difference columns (totals over the whole time_range)
+function BuildTable(results_by_case, cases; compare_to_subject=false)
 	comparisons = compare_to_subject ? [(length(cases), i) for i in 1:length(cases)-1] : [(i, i-1) for i in 2:length(cases)]
 	pairs = Any["Indicator" => String[]]
 	append!(pairs, [case => Float64[] for case in cases])
 	append!(pairs, ["$(cases[c]) vs $(cases[b])" => String[] for (c, b) in comparisons])
 	df = DataFrame(pairs...)
 	for metric in METRICS
-		factor = metric in EXTENSIVE_METRICS ? scale : 1.0
-		values = [results_by_case[case][metric] * factor for case in cases]
-		row = Any[metric in EXTENSIVE_METRICS && scale != 1.0 ? DailyLabel(metric) : metric]
+		values = [results_by_case[case][metric] for case in cases]
+		row = Any[metric]
 		append!(row, values)
 		append!(row, [PostAnalysisCommon.PercentDiffString(values[c], values[b]) for (c, b) in comparisons])
 		push!(df, row)
 	end
 	return df
 end
-
-# "Name (MWh)" -> "Name (MWh/day)"
-DailyLabel(metric) = replace(metric, r"\(([^()]*)\)$" => s"(\1/day)")
 
 function InterpretationTable()
 	interpretations = String[]
@@ -99,10 +93,9 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 
 	results_by_case = Dict(case => Spillage(PostAnalysisCommon.LoadCaseFile(case_paths, case, "final_dispatch_decisions.xlsx"), time_range) for case in cases)
 	totals = BuildTable(results_by_case, cases; compare_to_subject=compare_to_subject)
-	daily = BuildTable(results_by_case, cases; compare_to_subject=compare_to_subject, scale=24 / length(time_range))
 	println(totals)
 
-	XLSX.writetable("$analysis_dir_path/spillage.xlsx", "totals" => totals, "daily_average" => daily, "interpretation" => InterpretationTable(); overwrite=true)
+	XLSX.writetable("$analysis_dir_path/spillage.xlsx", "totals" => totals, "interpretation" => InterpretationTable(); overwrite=true)
 	# the shares keep their decimals; EscapeForLatex has turned "%" into "\%" in the indicator names, so match those
 	share_rows = [replace(share_label(label), "%" => "\\%") for (label, _) in SOURCES]
 	tex_table = PostAnalysisCommon.FormatIndicatorRowsForLatex(PostAnalysisCommon.EscapeForLatex(totals), share_rows, cases)

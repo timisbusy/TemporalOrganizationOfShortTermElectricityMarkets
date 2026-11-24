@@ -31,12 +31,13 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 	end
 	# println(dvs)
 
-	metrics = ["Charge [MWh/day]","Discharge [MWh/day]","Net discharge [MWh/day]","Total throughput [MWh/day]"]
+	# totals over the whole analysed test range (not per day)
+	metrics = ["Charge [MWh]","Discharge [MWh]","Net discharge [MWh]","Total throughput [MWh]"]
 
 	storage_analysis_df = DataFrame(Metric=metrics)
 	for (case, dd) in dds
 		(discharge_total,charge_total,discharge_per_day,charge_per_day) = PrintStorageDetails(case, dd)
-		storage_analysis_df[!,Symbol(case)] = [charge_per_day,discharge_per_day,discharge_per_day-charge_per_day,charge_per_day+discharge_per_day]
+		storage_analysis_df[!,Symbol(case)] = [charge_total,discharge_total,discharge_total-charge_total,charge_total+discharge_total]
 	end
 
 	# one "{subject} vs {base} Change"/"{subject} vs {base} % Change" pair per base case - cases[end]
