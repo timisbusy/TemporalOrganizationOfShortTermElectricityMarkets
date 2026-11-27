@@ -481,22 +481,25 @@ end
 		@test_throws String B.BalancingTradeQuantities(select(tx, Not(:Segment)), 0:10)
 	end
 
-	@testset "table layout: adjacent-pair or subject-relative % differences" begin
+	@testset "table layout: adjacent-pair or subject-relative MWh differences" begin
 		q = B.BalancingTradeQuantities(tx, 0:10; agents=["4G_Shoulder", "3G_Base"])
 		by_case = Dict("A" => q, "B" => q, "C" => q)
 		adjacent = B.BuildTable(by_case, ["A", "B", "C"]; agents=["4G_Shoulder", "3G_Base"])
 		@test nrow(adjacent) == 2 * length(B.METRICS)
-		@test names(adjacent)[end-1:end] == ["B vs A", "C vs B"]
+		@test names(adjacent)[end-1:end] == ["B vs A (MWh)", "C vs B (MWh)"]
 		subject = B.BuildTable(by_case, ["A", "B", "C"]; agents=["4G_Shoulder", "3G_Base"], compare_to_subject=true)
-		@test names(subject)[end-1:end] == ["C vs A", "C vs B"]
+		@test names(subject)[end-1:end] == ["C vs A (MWh)", "C vs B (MWh)"]
+		scaled = Dict(agent => Dict(m => 2v for (m, v) in metrics) for (agent, metrics) in q)
+		diffs = B.BuildTable(Dict("A" => q, "B" => scaled), ["A", "B"]; agents=["4G_Shoulder", "3G_Base"])
+		@test diffs[!, "B vs A (MWh)"] == diffs.B .- diffs.A # MWh differences, not percentages
 	end
 
 	@testset "the LaTeX table is reduced to energy traded, plus storage increases and decreases" begin
 		by_case = Dict("A" => B.BalancingTradeQuantities(tx, 0:10), "B" => B.BalancingTradeQuantities(tx, 0:10))
 		tex = B.TexTable(B.BuildTable(by_case, ["A", "B"]))
 		@test !any(in(["Base", "Shoulder", "Solar"]), tex.Agent)
-		@test Set(tex.Metric) == Set(["Energy traded (MWh)", "Energy increases (MWh)", "Energy decreases (MWh)"])
-		@test Set(tex[tex.Metric .!= "Energy traded (MWh)", :Agent]) == Set(["Storage"])
+		@test Set(tex.Metric) == Set(["Net energy traded (MWh)", "Energy increases (MWh)", "Energy decreases (MWh)"])
+		@test Set(tex[tex.Metric .!= "Net energy traded (MWh)", :Agent]) == Set(["Storage"])
 		@test sort(unique(tex.Agent)) == sort(["High Bid", "Moderate Bid", "Peak", "Wind", "Storage"])
 	end
 
@@ -507,7 +510,7 @@ end
 			XLSX.writetable(joinpath(case_path, "transactions.xlsx"), "data" => tx)
 			df = B.PerformAnalysis(Dict("Case A" => case_path, "Case B" => case_path); cases=["Case A", "Case B"], output_base=joinpath(dir, "out"), time_range=0:10)
 			@test isfile(joinpath(dir, "out", "balancing_trade_quantities", "balancing_trade_quantities.xlsx"))
-			@test "Case B vs Case A" in names(df)
+			@test "Case B vs Case A (MWh)" in names(df)
 		end
 	end
 end
@@ -556,4 +559,19 @@ end
 			@test isfile(joinpath(dir, "out", "spillage", "spillage.tex"))
 		end
 	end
+end
+
+if !isdefined(Main, :PostAnalysisWindowLengthBalancingEnergy)
+	include("../src/lib/post_analysis/analyses/post_analysis_window_length_balancing_energy.jl")
+end
+
+@testset "Window length balancing energy table" begin
+	W = PostAnalysisWindowLengthBalancingEnergy
+	values = Dict("36h" => 10.0, "48h" => 13.0, "72h" => 12.0)
+	table = W.BuildTable(["36h", "48h", "72h"], ["X"], W.SEGMENTS, (case, item, segment) -> segment == "Balancing" ? missing : values[case]; item_label="Item")
+	@test names(table) == ["Item", "Segment", "36h", "48h", "72h", "48h vs 36h (difference)", "72h vs 48h (difference)"]
+	@test table.Segment == ["Total", "Energy", "Balancing"]
+	@test table[1, "48h vs 36h (difference)"] == 3.0 # compared minus base, not a percentage
+	@test table[1, "72h vs 48h (difference)"] == -1.0
+	@test ismissing(table[3, "48h vs 36h (difference)"]) # undefined where a value is missing
 end

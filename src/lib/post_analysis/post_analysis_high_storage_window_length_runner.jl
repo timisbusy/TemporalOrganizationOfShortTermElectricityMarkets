@@ -15,6 +15,7 @@ include("./analyses/post_analysis_window_length_kpis.jl")
 include("./analyses/post_analysis_window_length_storage_kpis.jl")
 include("./analyses/post_analysis_window_length_residence_time.jl")
 include("./analyses/post_analysis_rolling_horizon_churn.jl")
+include("./analyses/post_analysis_balancing_trade_quantities.jl")
 include("./analyses/post_analysis_wind_forecast_error.jl")
 
 const DEFAULT_CASE_PATHS = Dict{String,String}(
@@ -39,6 +40,7 @@ function Run(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, label=DefaultLa
 	PostAnalysisWindowLengthStorageKPIs.PerformAnalysis(case_paths; cases=cases, output_base=output_base, time_range=time_range)
 	PostAnalysisWindowLengthResidenceTime.PerformAnalysis(case_paths; cases=cases, output_base=output_base, time_range=time_range)
 	PostAnalysisRollingHorizonChurn.PerformAnalysis(case_paths; cases=cases, output_base=output_base, time_range=time_range)
+	PostAnalysisBalancingTradeQuantities.PerformAnalysis(case_paths; cases=cases, output_base=output_base, time_range=time_range)
 	PostAnalysisWindForecastError.PerformAnalysis(case_paths; cases=cases, output_base=output_base, time_range=time_range)
 
 	return output_base
