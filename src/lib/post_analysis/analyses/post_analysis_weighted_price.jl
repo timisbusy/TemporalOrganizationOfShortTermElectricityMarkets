@@ -55,7 +55,30 @@ function PerformAnalysis(case_paths=PostAnalysisCommon.DEFAULT_CASE_PATHS; cases
 
 	PlotWeightedPrice(prices, cases, time_range, analysis_dir_path, segment)
 	WritePriceTable(prices, cases, time_range, analysis_dir_path)
+	summary = SummaryTable(prices, cases)
+	println(summary)
+	XLSX.writetable("$analysis_dir_path/weighted_price_summary.xlsx", "data" => summary; overwrite=true)
 	return prices
+end
+
+# Statistics of the per-MTU volume-weighted prices of each case over the MTUs that have a price (an MTU with no traded
+# volume is left out; the standard deviation is the sample one). Every MTU counts once, whatever its traded volume.
+const SUMMARY_STATISTICS = ["Mean (€/MWh)", "Median (€/MWh)", "Standard deviation (€/MWh)", "Maximum (€/MWh)", "Minimum (€/MWh)", "MTUs with a price"]
+
+function PriceSummary(price)
+	values = Float64.(collect(skipmissing(price)))
+	isempty(values) && return fill(missing, length(SUMMARY_STATISTICS))
+	return Union{Missing,Float64}[Statistics.mean(values), Statistics.median(values), length(values) > 1 ? Statistics.std(values) : missing,
+		maximum(values), minimum(values), length(values)]
+end
+
+# rows: statistic; columns: Statistic, one per case
+function SummaryTable(prices, cases)
+	df = DataFrame(Statistic=SUMMARY_STATISTICS)
+	for case in cases
+		df[!, Symbol(case)] = PriceSummary(prices[case].price)
+	end
+	return df
 end
 
 # One row per MTU of time_range: its volume-weighted price (missing if nothing was traded) and its traded volume.
