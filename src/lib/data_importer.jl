@@ -42,6 +42,12 @@ function experiment_window_config_xlsx(path::String)
     return cfg
 end
 
+# the number of MTUs a market locks (see HelperMtuLock.LockedMTUCount): a non-negative whole number, nothing else
+function parse_locked_mtus(value, market_name)
+    (value isa Real && isinteger(value) && value >= 0) || error("lockedMTUs of market $market_name must be a non-negative whole number, got $(repr(value))")
+    return Int(value)
+end
+
 # create a market configuration object from a file
 
 function load_market_configuration(path::String, expTimePeriodsPerDay::Int)
@@ -51,6 +57,7 @@ function load_market_configuration(path::String, expTimePeriodsPerDay::Int)
     marketTimePeriodsPerDay = get(marketCfg,"timePeriodsPerDay", Int) 
     expTimePeriodsPerDay == marketTimePeriodsPerDay || throw("market and experiment configurations do not match: $(marketTimePeriodsPerDay) !== $(expTimePeriodsPerDay)")
     overrideMTU1Restriction = haskey(marketCfg,"overrideMTU1Restriction") ? get(marketCfg,"overrideMTU1Restriction", Bool) : false
+    defaultLockedMTUs = get(marketCfg, "lockedMTUs", nothing) # file-level default for markets that do not state their own
     
     marketSequence = []
     for (name, market) in get(marketCfg,"marketSequence",Dict())
@@ -58,6 +65,8 @@ function load_market_configuration(path::String, expTimePeriodsPerDay::Int)
         addMarket[:name] = name
         addMarket[:timePeriodsPerDay] = expTimePeriodsPerDay
         addMarket[:overrideMTU1Restriction] = overrideMTU1Restriction
+        lockedMTUs = get(market, "lockedMTUs", defaultLockedMTUs)
+        lockedMTUs === nothing || (addMarket[:lockedMTUs] = parse_locked_mtus(lockedMTUs, name))
         addMarket[:clearingInterval] = get(market,"clearingInterval", Int) # number of time periods between market clearing/optimization rounds
         addMarket[:optimizationWindow] = get(market,"optimizationWindow", Int) # number of time periods to consider in each round
         addMarket[:lookAheadDistance] = get(market,"lookAheadDistance", Int) # window under consideration starts lookAheadDistance time periods ahead
@@ -89,6 +98,7 @@ function load_market_configuration_xlsx(path::String, expTimePeriodsPerDay::Int)
         addMarket[:clockTimeBegin] = Int(marketDef["Clock Time Begin"]) # expressed in market clearing periods - how long from the beginning of the day should this sequence begin?
         addMarket[:enforceRampRates] = hasproperty(marketDef, "Enforce Ramp Rates") ? Bool(marketDef["Enforce Ramp Rates"]) : true # default to true. if false, ramp rates for conventional generators will be disabled in this market
         addMarket[:overrideMTU1Restriction] = hasproperty(marketDef, "Override MTU1 Restriction") ? Bool(marketDef["Override MTU1 Restriction"]) : false
+        hasproperty(marketDef, "Locked MTUs") && !ismissing(marketDef["Locked MTUs"]) && (addMarket[:lockedMTUs] = parse_locked_mtus(marketDef["Locked MTUs"], addMarket[:name]))
         push!(marketSequence, addMarket)
     end
 
@@ -276,6 +286,10 @@ end
 function load_input_data_xlsx(path::String)
     # Read the YAML file into a nested Julia Dict/Array structure
     cfg_df = DataFrame(XLSX.readtable(path, "data"))
+    # market comparison (compare: market) is a yaml-only feature; fail here, clearly, rather than somewhere
+    # further down on a market-comparison column this loader does not read
+    hasproperty(cfg_df,"Compare") && isequal(cfg_df[!,"Compare"][1], "market") &&
+        error("Excel experiment configurations do not support market comparison (Compare = market): $path - use a yaml experiment configuration with compare: market")
     # cfg = YAML.load_file(path)
     # println(cfg_df)
     # Internal data dictionary that we pass to the other functions
@@ -318,20 +332,10 @@ function load_input_data_xlsx(path::String)
     data[:configFile] = path
     data[:marketConfigFiles] = String[]
 
-    if hasproperty(cfg_df,"Compare") && cfg_df[!,"Compare"][1] == "market"
-        data[:marketSequences] = Dict{String,Any}()
-        for (marketName, marketConfigFilepath) in cfg_df[!,"Market Configs"][1]
-            market_config_path = "$(CONFIG_PATH)/xlsx/markets/$(marketConfigFilepath)"
-            data[:marketSequences][String(marketName)] = load_market_configuration(market_config_path, data[:timePeriodsPerDay])
-            push!(data[:marketConfigFiles], market_config_path)
-        end
-
-    else
-        # if we're not comparing markets, add the single market config
-        market_config_path = "$(CONFIG_PATH)/xlsx/markets/$(cfg_df[!,"Market Configuration"][1])"
-        data[:marketSequence] = load_market_configuration_xlsx(market_config_path, data[:timePeriodsPerDay])
-        push!(data[:marketConfigFiles], market_config_path)
-    end
+    # the single market config (market comparison is not supported for Excel, see the check above)
+    market_config_path = "$(CONFIG_PATH)/xlsx/markets/$(cfg_df[!,"Market Configuration"][1])"
+    data[:marketSequence] = load_market_configuration_xlsx(market_config_path, data[:timePeriodsPerDay])
+    push!(data[:marketConfigFiles], market_config_path)
 
     data[:agentConfigFile] = "$(CONFIG_PATH)/xlsx/agents/$(cfg_df[!,"Agent Configuration"][1])"
     agent = load_agent_config_xlsx(data[:agentConfigFile])

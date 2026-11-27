@@ -122,4 +122,31 @@ using .ClearMarket.LatestMarketModel
 
 	end
 
+	@testset "Storage revenue is the sum of storage transactions (quantity * price)" begin
+
+		# GIVEN storage that traded MTU 0 twice, charging 2 at 20 then discharging 3 at 60 (net position
+		# +1 MWh, settled at a final price of 100), MTU 1 once (discharging 2 at 50), and MTU 2 - outside
+		# the range - once (discharging 5 at 10)
+		helper = MarketDataStorage.HelperModelResults
+		agent_map = Dict(helper.AGENT_DEMAND => ["D"], helper.AGENT_GENERATOR => ["G"])
+		final_dispatch = DataFrame(mtu=0:2, D=fill(1.0, 3), P_D=fill(100.0, 3), G=fill(1.0, 3), P_G=fill(50.0, 3), SOC=fill(0.0, 3),
+			StorageCharge=[0.0, 0.0, 0.0], StorageDischarge=[1.0, 2.0, 5.0], FinalAuctionPrice=[100.0, 50.0, 10.0])
+		transactions = DataFrame(Agent=["Storage", "Storage", "Storage", "Storage"], var"Quantity (MWh)"=[-2.0, 3.0, 2.0, 5.0],
+			var"Price (€/MWh)"=[20.0, 60.0, 50.0, 10.0], var"Market Time Unit"=[0, 0, 1, 2])
+
+		result = MarketDataStorage.CalculateEconomicIndicators(final_dispatch, transactions, agent_map, 0:1)
+
+		# THEN the revenue is -2*20 + 3*60 + 2*50 = 240 - not the final-price valuation 1*100 + 2*50 = 200
+		@test isapprox(result.economic_indicators[1, "Storage Revenue (€)"], 240.0)
+		storage_row = result.agent_indicators[result.agent_indicators.Agent .== "Storage", :]
+		@test isapprox(storage_row[1, "Revenue (€)"], 240.0)
+		@test isapprox(storage_row[1, "Surplus (€)"], 240.0)
+		# and the per-MTU values (MTU 0: -40 + 180, MTU 1: 100) sum to the whole-range value
+		@test isapprox(result.mtu_economic_indicators[!, "Storage Revenue (€)"], [140.0, 100.0])
+		@test isapprox(sum(result.mtu_economic_indicators[!, "Storage Revenue (€)"]), result.economic_indicators[1, "Storage Revenue (€)"])
+		# the quantity column still reports the final dispatched discharge
+		@test isapprox(storage_row[1, "Quantity (MWh)"], 3.0)
+
+	end
+
 end

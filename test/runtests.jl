@@ -33,3 +33,22 @@ end
 @testset "MarketTimeline Tests" begin
 	include("market_timeline_tests.jl")
 end
+@testset "BalancingSegment Tests" begin
+	include("balancing_segment_tests.jl")
+end
+
+@testset "MTU lock count Tests" begin
+	include("helper_mtu_lock_tests.jl")
+end
+
+@testset "Market config lockedMTUs Tests" begin
+	include("market_config_lock_tests.jl")
+end
+
+@testset "Data importer Tests" begin
+	include("data_importer_tests.jl")
+end
+
+@testset "Window length config generator Tests" begin
+	include("generate_window_length_configs_tests.jl")
+end

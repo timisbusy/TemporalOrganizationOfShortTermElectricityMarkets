@@ -397,4 +397,27 @@ function CalculateCaseIndicators(case_paths, case; agent_map=DEFAULT_AGENT_MAP, 
 	return MarketDataStorage.CalculateEconomicIndicators(final_dispatch_decisions, transactions, agent_map, time_range; imbalance_agents=imbalance_agents)
 end
 
+# Same as CalculateCaseIndicators but for the energy markets only (see balancing_energy_split.jl): the
+# energy-only final dispatch decisions (final_dispatch_decisions_energy.xlsx: per MTU, the last clearing that
+# traded it as an energy MTU) and the Segment == "Energy" transactions. Returns the same named tuple, so
+# callers can swap one for the other. Runs made before the balancing/energy split lack those inputs and throw.
+const SEGMENT_COLUMN = "Segment"
+const ENERGY_SEGMENT = "Energy"
+function CalculateCaseEnergyIndicators(case_paths, case; agent_map=DEFAULT_AGENT_MAP, time_range=nothing, imbalance_agents::Union{Nothing,Tuple{String,String}}=nothing)
+	time_range = ResolveTimeRange(time_range, case_paths, [case])
+	transactions = LoadCaseFile(case_paths, case, "transactions.xlsx")
+	hasproperty(transactions, SEGMENT_COLUMN) || throw("transactions of case \"$case\" have no \"$SEGMENT_COLUMN\" column - this run predates the balancing/energy split; rerun it")
+	energy_transactions = transactions[transactions[!, SEGMENT_COLUMN] .== ENERGY_SEGMENT, :]
+	isfile(joinpath(case_paths[case], "final_dispatch_decisions_energy.xlsx")) || throw("case \"$case\" has no final_dispatch_decisions_energy.xlsx - this run predates the balancing/energy split; rerun it")
+	energy_final_dispatch_decisions = LoadCaseFile(case_paths, case, "final_dispatch_decisions_energy.xlsx")
+	return MarketDataStorage.CalculateEconomicIndicators(energy_final_dispatch_decisions, energy_transactions, agent_map, time_range; imbalance_agents=imbalance_agents)
+end
+
+# Mean FinalAuctionPrice over time_range of the energy-only final dispatch decisions
+function LoadMeanEnergyFinalAuctionPrice(case_path, time_range)
+	dd = LoadFile(joinpath(case_path, "final_dispatch_decisions_energy.xlsx"))
+	dd = dd[time_range.start .<= dd.mtu .<= time_range.stop, :]
+	return round(mean(dd.FinalAuctionPrice); digits=2)
+end
+
 end;

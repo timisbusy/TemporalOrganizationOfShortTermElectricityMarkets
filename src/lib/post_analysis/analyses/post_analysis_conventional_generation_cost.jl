@@ -3,7 +3,8 @@
 # 72h). Cost per generator per MTU is its own bidPrice (EUR/MWh, read from each case's own copied
 # agent configuration under Config/ rather than hardcoded, since that's the actual "offer price"
 # the market clears against) times its dispatched quantity (MWh) from that case's
-# final_dispatch_decisions.xlsx - MTU duration is 1 hour (timePeriodsPerDay: 24), so quantity
+# final_dispatch_decisions_energy.xlsx (energy segment only: per MTU, the last clearing that traded it
+# as an energy MTU, so balancing adjustments are excluded) - MTU duration is 1 hour (timePeriodsPerDay: 24), so quantity
 # (MWh) times price (EUR/MWh) is already EUR with no further conversion. Costs are summed across
 # the three generators per MTU, then averaged across all analyzed days for each hour-of-day
 # (0-23) - the same MTU % 24 grouping AddDayAndHour! uses elsewhere in this suite - so the result
@@ -51,7 +52,7 @@ function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, out
 
 	hourly_avg_cost = Dict{String,Vector{Float64}}()
 	for case in cases
-		dd = PostAnalysisCommon.LoadFile(joinpath(case_paths[case], "final_dispatch_decisions.xlsx"))
+		dd = PostAnalysisCommon.LoadFile(joinpath(case_paths[case], "final_dispatch_decisions_energy.xlsx")) # energy segment only
 		dd = dd[time_range.start .<= dd.mtu .<= time_range.stop, :]
 
 		bid_prices = LoadGeneratorBidPrices(case_paths[case])
