@@ -1,5 +1,5 @@
 # Rebuilds a finished run's end-of-run summary exports (economic_indicators.xlsx, agent_indicators.xlsx,
-# final_dispatch_decisions.xlsx, mtu_economic_results.xlsx and transactions.xlsx/.csv) from its
+# final_dispatch_decisions.xlsx, final_dispatch_decisions_energy.xlsx, mtu_economic_results.xlsx and transactions.xlsx/.csv) from its
 # per-clearing RAW exports (RAW/decisionvariables_*_<mtu>.xlsx and RAW/transactions_*_<mtu>.xlsx) -
 # without re-solving anything. Meant for a run whose simulation completed but whose final export step
 # (PlotBaselineOutcomes.plot) failed, e.g. the full-year 2025 rolling 72h run, whose transaction table
@@ -60,6 +60,7 @@ function Rebuild(result_dir; test_range, output_dir=result_dir, agent_map=PostAn
 	energy = MDS.GetEnergyEconomicIndicatorsForRange(container, test_range)
 	(indicators, agent_indicators, mtu_economic_outcomes) = (energy.economic_indicators, energy.agent_indicators, energy.mtu_economic_indicators)
 	final_dispatch_decisions = MDS.GetFinalDispatchDecisionsForRange(container, test_range)
+	energy_final_dispatch_decisions = MDS.GetEnergyFinalDispatchDecisionsForRange(container, test_range)
 	transactions = MDS.GetTransactionsForRange(container, test_range)
 	container = nothing
 
@@ -67,6 +68,7 @@ function Rebuild(result_dir; test_range, output_dir=result_dir, agent_map=PostAn
 	XLSX.writetable(joinpath(output_dir, "economic_indicators.xlsx"), "data" => indicators, "interpretation" => Interpretations.EconomicIndicatorsInterpretation; overwrite=true)
 	XLSX.writetable(joinpath(output_dir, "agent_indicators.xlsx"), "data" => agent_indicators, "interpretation" => Interpretations.AgentIndicatorsInterpretation; overwrite=true)
 	XLSX.writetable(joinpath(output_dir, "final_dispatch_decisions.xlsx"), "data" => final_dispatch_decisions, "interpretation" => Interpretations.DecisionVariablesInterpretation; overwrite=true)
+	XLSX.writetable(joinpath(output_dir, "final_dispatch_decisions_energy.xlsx"), "data" => energy_final_dispatch_decisions, "interpretation" => Interpretations.DecisionVariablesInterpretation; overwrite=true)
 	XLSX.writetable(joinpath(output_dir, "mtu_economic_results.xlsx"), "data" => mtu_economic_outcomes; overwrite=true)
 	# same rule as PlotBaselineOutcomes.write_transactions (csv_above_rows = the transactionsCsvAboveRows config key)
 	if nrow(transactions) > min(csv_above_rows, EXCEL_MAX_DATA_ROWS)

@@ -285,8 +285,11 @@ end
 # (see CaseCluster / CaseStorage) - plus each case's run directory, the analysis window and when the workbook was
 # written. The workbook is named after the cluster and storage level (HighLevelFileName, e.g. "cluster_8_large_storage.xlsx")
 # unless filename is given. Returns the workbook's path (nothing when no source file was found).
-function MergeHighLevelResults(output_base, files; case_paths, cases, time_range=nothing, plots=[], folder="high_level_results", filename=HighLevelFileName(case_paths, cases))
-	isempty(files) && return nothing
+#
+# notes (Item => Value pairs) are added to the end of the metadata tab, e.g. "Note" => "run stopped early ...". A
+# workbook with plots but no source files (files empty) holds just the metadata and Plots tabs.
+function MergeHighLevelResults(output_base, files; case_paths, cases, time_range=nothing, plots=[], folder="high_level_results", filename=HighLevelFileName(case_paths, cases), notes=Pair{String,String}[])
+	isempty(files) && isempty(plots) && return nothing
 	entries = [f isa Pair ? (String(first(f)), String(last(f))) : (String(f), splitext(basename(String(f)))[1]) for f in files]
 
 	sheets = Pair{String,DataFrame}[]
@@ -307,15 +310,14 @@ function MergeHighLevelResults(output_base, files; case_paths, cases, time_range
 			end
 		end
 	end
-	isempty(found) && return nothing
-
 	pictures = ResolvePlots(output_base, plots)
+	isempty(found) && isempty(pictures) && return nothing
 	plot_sheet, placements = isempty(pictures) ? (nothing, []) : PlotsSheet(pictures)
 
 	dest = "$output_base/$folder"
 	mkpath(dest)
 	path = "$dest/$filename"
-	ordered = Pair{String,DataFrame}["metadata" => MergeMetadata(case_paths, cases, time_range)]
+	ordered = Pair{String,DataFrame}["metadata" => MergeMetadata(case_paths, cases, time_range; notes=notes)]
 	plot_sheet === nothing || push!(ordered, "Plots" => plot_sheet)
 	XLSX.writetable(path, ordered..., sheets...; overwrite=true)
 	isempty(placements) || EmbedPictures(path, "Plots", placements)
@@ -477,7 +479,7 @@ function HighLevelFileName(case_paths, cases)
 	return (isempty(parts) ? "high_level_results" : join(parts, "_")) * ".xlsx"
 end
 
-function MergeMetadata(case_paths, cases, time_range)
+function MergeMetadata(case_paths, cases, time_range; notes=Pair{String,String}[])
 	clusters = unique(filter(!isnothing, [CaseCluster(case_paths[c]) for c in cases if haskey(case_paths, c)]))
 	storages = unique([CaseStorage(case_paths[c]) for c in cases if haskey(case_paths, c)])
 	storage_levels = unique([first(split(s, " (")) for s in storages])
@@ -492,6 +494,7 @@ function MergeMetadata(case_paths, cases, time_range)
 		haskey(case_paths, c) && push!(rows, "Run: $c" => String(case_paths[c]))
 	end
 	time_range === nothing || push!(rows, "Analysis window (MTU)" => "$(first(time_range)):$(last(time_range))")
+	append!(rows, [String(first(n)) => String(last(n)) for n in notes])
 	push!(rows, "Written" => string(Dates.now()))
 	return DataFrame(Item=first.(rows), Value=last.(rows))
 end
