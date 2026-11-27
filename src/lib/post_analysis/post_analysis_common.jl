@@ -380,6 +380,16 @@ end
 # - there is no pre-aggregated multi-case economic_indicators.xlsx/agent_indicators.xlsx with a
 # "Market Configuration" column to filter here (that shape only exists for
 # ClearMarketComparisonForConfig runs), so each case's indicators are computed on demand instead.
+# The storage SOC a run's analysis range opens with, as recorded in its opening_soc.yaml (the exported dispatch
+# decisions are trimmed to the range, so they no longer hold it). `kind` is "total" or "energy", matching the
+# dispatch table the indicators are computed from. `nothing` for a run that predates the file - the storage's
+# SOC change is then reported as missing.
+function LoadOpeningSOC(case_path, kind)
+	path = joinpath(case_path, "opening_soc.yaml")
+	isfile(path) || return nothing
+	return get(YAML.load_file(path), kind, nothing)
+end
+
 function CalculateCaseIndicators(case_paths, case; agent_map=DEFAULT_AGENT_MAP, time_range=nothing, raw_dispatch_prefix=nothing, imbalance_agents::Union{Nothing,Tuple{String,String}}=nothing)
 	# nothing: this case's own window from its experiment config (see ResolveTimeRange); the analysis
 	# modules always pass their already-resolved range
@@ -394,7 +404,7 @@ function CalculateCaseIndicators(case_paths, case; agent_map=DEFAULT_AGENT_MAP, 
 		prefix = raw_dispatch_prefix === nothing ? DiscoverRawDispatchPrefix(case_paths[case]) : raw_dispatch_prefix[case]
 		MarketDataStorage.AddFinalAuctionPriceFromRAW!(final_dispatch_decisions, prefix)
 	end
-	return MarketDataStorage.CalculateEconomicIndicators(final_dispatch_decisions, transactions, agent_map, time_range; imbalance_agents=imbalance_agents)
+	return MarketDataStorage.CalculateEconomicIndicators(final_dispatch_decisions, transactions, agent_map, time_range; imbalance_agents=imbalance_agents, opening_soc=LoadOpeningSOC(case_paths[case], "total"))
 end
 
 # Same as CalculateCaseIndicators but for the energy markets only (see balancing_energy_split.jl): the
@@ -410,7 +420,7 @@ function CalculateCaseEnergyIndicators(case_paths, case; agent_map=DEFAULT_AGENT
 	energy_transactions = transactions[transactions[!, SEGMENT_COLUMN] .== ENERGY_SEGMENT, :]
 	isfile(joinpath(case_paths[case], "final_dispatch_decisions_energy.xlsx")) || throw("case \"$case\" has no final_dispatch_decisions_energy.xlsx - this run predates the balancing/energy split; rerun it")
 	energy_final_dispatch_decisions = LoadCaseFile(case_paths, case, "final_dispatch_decisions_energy.xlsx")
-	return MarketDataStorage.CalculateEconomicIndicators(energy_final_dispatch_decisions, energy_transactions, agent_map, time_range; imbalance_agents=imbalance_agents)
+	return MarketDataStorage.CalculateEconomicIndicators(energy_final_dispatch_decisions, energy_transactions, agent_map, time_range; imbalance_agents=imbalance_agents, opening_soc=LoadOpeningSOC(case_paths[case], "energy"))
 end
 
 # Mean FinalAuctionPrice over time_range of the energy-only final dispatch decisions

@@ -122,6 +122,32 @@ using .ClearMarket.LatestMarketModel
 
 	end
 
+	@testset "Storage SOC change is measured against the SOC the range opens with" begin
+
+		# GIVEN storage whose SOC at the end of MTUs 0..3 is 10, 20, 30, 40, and an analysis range of MTUs 1..2
+		helper = MarketDataStorage.HelperModelResults
+		agent_map = Dict(helper.AGENT_DEMAND => ["D"], helper.AGENT_GENERATOR => ["G"])
+		final_dispatch = DataFrame(mtu=0:3, D=fill(1.0, 4), P_D=fill(100.0, 4), G=fill(1.0, 4), P_G=fill(50.0, 4), SOC=[10.0, 20.0, 30.0, 40.0],
+			StorageCharge=zeros(4), StorageDischarge=zeros(4), FinalAuctionPrice=fill(50.0, 4))
+		transactions = DataFrame(Agent=["Storage"], var"Quantity (MWh)"=[1.0], var"Price (€/MWh)"=[50.0], var"Market Time Unit"=[1])
+		soc_change(result) = result.agent_indicators[result.agent_indicators.Agent .== "Storage", "SOC Change (MWh)"][1]
+
+		# WHEN the table still holds the MTU before the range, THEN the change is end (30) - opening (10)
+		@test soc_change(MarketDataStorage.CalculateEconomicIndicators(final_dispatch, transactions, agent_map, 1:2)) == 20.0
+
+		# WHEN the table is already trimmed to the range (like a run's export) and the opening SOC is supplied
+		trimmed = final_dispatch[1 .<= final_dispatch.mtu .<= 2, :]
+		@test soc_change(MarketDataStorage.CalculateEconomicIndicators(trimmed, transactions, agent_map, 1:2; opening_soc=10.0)) == 20.0
+
+		# WHEN it is trimmed and no opening SOC is available, THEN the change is missing, not end - 0.0
+		@test ismissing(soc_change(MarketDataStorage.CalculateEconomicIndicators(trimmed, transactions, agent_map, 1:2)))
+
+		# and the opening SOC is read from the MTU before the range
+		@test MarketDataStorage.OpeningSOC(final_dispatch, 1:2) == 10.0
+		@test MarketDataStorage.OpeningSOC(trimmed, 1:2) === nothing
+
+	end
+
 	@testset "Storage revenue is the sum of storage transactions (quantity * price)" begin
 
 		# GIVEN storage that traded MTU 0 twice, charging 2 at 20 then discharging 3 at 60 (net position

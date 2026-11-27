@@ -530,7 +530,7 @@ function GetEconomicIndicatorsForRange(market_result_container,time_range; imbal
 	# handle gens and demands
 	agentMap = market_result_container.Results[1].AgentMap
 
-	return CalculateEconomicIndicators(finalDispatchDecisions, transactions, agentMap, time_range; imbalance_agents=imbalance_agents)
+	return CalculateEconomicIndicators(finalDispatchDecisions, transactions, agentMap, time_range; imbalance_agents=imbalance_agents, opening_soc=OpeningSOC(GetFinalDispatchDecisions(market_result_container), time_range))
 
 end
 
@@ -548,17 +548,31 @@ function GetEnergyEconomicIndicatorsForRange(market_result_container, time_range
 		transactions = transactions[transactions.Segment .== HelperModelResults.SEGMENT_ENERGY, :]
 	end
 	agentMap = market_result_container.Results[1].AgentMap
-	indicators = CalculateEconomicIndicators(energy_final_dispatch_decisions, transactions, agentMap, time_range)
+	indicators = CalculateEconomicIndicators(energy_final_dispatch_decisions, transactions, agentMap, time_range; opening_soc=OpeningSOC(GetEnergyFinalDispatchDecisions(market_result_container), time_range))
 	imbalance = "Imbalance Energy (MWh)"
 	return (economic_indicators=select(indicators.economic_indicators, Not(imbalance)), agent_indicators=indicators.agent_indicators, mtu_economic_indicators=select(indicators.mtu_economic_indicators, Not(imbalance)))
 end
 
-function CalculateEconomicIndicators(finalDispatchDecisions, transactions, agentMap, time_range; imbalance_agents::Union{Nothing,Tuple{String,String}}=nothing)
+# The storage SOC at the end of the MTU before `time_range` starts (the SOC the range opens with), read from a
+# final dispatch decisions table that still holds that MTU, or `nothing` if it doesn't (e.g. an export already
+# trimmed to the range, or a range starting at MTU 0).
+function OpeningSOC(finalDispatchDecisions, time_range)
+	(nrow(finalDispatchDecisions) == 0 || !hasproperty(finalDispatchDecisions, :SOC)) && return nothing
+	soc = finalDispatchDecisions[finalDispatchDecisions.mtu .== (time_range.start - 1), :SOC]
+	return isempty(soc) ? nothing : Float64(soc[1])
+end
+
+# `opening_soc` is the storage SOC the range opens with. Leave it `nothing` to read it from
+# `finalDispatchDecisions` itself - which only works when that table still holds MTU time_range.start - 1, so a
+# caller passing a table already trimmed to the range (e.g. a run's exported final_dispatch_decisions) must supply
+# it (PostAnalysisCommon.LoadOpeningSOC). Without it the storage's SOCChange is reported as `missing`.
+function CalculateEconomicIndicators(finalDispatchDecisions, transactions, agentMap, time_range; imbalance_agents::Union{Nothing,Tuple{String,String}}=nothing, opening_soc::Union{Nothing,Real}=nothing)
 	# scope both inputs to the requested delivery-MTU range ourselves - time_range is part of this
 	# function's signature, so its contract should not depend on the caller having already filtered
 	# to match. finalDispatchDecisions/transactions from a caller that filtered on its own filters
 	# again here as a no-op; a caller that (like some previously did) passed the full, unfiltered
 	# export now gets correctly-scoped results instead of silently-inflated ones.
+	opening_soc = opening_soc === nothing ? OpeningSOC(finalDispatchDecisions, time_range) : Float64(opening_soc) # before the trim below drops MTU start - 1
 	finalDispatchDecisions = finalDispatchDecisions[(time_range.start .<= finalDispatchDecisions.mtu .<= time_range.stop), :]
 	transactions = transactions[(time_range.start .<= transactions[!, mtu_symbol] .<= time_range.stop), :]
 
@@ -615,27 +629,18 @@ function CalculateEconomicIndicators(finalDispatchDecisions, transactions, agent
 
 	# (storage_soc_end, has_soc_end) = StorageSOCForTimePeriod(market_result_container, time_range.stop)
 
-	storage_soc_begin_vec = finalDispatchDecisions[finalDispatchDecisions.mtu .== (time_range.start - 1), Symbol("SOC")]
 	storage_soc_end_vec = finalDispatchDecisions[finalDispatchDecisions.mtu .== (time_range.stop), Symbol("SOC")]
+	storage_soc_end = isempty(storage_soc_end_vec) ? nothing : storage_soc_end_vec[1]
 
-	has_soc_begin = has_soc_end = false
-	storage_soc_begin = storage_soc_end = 0.0
-	if length(storage_soc_begin_vec) > 0
-		has_soc_begin = true
-		storage_soc_begin = storage_soc_begin_vec[1]
+	# the change over the range needs both ends - report `missing` rather than a number computed against a
+	# made-up opening SOC of 0.0
+	storage_soc_change = missing
+	if opening_soc === nothing || storage_soc_end === nothing
+		println("WARNING: SOC begin or end not found. SOC change reported as missing.")
+	else
+		storage_soc_change = storage_soc_end - opening_soc
 	end
-	if length(storage_soc_end_vec) > 0
-		has_soc_end = true
-		storage_soc_end = storage_soc_end_vec[1]
-	end
-
-	if !has_soc_begin || !has_soc_end
-		println("WARNING: SOC begin or end not found. change reported may be invalid.")
-	end
-
-	println("SOC BEGIN = $storage_soc_begin SOC END = $storage_soc_end")
-
-	storage_soc_change = storage_soc_end - storage_soc_begin
+	println("SOC BEGIN = $opening_soc SOC END = $storage_soc_end")
 
 
 	#=

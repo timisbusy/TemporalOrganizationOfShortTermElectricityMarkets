@@ -1,0 +1,37 @@
+# general parameters
+
+name: Cluster1_rolling_72_20240726_20240731_high_storage # descriptive name for experiment
+
+# Set temporal parameters for experiment - granularity and duration
+timePeriodsPerDay: 24 # number of time periods in a day
+clearForDays: 10 # one more than the 36h/48h cases: with a 72h window the last-auction bound (clearForDays*24 - 72) must still reach the end of the analyzed range (MTU 167) -> 10*24-72=168
+skipEarlyAuctions: 12
+samplePeriodExcludeSpinUp: 1 # 1 full day, not 0.5 - leaves a clean 28-day analysis window
+# (MTU 24:695) instead of the 28.5-day window (MTU 12:672) that 0 days combined with
+# skipEarlyAuctions=12 produced. skipEarlyAuctions itself is unchanged (clearing still starts
+# at MTU 12) - this just widens the excluded buffer between "clearing started" and "counts as
+# analyzed data" to a full day.
+samplePeriodExcludeEnd: 3 # widened by the same extra day as clearForDays, keeping the analyzed range identical to the 36h/48h cases
+
+# set a start date for data to be used from incoming agent profile data
+startDate: 2024-07-25
+
+# set the uncertainty in renewable generation
+noiseLevel: 0.2
+windOffset: 11
+
+
+# choose a market configuration from the markets directory
+marketConfig: rolling_72_laura_locked_1.yaml
+
+# choose an agent configuration from the agents directory
+agentConfig: final_nl_agents_high_storage_2024.yaml
+
+# for optimization model customization
+optimizationModelConfig:
+  model: latest
+  solver: highs
+  solver_method: simplex
+  demand_adjust: false
+  ex_post_transactions: false
+
