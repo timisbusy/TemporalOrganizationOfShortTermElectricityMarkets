@@ -299,6 +299,7 @@ function BuildLatexTable(case, our_vals, laura_vals)
 end
 
 function PerformAnalysis()
+	println("starting analysis: KPI LaTeX tables")
 	CleanDirectory(results_path_base)
 
 	out_path = "$results_path_base/kpi_comparison_tables.tex"

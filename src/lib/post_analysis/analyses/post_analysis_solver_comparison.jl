@@ -240,6 +240,7 @@ function PlotTradingVolumeComparison(case, df)
 end
 
 function PerformAnalysis(; include_reference::Bool=true, output_base=PostAnalysisCommon.NewAnalysisOutputDir(AllResultDirs(); label=DefaultLabel(include_reference)))
+	println("starting analysis: solver comparison")
 	analysis_dir_path = "$output_base/solver_comparison"
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 

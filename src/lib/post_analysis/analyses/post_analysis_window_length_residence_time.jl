@@ -42,15 +42,11 @@ const EPS = 1e-9
 # correct if a case is ever run with a different battery efficiency instead of silently assuming
 # every case shares one hardcoded value.
 function LoadStorageEfficiency(case_path)
-	config_dir = joinpath(case_path, "Config")
-	for f in readdir(config_dir)
-		endswith(f, ".yaml") || continue
-		data = YAML.load_file(joinpath(config_dir, f))
-		haskey(data, "batteryStorage") || continue
-		haskey(data["batteryStorage"], "efficiency") || continue
-		return Float64(data["batteryStorage"]["efficiency"])
+	(_, _, agent_cfg) = PostAnalysisCommon.LoadCaseConfigsByRole(case_path)
+	if agent_cfg !== nothing && haskey(agent_cfg, "batteryStorage") && agent_cfg["batteryStorage"] !== nothing && haskey(agent_cfg["batteryStorage"], "efficiency")
+		return Float64(agent_cfg["batteryStorage"]["efficiency"])
 	end
-	throw("no agent configuration with batteryStorage.efficiency found in $config_dir")
+	throw("no agent configuration with batteryStorage.efficiency found in $(joinpath(case_path, "Config"))")
 end
 
 mutable struct EnergyPacket
@@ -184,6 +180,7 @@ function WeightedQuantile(values::AbstractVector{<:Real}, weights::AbstractVecto
 end
 
 function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=DEFAULT_CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=PostAnalysisConventionalGenerationCost.DefaultLabel(case_paths, cases)), time_range=nothing)
+	println("starting analysis: window length residence time")
 	# nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
 	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
 

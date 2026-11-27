@@ -12,9 +12,9 @@ function PerformAnalysis(case_paths; cases=PostAnalysisCommon.CASES, output_base
 
 	analysis_dir_path = "$output_base/post_analysis_storage"
 
-	dispatch_decision_paths = Dict(case => joinpath(case_paths[case], "final_dispatch_decisions.xlsx") for case in cases)
+	dispatch_decision_paths = Dict(case => joinpath(case_paths[case], "final_dispatch_decisions_energy.xlsx") for case in cases) # energy segment only
 
-	println("starting analysis")
+	println("starting analysis: storage")
 	PostAnalysisCommon.CleanDirectory(analysis_dir_path)
 	dds = Dict{String,DataFrame}()
 

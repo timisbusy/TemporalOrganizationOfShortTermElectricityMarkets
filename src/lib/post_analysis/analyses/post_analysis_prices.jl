@@ -32,6 +32,7 @@ CaseShortname(case) = get(case_shortname, case, PostAnalysisCommon.CaseSlug(case
 # Left as nothing, day 28 is used when every case's RAW export actually reaches that far,
 # otherwise falling back to 26 (which fits the capped pair too); pass an explicit day to override.
 function PerformAnalysis(case_paths, raw_dispatch_prefix=nothing; cases=PostAnalysisCommon.CASES, illustrative_day=nothing, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths))
+	println("starting analysis: prices")
     raw_dispatch_prefix = raw_dispatch_prefix === nothing ? PostAnalysisCommon.DiscoverRawDispatchPrefixes(case_paths) : raw_dispatch_prefix
 
     illustrative_day = illustrative_day !== nothing ? illustrative_day : (DayFits(28, raw_dispatch_prefix, cases) ? 28 : 26)

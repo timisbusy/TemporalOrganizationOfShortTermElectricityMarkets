@@ -111,7 +111,7 @@ using .ClearMarket.LatestMarketModel
 	# m.ext[:two_stage_forced_zero]) before calling build_market_clearing! themselves - mirrors
 	# what TwoStageMarketModel.build() does internally for each stage
 	prepare_unbuilt(t, container, initialization, data, market) = begin
-		m = Model(TwoStageMarketModel.select_optimizer(data))
+		m = Model(ClearMarket.SolverSelection.select_optimizer(data))
 		set_silent(m)
 		TwoStageMarketModel.define_sets!(m, t, container, initialization, data, market)
 		TwoStageMarketModel.process_time_series_data!(m, t, container, initialization, data, market)

@@ -3,7 +3,7 @@ include("../lib/data_importer.jl")
 
 
 function print_import()
-	input_config = DataImporter.load_input_data("../configs/xlsx/experiments/OneIntraday.xlsx")
+	input_config = DataImporter.load_input_data("../configs/xlsx/experiments/Fixed36.xlsx")
 	println(input_config)
 
 	println("done")

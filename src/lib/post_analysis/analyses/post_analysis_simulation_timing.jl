@@ -172,6 +172,7 @@ function PlotSimulationTiming(rows)
 end
 
 function PerformAnalysis()
+	println("starting analysis: simulation timing")
 	CleanDirectory(results_path_base)
 
 	typical = SimulationTimingFor("src/configs/experiments/compare_laura_cases_with_first_period_lock.yaml")

@@ -44,27 +44,14 @@ function DefaultLabel(case_paths, cases)
 	return join(names, "_vs_")
 end
 
-# scans a run's own Config/ directory (a verbatim copy of the experiment/market/agent yamls used
-# for that run) and classifies each yaml by the top-level key that identifies its role, rather than
+# loads a run's own Config/ directory (a verbatim copy of the experiment/market/agent yamls or Excel
+# workbooks used for that run), classifying each file by its content to identify its role, rather than
 # relying on filenames (which differ per case, e.g. "rolling_48_laura.yaml" vs
 # "rolling_72_laura.yaml").
 function LoadCaseConfigs(case_path)
-	config_dir = joinpath(case_path, "Config")
-	experiment_cfg = market_cfg = agent_cfg = nothing
-	for f in readdir(config_dir)
-		endswith(f, ".yaml") || continue
-		cfg = YAML.load_file(joinpath(config_dir, f))
-		if haskey(cfg, "marketSequence")
-			market_cfg = cfg
-		elseif haskey(cfg, "variableGenerators")
-			agent_cfg = cfg
-		elseif haskey(cfg, "clearForDays")
-			experiment_cfg = cfg
-		end
-	end
-	(experiment_cfg === nothing || market_cfg === nothing || agent_cfg === nothing) &&
-		throw("could not classify all of experiment/market/agent config in $config_dir")
-	return (experiment_cfg, market_cfg, agent_cfg)
+	configs = PostAnalysisCommon.LoadCaseConfigsByRole(case_path)
+	any(isnothing, configs) && throw("could not classify all of experiment/market/agent config in $(joinpath(case_path, "Config"))")
+	return configs
 end
 
 # true (noise-free) wind availability per MTU, keyed by mtu - reconstructed the same way
@@ -174,6 +161,7 @@ function CaseForecastErrors(case_path, time_range)
 end
 
 function PerformAnalysis(case_paths=DEFAULT_CASE_PATHS; cases=CASES, output_base=PostAnalysisCommon.NewAnalysisOutputDir(case_paths; label=DefaultLabel(case_paths, cases)), time_range=nothing)
+	println("starting analysis: wind forecast error")
 	# nothing: the window the runs' own configs define (see PostAnalysisCommon.ResolveTimeRange)
 	time_range = PostAnalysisCommon.ResolveTimeRange(time_range, case_paths, cases; output_base=output_base)
 
