@@ -64,6 +64,7 @@ const THREE_WAY_CASE_PATHS = Dict{String,String}(
 # several sheets). Add the files you want collected here (or pass high_level_files to Run).
 const HIGH_LEVEL_EXCEL_FILES = [
 	"post_analysis_SEW/sew_details.xlsx" => "SEW",
+	"weighted_price_energy/weighted_price_summary.xlsx" => "Weighted price",                  # mean/median/std/max/min of the per-MTU volume-weighted price (energy)
 	"balancing_trade_quantities/balancing_trade_quantities.xlsx" => "Balancing",                # imbalance (balancing-segment) metrics
 	"post_analysis_storage/storage_details.xlsx" => "Storage",                                  # storage metrics
 	"post_analysis_quantities_by_agent/agent_quantities_details.xlsx" => "Agent quantities",    # by-agent tables (3)
